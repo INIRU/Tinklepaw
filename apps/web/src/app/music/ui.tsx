@@ -7,6 +7,7 @@ import { Pause, Play, RefreshCw, SkipBack, SkipForward, Square, ListMusic, GripV
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { supabaseBrowser } from '@/lib/supabase-browser';
 
 type MusicTrack = {
   id: string;
@@ -85,6 +86,7 @@ export default function MusicControlClient() {
     kind: 'success'
   });
   const feedbackTimer = useRef<number | null>(null);
+  const stateRefreshTimer = useRef<number | null>(null);
 
   const current = state?.current_track;
   const queue: MusicTrack[] = state?.queue ?? [];
@@ -98,15 +100,34 @@ export default function MusicControlClient() {
   );
 
   const fetchState = async () => {
-    const res = await fetch('/api/music/state');
-    const json = await res.json();
-    setState(json.state ?? null);
+    try {
+      const res = await fetch('/api/music/state', { cache: 'no-store' });
+      if (!res.ok) return false;
+      const json = await res.json();
+      setState(json.state ?? null);
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   const fetchLogs = async () => {
-    const res = await fetch('/api/music/logs');
-    const json = await res.json();
-    setLogs(json.logs ?? []);
+    try {
+      const res = await fetch('/api/music/logs', { cache: 'no-store' });
+      if (!res.ok) return false;
+      const json = await res.json();
+      setLogs(json.logs ?? []);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const scheduleStateRefresh = () => {
+    if (stateRefreshTimer.current) window.clearTimeout(stateRefreshTimer.current);
+    stateRefreshTimer.current = window.setTimeout(() => {
+      void fetchState();
+    }, 150);
   };
 
   const refreshAll = async () => {
@@ -117,8 +138,34 @@ export default function MusicControlClient() {
 
   useEffect(() => {
     refreshAll();
-    const interval = setInterval(fetchState, 5000);
-    return () => clearInterval(interval);
+    const stateChannel = supabaseBrowser
+      .channel('music_state')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'nyang', table: 'music_state' },
+        () => {
+          scheduleStateRefresh();
+        }
+      )
+      .subscribe();
+
+    const logsChannel = supabaseBrowser
+      .channel('music_logs')
+      .on('postgres_changes', { event: '*', schema: 'nyang', table: 'music_control_logs' }, () => {
+        void fetchLogs();
+      })
+      .subscribe();
+
+    const stateInterval = window.setInterval(fetchState, 15000);
+    const logsInterval = window.setInterval(fetchLogs, 30000);
+
+    return () => {
+      supabaseBrowser.removeChannel(stateChannel);
+      supabaseBrowser.removeChannel(logsChannel);
+      window.clearInterval(stateInterval);
+      window.clearInterval(logsInterval);
+      if (stateRefreshTimer.current) window.clearTimeout(stateRefreshTimer.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -156,7 +203,11 @@ export default function MusicControlClient() {
       const data = await res.json().catch(() => null);
       return { ok: false, error: data?.error ?? '요청 실패' };
     }
-    await fetchLogs();
+    await Promise.all([fetchLogs(), fetchState()]);
+    window.setTimeout(() => {
+      void fetchState();
+      void fetchLogs();
+    }, 800);
     return { ok: true };
   };
 
@@ -170,7 +221,11 @@ export default function MusicControlClient() {
       const data = await res.json().catch(() => null);
       return { ok: false, error: data?.error ?? '정렬 실패' };
     }
-    await fetchLogs();
+    await Promise.all([fetchLogs(), fetchState()]);
+    window.setTimeout(() => {
+      void fetchState();
+      void fetchLogs();
+    }, 800);
     return { ok: true };
   };
 

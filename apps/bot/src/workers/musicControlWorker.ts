@@ -67,6 +67,9 @@ const handleJob = async (job: MusicControlJob) => {
       break;
     case 'skip':
       player.skip();
+      setTimeout(() => {
+        updateMusicState(player).catch(() => {});
+      }, 700);
       await logAction(job, 'success', 'Skipped to next track');
       break;
     case 'previous': {
@@ -76,6 +79,9 @@ const handleJob = async (job: MusicControlJob) => {
         break;
       }
       await player.play(previous);
+      setTimeout(() => {
+        updateMusicState(player).catch(() => {});
+      }, 700);
       await logAction(job, 'success', 'Moved to previous track');
       break;
     }
@@ -130,13 +136,19 @@ const handleJob = async (job: MusicControlJob) => {
 
 export function startMusicControlWorker() {
   let isRunning = false;
+  let pendingRerun = false;
+  const ctx = getBotContext();
 
   const tick = async () => {
-    if (isRunning) return;
+    if (isRunning) {
+      pendingRerun = true;
+      return;
+    }
+
     isRunning = true;
+    pendingRerun = false;
 
     try {
-      const ctx = getBotContext();
       const { data: jobs } = await ctx.supabase
         .from('music_control_jobs')
         .select('job_id, guild_id, action, payload, requested_by')
@@ -157,6 +169,16 @@ export function startMusicControlWorker() {
 
         if (claimError || !claimed?.length) continue;
 
+        console.log('[MusicWorker] job start', {
+          jobId: job.job_id,
+          guildId: job.guild_id,
+          action: job.action,
+          requestedBy: job.requested_by
+        });
+
+        let status: 'succeeded' | 'failed' = 'succeeded';
+        let errorMessage: string | null = null;
+
         try {
           await handleJob(job);
           await ctx.supabase
@@ -164,24 +186,49 @@ export function startMusicControlWorker() {
             .update({ status: 'succeeded', updated_at: new Date().toISOString(), error_message: null })
             .eq('job_id', job.job_id);
         } catch (e) {
-          const msg = e instanceof Error ? e.message : 'Unknown error';
+          status = 'failed';
+          errorMessage = e instanceof Error ? e.message : 'Unknown error';
           await ctx.supabase
             .from('music_control_jobs')
-            .update({ status: 'failed', updated_at: new Date().toISOString(), error_message: msg })
+            .update({ status: 'failed', updated_at: new Date().toISOString(), error_message: errorMessage })
             .eq('job_id', job.job_id);
-          await logAction(job, 'failed', msg);
+          await logAction(job, 'failed', errorMessage);
         } finally {
           await ctx.supabase.from('music_control_jobs').delete().eq('job_id', job.job_id);
+          console.log('[MusicWorker] job end', {
+            jobId: job.job_id,
+            guildId: job.guild_id,
+            action: job.action,
+            status,
+            errorMessage
+          });
         }
       }
     } finally {
       isRunning = false;
+
+      if (pendingRerun) {
+        void tick();
+        return;
+      }
+
       const config = await getAppConfig().catch(() => ({ bot_sync_interval_ms: 4000 }));
       setTimeout(() => {
         void tick();
       }, config.bot_sync_interval_ms || 4000);
     }
   };
+
+  ctx.supabase
+    .channel('music_control_jobs')
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'nyang', table: 'music_control_jobs', filter: 'status=eq.pending' },
+      () => {
+        void tick();
+      }
+    )
+    .subscribe();
 
   void tick();
 }

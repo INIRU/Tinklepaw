@@ -108,10 +108,17 @@ const mapTrackState = (track: KazagumoTrack) => ({
   thumbnail: track.thumbnail
 });
 
-export const updateMusicState = async (player: { guildId: string; queue: { current?: KazagumoTrack | null; slice: (start?: number, end?: number) => KazagumoTrack[] } }) => {
+export const updateMusicState = async (player: {
+  guildId: string;
+  playing?: boolean;
+  paused?: boolean;
+  queue: { current?: KazagumoTrack | null; slice: (start?: number, end?: number) => KazagumoTrack[] };
+}) => {
   const ctx = getBotContext();
+  const queueTracks = player.queue.slice(0);
+  if (!player.queue.current) return;
   const current = player.queue.current ? mapTrackState(player.queue.current) : null;
-  const queue = player.queue.slice(0).map(mapTrackState);
+  const queue = queueTracks.map(mapTrackState);
   await ctx.supabase.from('music_state').upsert({
     guild_id: player.guildId,
     current_track: current,
@@ -203,8 +210,12 @@ export const initMusic = (client: Client, env: Env): Kazagumo => {
   });
 
   musicInstance.on('playerEmpty', (player) => {
-    updateMusicSetupMessage(player, null).catch(() => {});
-    clearMusicState(player.guildId).catch(() => {});
+    setTimeout(() => {
+      if (player.queue.current) return;
+      if (player.queue.slice(0).length > 0) return;
+      updateMusicSetupMessage(player, null).catch(() => {});
+      clearMusicState(player.guildId).catch(() => {});
+    }, 1200);
     const channel = player.voiceId ? client.channels.cache.get(player.voiceId) : null;
     if (channel && channel.isVoiceBased()) {
       const nonBotCount = channel.members.filter((member) => !member.user.bot).size;

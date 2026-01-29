@@ -1,11 +1,12 @@
 import type { Client, GuildMember, Interaction } from 'discord.js';
+import type { KazagumoPlayer } from 'kazagumo';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, StringSelectMenuBuilder, ButtonStyle, MessageActionRowComponentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } from 'discord.js';
 
 import { commands } from '../commands/index.js';
 import { handleError } from '../errorHandler.js';
 import { getBotContext } from '../context.js';
 import { getAppConfig } from '../services/config.js';
-import { clearMusicState, formatDuration, getMusic, getNodeStatus, updateMusicSetupMessage } from '../services/music.js';
+import { clearMusicState, formatDuration, getMusic, getNodeStatus, updateMusicSetupMessage, updateMusicState } from '../services/music.js';
 
 import type { SlashCommand } from '../commands/types.js';
 
@@ -18,6 +19,12 @@ const formatQueueLine = (track: { title: string; uri?: string | null; length?: n
   const duration = track.length ? formatDuration(track.length) : 'LIVE';
   const link = track.uri ? `[${track.title}](${track.uri})` : track.title;
   return `\`${index + 1}.\` ${link} \`${duration}\``;
+};
+
+const scheduleMusicStateUpdate = (player: KazagumoPlayer, delayMs = 700) => {
+  setTimeout(() => {
+    updateMusicState(player).catch(() => {});
+  }, delayMs);
 };
 
 const getVoiceChannelId = (interaction: Interaction): string | null => {
@@ -283,6 +290,8 @@ export function registerInteractionCreate(client: Client) {
       if (!player.playing && !player.paused) {
         player.play();
       }
+
+      scheduleMusicStateUpdate(player);
     } else if (interaction.isButton()) {
       // 보상 받기 버튼 처리
       if (interaction.customId.startsWith('claim_reward_')) {
@@ -538,6 +547,7 @@ export function registerInteractionCreate(client: Client) {
           }
           await player.play(previous);
           updateMusicSetupMessage(player, previous).catch(() => {});
+          scheduleMusicStateUpdate(player);
           await interaction.reply({ embeds: [buildMusicStatusEmbed('⏮️ 이전 곡', '이전 곡으로 이동했어요.')], ephemeral: true });
           return;
         }
@@ -552,6 +562,7 @@ export function registerInteractionCreate(client: Client) {
           } else {
             await player.play();
           }
+          scheduleMusicStateUpdate(player);
           await interaction.reply({ embeds: [buildMusicStatusEmbed('▶️ 재생', '재생을 시작했어요.')], ephemeral: true });
           return;
         }
@@ -562,6 +573,7 @@ export function registerInteractionCreate(client: Client) {
             return;
           }
           player.pause(true);
+          scheduleMusicStateUpdate(player);
           await interaction.reply({ embeds: [buildMusicStatusEmbed('⏸️ 일시정지', '재생을 일시정지했어요.')], ephemeral: true });
           return;
         }
@@ -576,6 +588,7 @@ export function registerInteractionCreate(client: Client) {
 
         if (interaction.customId === 'music_next') {
           player.skip();
+          scheduleMusicStateUpdate(player);
           await interaction.reply({ embeds: [buildMusicStatusEmbed('⏭️ 다음 곡', '다음 곡으로 이동했어요.')], ephemeral: true });
           return;
         }
