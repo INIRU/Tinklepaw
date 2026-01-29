@@ -1,0 +1,947 @@
+'use client';
+
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import MarkdownPreview from '@/components/content/MarkdownPreview';
+import { useToast } from '@/components/toast/ToastProvider';
+import { Check, ChevronDown, ChevronLeft } from 'lucide-react';
+
+type AppConfig = {
+  server_intro?: string | null;
+  banner_image_url?: string | null;
+  icon_image_url?: string | null;
+  join_message_template: string | null;
+  join_message_channel_id: string | null;
+  reward_points_per_interval: number;
+  reward_interval_seconds: number;
+  reward_daily_cap_points: number | null;
+  reward_min_message_length: number;
+};
+
+type DiscordChannel = { id: string; name: string };
+
+type AssetKey = 'banner' | 'icon';
+type StagedAsset = { stagedPath: string; publicUrl: string };
+
+function clamp(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n));
+}
+
+function useElementSize<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  const [size, setSize] = useState({ width: 1, height: 1 });
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      setSize({ width: Math.max(1, r.width), height: Math.max(1, r.height) });
+    };
+
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  return { ref, size };
+}
+
+async function loadHtmlImage(src: string) {
+  return await new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('이미지를 불러오지 못했습니다.'));
+    img.src = src;
+  });
+}
+
+async function canvasToPngFile(canvas: HTMLCanvasElement, name: string) {
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('이미지 생성 실패'))), 'image/png');
+  });
+  return new File([blob], name, { type: 'image/png' });
+}
+
+function CropModal(props: {
+  title: string;
+  src: string;
+  aspect: number;
+  output: { width: number; height: number; fileName: string };
+  onClose: () => void;
+  onConfirm: (file: File) => void;
+  busy?: boolean;
+}) {
+  const { ref: frameRef, size: frameSize } = useElementSize<HTMLDivElement>();
+  const [img, setImg] = useState<HTMLImageElement | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{
+    startX: number;
+    startY: number;
+    startOffsetX: number;
+    startOffsetY: number;
+  } | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    loadHtmlImage(props.src)
+      .then((loaded) => {
+        if (!alive) return;
+        setImg(loaded);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setImg(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [props.src]);
+
+  const baseScale = useMemo(() => {
+    if (!img) return 1;
+    const iw = img.naturalWidth;
+    const ih = img.naturalHeight;
+    const fw = frameSize.width;
+    const fh = frameSize.height;
+    return Math.max(fw / iw, fh / ih);
+  }, [img, frameSize.height, frameSize.width]);
+
+  const clampedOffset = useMemo(() => {
+    if (!img) return offset;
+    const s = baseScale * zoom;
+    const dw = img.naturalWidth * s;
+    const dh = img.naturalHeight * s;
+    const maxX = Math.max(0, (dw - frameSize.width) / 2);
+    const maxY = Math.max(0, (dh - frameSize.height) / 2);
+    return {
+      x: clamp(offset.x, -maxX, maxX),
+      y: clamp(offset.y, -maxY, maxY)
+    };
+  }, [baseScale, frameSize.height, frameSize.width, img, offset, zoom]);
+
+  useEffect(() => {
+    setOffset(clampedOffset);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clampedOffset.x, clampedOffset.y]);
+
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
+    if (!img) return;
+    (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startOffsetX: clampedOffset.x,
+      startOffsetY: clampedOffset.y
+    };
+  }, [clampedOffset.x, clampedOffset.y, img]);
+
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    setOffset({ x: dragRef.current.startOffsetX + dx, y: dragRef.current.startOffsetY + dy });
+  }, []);
+
+  const onPointerUp = useCallback(() => {
+    dragRef.current = null;
+  }, []);
+
+  const confirm = useCallback(async () => {
+    if (!img) return;
+    setLocalError(null);
+    try {
+      const fw = frameSize.width;
+      const fh = frameSize.height;
+      const s = baseScale * zoom;
+
+      const sx = img.naturalWidth / 2 + (-fw / 2 - clampedOffset.x) / s;
+      const sy = img.naturalHeight / 2 + (-fh / 2 - clampedOffset.y) / s;
+      const sw = fw / s;
+      const sh = fh / s;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = props.output.width;
+      canvas.height = props.output.height;
+      const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('캔버스를 초기화하지 못했습니다.');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+
+      const file = await canvasToPngFile(canvas, props.output.fileName);
+      props.onConfirm(file);
+    } catch (e) {
+      setLocalError(e instanceof Error ? e.message : '이미지 생성 실패');
+    }
+  }, [baseScale, clampedOffset.x, clampedOffset.y, frameSize.height, frameSize.width, img, props, zoom]);
+
+  const frameStyle: React.CSSProperties = {
+    aspectRatio: `${props.aspect}`
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={() => (props.busy ? null : props.onClose())} />
+      <div className="relative w-full max-w-2xl rounded-3xl card-glass p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold">{props.title}</div>
+            <div className="mt-1 text-xs muted">드래그로 위치를 조정하고, 확대/축소로 잘라 주세요.</div>
+          </div>
+          <button
+            type="button"
+            className="rounded-xl btn-soft px-3 py-2 text-xs"
+            onClick={() => (props.busy ? null : props.onClose())}
+          >
+            닫기
+          </button>
+        </div>
+
+        <div className="mt-4">
+          <div
+            ref={frameRef}
+            className="relative w-full overflow-hidden rounded-2xl border border-[color:var(--border)] bg-black/20"
+            style={frameStyle}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+          >
+            {img ? (
+              <img
+                src={props.src}
+                alt=""
+                className="absolute left-1/2 top-1/2 max-w-none select-none"
+                draggable={false}
+                style={{
+                  transform: `translate(-50%, -50%) translate(${clampedOffset.x}px, ${clampedOffset.y}px) scale(${baseScale * zoom})`,
+                  transformOrigin: 'center',
+                  width: img.naturalWidth,
+                  height: img.naturalHeight
+                }}
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-sm muted">불러오는 중…</div>
+            )}
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-xs">
+              <span className="muted">확대</span>
+              <input
+                type="range"
+                min={1}
+                max={4}
+                step={0.01}
+                value={zoom}
+                onChange={(e) => setZoom(Number(e.target.value))}
+                className="w-48"
+              />
+            </label>
+            <button
+              type="button"
+              className="rounded-xl btn-soft px-3 py-2 text-xs"
+              onClick={() => {
+                setZoom(1);
+                setOffset({ x: 0, y: 0 });
+              }}
+              disabled={props.busy}
+            >
+              리셋
+            </button>
+            <button
+              type="button"
+              className="rounded-2xl btn-bangul px-4 py-2 text-xs font-semibold disabled:opacity-60"
+              onClick={() => void confirm()}
+              disabled={!img || props.busy}
+            >
+              {props.busy ? '업로드 중…' : '확정'}
+            </button>
+            {localError ? <div className="text-xs text-red-200">{localError}</div> : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function SettingsClient() {
+  const toast = useToast();
+  const router = useRouter();
+  const [cfg, setCfg] = useState<AppConfig | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [channels, setChannels] = useState<DiscordChannel[]>([]);
+  const [rewardChannels, setRewardChannels] = useState<string[]>([]); // draft
+  const [rewardChannelsSaved, setRewardChannelsSaved] = useState<string[]>([]);
+  const [rewardSearch, setRewardSearch] = useState('');
+  const [rewardSaving, setRewardSaving] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const [stagedBanner, setStagedBanner] = useState<StagedAsset | null>(null);
+  const [stagedIcon, setStagedIcon] = useState<StagedAsset | null>(null);
+  const [assetBusy, setAssetBusy] = useState<{ key: AssetKey; op: 'stage' | 'commit' | 'cancel' } | null>(null);
+  const [crop, setCrop] = useState<{ key: AssetKey; srcUrl: string } | null>(null);
+
+  const bannerInputRef = useRef<HTMLInputElement | null>(null);
+  const iconInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (crop?.srcUrl) URL.revokeObjectURL(crop.srcUrl);
+    };
+  }, [crop?.srcUrl]);
+
+  const rewardChannelSet = useMemo(() => new Set(rewardChannels), [rewardChannels]);
+  const rewardChannelSavedSet = useMemo(() => new Set(rewardChannelsSaved), [rewardChannelsSaved]);
+
+  const loadAll = useCallback(async () => {
+    const cfgRes = await fetch('/api/admin/config');
+    const cfgBody = (await cfgRes.json().catch(() => null)) as (AppConfig & { error?: string }) | null;
+    if (!cfgRes.ok) {
+      throw new Error(cfgBody?.error ?? `HTTP ${cfgRes.status}`);
+    }
+    setCfg(cfgBody);
+    setLoadError(null);
+
+    const [chRes, rcRes] = await Promise.all([
+      fetch('/api/admin/discord/channels'),
+      fetch('/api/admin/reward-channels')
+    ]);
+
+    const chBody = (await chRes.json().catch(() => null)) as ({ channels?: DiscordChannel[]; error?: string } | null);
+    if (!chRes.ok) {
+      toast.error(chBody?.error ?? `채널을 불러오지 못했습니다. (HTTP ${chRes.status})`);
+    } else {
+      setChannels(chBody?.channels ?? []);
+    }
+
+    const rcBody = (await rcRes.json().catch(() => null)) as (
+      | { channels?: Array<{ channel_id: string; enabled: boolean }>; error?: string }
+      | null
+    );
+    if (!rcRes.ok) {
+      console.error('Failed to load reward channels', rcBody?.error);
+      toast.error(rcBody?.error ?? `보상 채널을 불러오지 못했습니다. (HTTP ${rcRes.status})`);
+    } else {
+      const channelsFromDb = rcBody?.channels ?? [];
+      const enabledIds = channelsFromDb.filter((c) => c.enabled).map((c) => c.channel_id);
+      console.log('Loaded reward channels:', enabledIds);
+      setRewardChannels(enabledIds);
+      setRewardChannelsSaved(enabledIds);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    void loadAll().catch((e) => {
+      console.error('admin settings init failed', e);
+      const msg = e instanceof Error ? e.message : '설정을 불러오지 못했습니다.';
+      setLoadError(msg);
+      toast.error('설정을 불러오지 못했습니다.');
+    });
+  }, [loadAll, toast]);
+
+  const saveConfig = useCallback(async () => {
+    if (!cfg) return;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/admin/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cfg)
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? `HTTP ${res.status}`);
+      }
+      setCfg((await res.json()) as AppConfig);
+      toast.success('저장했습니다.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '저장에 실패했습니다.');
+    } finally {
+      setSaving(false);
+    }
+  }, [cfg, toast]);
+
+  const toggleRewardChannel = useCallback(
+    (channelId: string) => {
+      setRewardChannels((prev) => {
+        const s = new Set(prev);
+        if (s.has(channelId)) s.delete(channelId);
+        else s.add(channelId);
+        return Array.from(s);
+      });
+    },
+    []
+  );
+
+  const filteredRewardChannels = useMemo(() => {
+    const q = rewardSearch.trim().toLowerCase();
+    const base = q
+      ? channels.filter((c) => c.name.toLowerCase().includes(q) || c.id.includes(q))
+      : channels;
+    return [...base].sort((a, b) => {
+      const aOn = rewardChannelSet.has(a.id);
+      const bOn = rewardChannelSet.has(b.id);
+      if (aOn !== bOn) return aOn ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [channels, rewardChannelSet, rewardSearch]);
+
+  const rewardDirty = useMemo(() => {
+    if (rewardChannels.length !== rewardChannelsSaved.length) return true;
+    for (const id of rewardChannels) if (!rewardChannelSavedSet.has(id)) return true;
+    return false;
+  }, [rewardChannelSavedSet, rewardChannels, rewardChannelsSaved.length]);
+
+  const selectAllFiltered = useCallback(() => {
+    setRewardChannels((prev) => {
+      const s = new Set(prev);
+      for (const c of filteredRewardChannels) s.add(c.id);
+      return Array.from(s);
+    });
+  }, [filteredRewardChannels]);
+
+  const clearFiltered = useCallback(() => {
+    setRewardChannels((prev) => {
+      const s = new Set(prev);
+      for (const c of filteredRewardChannels) s.delete(c.id);
+      return Array.from(s);
+    });
+  }, [filteredRewardChannels]);
+
+  const revertRewardChannels = useCallback(() => {
+    setRewardChannels(rewardChannelsSaved);
+    toast.info('변경 사항을 되돌렸습니다.', { durationMs: 2000 });
+  }, [rewardChannelsSaved, toast]);
+
+  const saveRewardChannels = useCallback(async () => {
+    setRewardSaving(true);
+    try {
+      const res = await fetch('/api/admin/reward-channels', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabledChannelIds: rewardChannels })
+      });
+      const body = (await res.json().catch(() => null)) as { error?: string; enabledChannelIds?: string[] } | null;
+      if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+      const saved = body?.enabledChannelIds ?? rewardChannels;
+      setRewardChannels(saved);
+      setRewardChannelsSaved(saved);
+      toast.success('보상 채널 화이트리스트를 저장했습니다.');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '보상 채널 저장에 실패했습니다.');
+    } finally {
+      setRewardSaving(false);
+    }
+  }, [rewardChannels, toast]);
+
+  const startCrop = useCallback((key: AssetKey, file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('이미지 파일만 업로드할 수 있습니다.');
+      return;
+    }
+    const srcUrl = URL.createObjectURL(file);
+    setCrop({ key, srcUrl });
+  }, [toast]);
+
+  const stageUpload = useCallback(
+    async (key: AssetKey, file: File) => {
+      setAssetBusy({ key, op: 'stage' });
+      try {
+        const prev = key === 'banner' ? stagedBanner : stagedIcon;
+        if (prev?.stagedPath) {
+          await fetch(`/api/admin/assets/stage?path=${encodeURIComponent(prev.stagedPath)}`, { method: 'DELETE' }).catch(() => null);
+        }
+
+        const form = new FormData();
+        form.set('key', key);
+        form.set('file', file);
+        const res = await fetch('/api/admin/assets/stage', { method: 'POST', body: form });
+        const body = (await res.json().catch(() => null)) as
+          | { ok?: boolean; stagedPath?: string; publicUrl?: string; error?: string }
+          | null;
+        if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+        if (!body?.stagedPath || !body.publicUrl) throw new Error('Upload failed');
+
+        const next = { stagedPath: body.stagedPath, publicUrl: body.publicUrl };
+        if (key === 'banner') setStagedBanner(next);
+        else setStagedIcon(next);
+        toast.success('임시 업로드가 완료되었습니다. "적용"을 눌러야 반영됩니다.', { durationMs: 3500 });
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : '업로드에 실패했습니다.');
+      } finally {
+        setAssetBusy(null);
+      }
+    },
+    [stagedBanner, stagedIcon, toast]
+  );
+
+  const cancelStage = useCallback(
+    async (key: AssetKey) => {
+      const staged = key === 'banner' ? stagedBanner : stagedIcon;
+      if (!staged?.stagedPath) return;
+
+      setAssetBusy({ key, op: 'cancel' });
+      try {
+        const res = await fetch(`/api/admin/assets/stage?path=${encodeURIComponent(staged.stagedPath)}`, { method: 'DELETE' });
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+        if (key === 'banner') setStagedBanner(null);
+        else setStagedIcon(null);
+        toast.info('취소했습니다.', { durationMs: 2000 });
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : '취소에 실패했습니다.');
+      } finally {
+        setAssetBusy(null);
+      }
+    },
+    [stagedBanner, stagedIcon, toast]
+  );
+
+  const commitStage = useCallback(
+    async (key: AssetKey) => {
+      const staged = key === 'banner' ? stagedBanner : stagedIcon;
+      if (!staged?.stagedPath) return;
+
+      setAssetBusy({ key, op: 'commit' });
+      try {
+        const res = await fetch('/api/admin/assets/commit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key, stagedPath: staged.stagedPath })
+        });
+        const body = (await res.json().catch(() => null)) as { publicUrl?: string; error?: string } | null;
+        if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+        if (!body?.publicUrl) throw new Error('Commit failed');
+
+        setCfg((prev) => {
+          if (!prev) return prev;
+          return key === 'banner'
+            ? { ...prev, banner_image_url: body.publicUrl }
+            : { ...prev, icon_image_url: body.publicUrl };
+        });
+
+        if (key === 'banner') setStagedBanner(null);
+        else setStagedIcon(null);
+
+        toast.success('적용했습니다.');
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : '적용에 실패했습니다.');
+      } finally {
+        setAssetBusy(null);
+      }
+    },
+    [stagedBanner, stagedIcon, toast]
+  );
+
+  if (!cfg) {
+    return (
+      <main className="p-6">
+        <div className="mx-auto max-w-4xl">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <h1 className="text-3xl font-semibold tracking-tight font-bangul">설정</h1>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-xl btn-soft px-3 py-2 text-xs font-semibold"
+              onClick={() => router.back()}
+            >
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" strokeWidth={2} />
+              <span>이전 페이지로 돌아가기</span>
+            </button>
+          </div>
+          {loadError ? (
+            <div className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+              <div className="text-sm font-semibold">불러오기 실패</div>
+              <div className="mt-2 text-xs muted break-words">{loadError}</div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="rounded-2xl btn-bangul px-4 py-3 text-sm font-semibold"
+                  onClick={() =>
+                    void loadAll().catch((e) => {
+                      const msg = e instanceof Error ? e.message : '설정을 불러오지 못했습니다.';
+                      setLoadError(msg);
+                      toast.error('설정을 불러오지 못했습니다.');
+                    })
+                  }
+                >
+                  다시 시도
+                </button>
+                <a className="rounded-2xl btn-soft px-4 py-3 text-sm font-semibold" href="/">
+                  홈으로
+                </a>
+              </div>
+              <div className="mt-4 text-xs muted">
+                DB를 초기화하셨다면 `supabase/bootstrap_nyang.sql`을 실행하고, Supabase API 설정의 Exposed schemas에 `nyang`를 추가해 주세요.
+              </div>
+            </div>
+          ) : (
+            <p className="mt-4 text-sm muted">불러오는 중…</p>
+          )}
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="p-6">
+      <div className="mx-auto max-w-4xl">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <h1 className="text-3xl font-semibold tracking-tight font-bangul">설정</h1>
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-xl btn-soft px-3 py-2 text-xs font-semibold"
+            onClick={() => router.back()}
+          >
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" strokeWidth={2} />
+            <span>이전 페이지로 돌아가기</span>
+          </button>
+        </div>
+
+        {crop ? (
+          <CropModal
+            title={crop.key === 'banner' ? '배너 이미지 자르기' : '아이콘 이미지 자르기'}
+            src={crop.srcUrl}
+            aspect={crop.key === 'banner' ? 1600 / 600 : 1}
+            output={
+              crop.key === 'banner'
+                ? { width: 1600, height: 600, fileName: 'banner.png' }
+                : { width: 512, height: 512, fileName: 'icon.png' }
+            }
+            busy={assetBusy?.key === crop.key && assetBusy.op === 'stage'}
+            onClose={() => setCrop(null)}
+            onConfirm={(file) => {
+              setCrop(null);
+              void stageUpload(crop.key, file);
+            }}
+          />
+        ) : null}
+
+        <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+          <h2 className="text-lg font-semibold">사이트 이미지</h2>
+          <p className="mt-2 text-xs muted">배너/아이콘을 업로드하여 적용할 수 있습니다. (적용 전에는 임시 업로드 상태입니다.)</p>
+
+          <input
+            ref={bannerInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) startCrop('banner', file);
+              e.currentTarget.value = '';
+            }}
+          />
+          <input
+            ref={iconInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) startCrop('icon', file);
+              e.currentTarget.value = '';
+            }}
+          />
+
+          <div className="mt-4 grid gap-5">
+            <div>
+              <div className="flex items-end justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold">배너</div>
+                  <div className="mt-1 text-xs muted-2">권장: 1600x600</div>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-xl btn-soft px-3 py-2 text-xs"
+                  onClick={() => bannerInputRef.current?.click()}
+                  disabled={!!assetBusy}
+                >
+                  새 이미지
+                </button>
+              </div>
+              <div className="mt-3 overflow-hidden rounded-2xl border border-[color:var(--border)] bg-black/20" style={{ aspectRatio: '8 / 3' }}>
+                <img
+                  src={stagedBanner?.publicUrl ?? cfg.banner_image_url ?? '/banner.png'}
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
+              </div>
+              {stagedBanner ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="rounded-2xl btn-bangul px-4 py-2 text-xs font-semibold disabled:opacity-60"
+                    onClick={() => void commitStage('banner')}
+                    disabled={assetBusy?.key === 'banner'}
+                  >
+                    {assetBusy?.key === 'banner' && assetBusy.op === 'commit' ? '적용 중…' : '적용'}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-xl btn-soft px-3 py-2 text-xs disabled:opacity-60"
+                    onClick={() => void cancelStage('banner')}
+                    disabled={assetBusy?.key === 'banner'}
+                  >
+                    {assetBusy?.key === 'banner' && assetBusy.op === 'cancel' ? '취소 중…' : '취소'}
+                  </button>
+                  <span className="text-xs muted">임시 업로드 상태입니다.</span>
+                </div>
+              ) : null}
+            </div>
+
+            <div>
+              <div className="flex items-end justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold">아이콘</div>
+                  <div className="mt-1 text-xs muted-2">권장: 512x512</div>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-xl btn-soft px-3 py-2 text-xs"
+                  onClick={() => iconInputRef.current?.click()}
+                  disabled={!!assetBusy}
+                >
+                  새 이미지
+                </button>
+              </div>
+              <div className="mt-3 flex items-center gap-4">
+                <div className="h-16 w-16 overflow-hidden rounded-2xl border border-[color:var(--border)] bg-black/20">
+                  <img
+                    src={stagedIcon?.publicUrl ?? cfg.icon_image_url ?? '/icon.jpg'}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              <div className="text-xs muted">내비바/메타데이터에 반영됩니다.</div>
+              </div>
+              {stagedIcon ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="rounded-2xl btn-bangul px-4 py-2 text-xs font-semibold disabled:opacity-60"
+                    onClick={() => void commitStage('icon')}
+                    disabled={assetBusy?.key === 'icon'}
+                  >
+                    {assetBusy?.key === 'icon' && assetBusy.op === 'commit' ? '적용 중…' : '적용'}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-xl btn-soft px-3 py-2 text-xs disabled:opacity-60"
+                    onClick={() => void cancelStage('icon')}
+                    disabled={assetBusy?.key === 'icon'}
+                  >
+                    {assetBusy?.key === 'icon' && assetBusy.op === 'cancel' ? '취소 중…' : '취소'}
+                  </button>
+                  <span className="text-xs muted">임시 업로드 상태입니다.</span>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </section>
+
+      <section className="mt-8 max-w-2xl rounded-3xl card-glass p-6">
+        <h2 className="text-lg font-semibold">서버 소개</h2>
+        <p className="mt-2 text-xs muted">메인 페이지 배너 아래에 표시됩니다.</p>
+        <textarea
+          className="mt-3 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)] placeholder:text-[color:var(--muted-2)]"
+          rows={10}
+          value={cfg.server_intro ?? ''}
+          onChange={(e) => setCfg({ ...cfg, server_intro: e.target.value })}
+          placeholder="서버 소개를 입력해 주세요"
+        />
+        <div className="mt-4 rounded-2xl border border-[color:var(--border)] bg-white/40 p-4">
+          <div className="text-xs font-semibold">미리보기</div>
+          {cfg.server_intro ? (
+            <div className="mt-2">
+              <MarkdownPreview content={cfg.server_intro} />
+            </div>
+          ) : (
+            <div className="mt-2 text-sm muted">—</div>
+          )}
+        </div>
+      </section>
+
+      <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+        <h2 className="text-lg font-semibold">입장 메시지</h2>
+        <label className="mt-3 block text-sm muted">채널</label>
+        <div className="relative mt-1">
+          <select
+            className="w-full appearance-none rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 pr-10 text-sm text-[color:var(--fg)]"
+            value={cfg.join_message_channel_id ?? ''}
+            onChange={(e) => setCfg({ ...cfg, join_message_channel_id: e.target.value || null })}
+          >
+            <option value="">(사용 안 함)</option>
+            {channels.map((c) => (
+              <option key={c.id} value={c.id}>
+                #{c.name}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--muted-2)]"
+            aria-hidden="true"
+            strokeWidth={2}
+          />
+        </div>
+        <label className="mt-3 block text-sm muted">템플릿</label>
+        <textarea
+          className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)] placeholder:text-[color:var(--muted-2)]"
+          rows={4}
+          value={cfg.join_message_template ?? ''}
+          onChange={(e) => setCfg({ ...cfg, join_message_template: e.target.value || null })}
+          placeholder="{user}님, 방울냥 서버에 오신 걸 환영해!"
+        />
+        <p className="mt-2 text-xs muted-2">사용 가능: {'{user}'} {'{username}'} {'{server}'}</p>
+      </section>
+
+      <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+        <h2 className="text-lg font-semibold">채팅 보상</h2>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm">
+            주기당 포인트
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              value={cfg.reward_points_per_interval}
+              onChange={(e) => setCfg({ ...cfg, reward_points_per_interval: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            주기(초)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              value={cfg.reward_interval_seconds}
+              onChange={(e) => setCfg({ ...cfg, reward_interval_seconds: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            일일 상한(비우면 무제한)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              value={cfg.reward_daily_cap_points ?? ''}
+              onChange={(e) =>
+                setCfg({
+                  ...cfg,
+                  reward_daily_cap_points: e.target.value === '' ? null : Number(e.target.value)
+                })
+              }
+            />
+          </label>
+          <label className="text-sm">
+            최소 글자 수
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              value={cfg.reward_min_message_length}
+              onChange={(e) => setCfg({ ...cfg, reward_min_message_length: Number(e.target.value) })}
+            />
+          </label>
+        </div>
+      </section>
+
+      <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+        <h2 className="text-lg font-semibold">보상 채널(화이트리스트)</h2>
+        <p className="mt-2 text-xs muted">선택된 채널에서만 채팅 보상이 적립됩니다.</p>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <label className="text-sm">
+            <span className="sr-only">채널 검색</span>
+            <input
+              className="w-[min(28rem,100%)] rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)] placeholder:text-[color:var(--muted-2)]"
+              value={rewardSearch}
+              onChange={(e) => setRewardSearch(e.target.value)}
+              placeholder="채널 이름/ID로 검색"
+            />
+          </label>
+          <div className="text-xs muted">
+            선택: {rewardChannels.length}개 / 전체: {channels.length}개
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button type="button" className="rounded-xl btn-soft px-3 py-2 text-xs" onClick={selectAllFiltered}>
+            필터된 채널 모두 선택
+          </button>
+          <button type="button" className="rounded-xl btn-soft px-3 py-2 text-xs" onClick={clearFiltered}>
+            필터된 채널 모두 해제
+          </button>
+          <button
+            type="button"
+            className="rounded-xl btn-soft px-3 py-2 text-xs disabled:opacity-60"
+            onClick={revertRewardChannels}
+            disabled={!rewardDirty || rewardSaving}
+          >
+            되돌리기
+          </button>
+          <button
+            type="button"
+            className="rounded-2xl btn-bangul px-4 py-2 text-xs font-semibold disabled:opacity-60"
+            onClick={() => void saveRewardChannels()}
+            disabled={!rewardDirty || rewardSaving}
+          >
+            {rewardSaving ? '저장 중…' : '저장'}
+          </button>
+        </div>
+
+        <div className="mt-4 max-h-[360px] overflow-auto rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-2">
+          <div className="grid gap-1">
+            {filteredRewardChannels.map((c) => {
+              const enabled = rewardChannelSet.has(c.id);
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={`flex items-center justify-between gap-3 rounded-2xl border px-3 py-2 text-left transition ${
+                    enabled
+                      ? 'border-[color:var(--border)] bg-[color:var(--card)]'
+                      : 'border-transparent bg-[color:var(--chip)]'
+                  }`}
+                  onClick={() => toggleRewardChannel(c.id)}
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm text-[color:var(--fg)]">#{c.name}</div>
+                    <div className="truncate text-[11px] muted-2">{c.id}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs ${enabled ? 'text-[color:var(--fg)]' : 'muted'}`}>{enabled ? '허용' : '미허용'}</span>
+                    <span
+                      className={`inline-flex h-6 w-6 items-center justify-center rounded-xl border ${
+                        enabled
+                          ? 'border-[color:var(--border)] bg-[color:var(--chip)]'
+                          : 'border-[color:var(--border)] bg-transparent'
+                      }`}
+                      aria-hidden="true"
+                    >
+                      {enabled ? <Check className="h-4 w-4" strokeWidth={2.2} /> : null}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      <div className="sticky bottom-6 z-10 mt-10 flex justify-end">
+        <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--card)]/80 backdrop-blur px-3 py-3 shadow-[0_18px_46px_rgba(0,0,0,0.12)]">
+          <button
+            type="button"
+            className="rounded-2xl btn-bangul px-5 py-3 text-sm font-semibold disabled:opacity-60"
+            disabled={saving}
+            onClick={() => void saveConfig()}
+          >
+            {saving ? '저장 중…' : '저장'}
+          </button>
+        </div>
+      </div>
+      </div>
+    </main>
+  );
+}

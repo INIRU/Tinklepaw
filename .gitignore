@@ -1,0 +1,8 @@
+.env
+.env.*
+.DS_Store
+.sisyphus
+screenshots/
+node_modules/
+.next/
+dist/

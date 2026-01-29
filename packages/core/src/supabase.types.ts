@@ -1,0 +1,364 @@
+// Minimal Supabase Database types for this repo.
+// If you prefer fully generated types, run:
+//   npx supabase gen types typescript --project-id <ref> > packages/core/src/supabase.types.ts
+
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
+
+export type Database = {
+  nyang: {
+    Tables: {
+      app_config: {
+        Row: {
+          id: number;
+          guild_id: string;
+          admin_role_ids: string[];
+          join_message_template: string | null;
+          join_message_channel_id: string | null;
+          music_command_channel_id: string | null;
+          music_setup_embed_title: string | null;
+          music_setup_embed_description: string | null;
+          music_setup_embed_fields: Json | null;
+          music_setup_message_id: string | null;
+          reward_points_per_interval: number;
+          reward_interval_seconds: number;
+          reward_daily_cap_points: number | null;
+          reward_min_message_length: number;
+          server_intro: string | null;
+          banner_image_url: string | null;
+          icon_image_url: string | null;
+          reward_emoji_enabled: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database['nyang']['Tables']['app_config']['Row']> & {
+          id: number;
+          guild_id: string;
+        };
+        Update: Partial<Database['nyang']['Tables']['app_config']['Row']>;
+        Relationships: [];
+      };
+      music_control_jobs: {
+        Row: {
+          job_id: string;
+          guild_id: string;
+          action: string;
+          payload: Json;
+          status: string;
+          requested_by: string | null;
+          error_message: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database['nyang']['Tables']['music_control_jobs']['Row']> & {
+          guild_id: string;
+          action: string;
+        };
+        Update: Partial<Database['nyang']['Tables']['music_control_jobs']['Row']>;
+        Relationships: [];
+      };
+      music_control_logs: {
+        Row: {
+          log_id: string;
+          guild_id: string;
+          action: string;
+          status: string;
+          message: string | null;
+          payload: Json;
+          requested_by: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database['nyang']['Tables']['music_control_logs']['Row']> & {
+          guild_id: string;
+          action: string;
+          status: string;
+        };
+        Update: Partial<Database['nyang']['Tables']['music_control_logs']['Row']>;
+        Relationships: [];
+      };
+      music_state: {
+        Row: {
+          guild_id: string;
+          current_track: Json | null;
+          queue: Json | null;
+          updated_at: string;
+        };
+        Insert: Partial<Database['nyang']['Tables']['music_state']['Row']> & { guild_id: string };
+        Update: Partial<Database['nyang']['Tables']['music_state']['Row']>;
+        Relationships: [];
+      };
+      reward_channels: {
+        Row: {
+          channel_id: string;
+          enabled: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database['nyang']['Tables']['reward_channels']['Row']> & { channel_id: string };
+        Update: Partial<Database['nyang']['Tables']['reward_channels']['Row']>;
+        Relationships: [];
+      };
+      users: {
+        Row: {
+          discord_user_id: string;
+          created_at: string;
+          last_seen_at: string | null;
+        };
+        Insert: Partial<Database['nyang']['Tables']['users']['Row']> & { discord_user_id: string };
+        Update: Partial<Database['nyang']['Tables']['users']['Row']>;
+        Relationships: [];
+      };
+      point_balances: {
+        Row: {
+          discord_user_id: string;
+          balance: number;
+          updated_at: string;
+        };
+        Insert: Partial<Database['nyang']['Tables']['point_balances']['Row']> & { discord_user_id: string };
+        Update: Partial<Database['nyang']['Tables']['point_balances']['Row']>;
+        Relationships: [];
+      };
+      point_events: {
+        Row: {
+          id: string;
+          discord_user_id: string;
+          kind: string;
+          amount: number;
+          idempotency_key: string | null;
+          meta: Json;
+          created_at: string;
+        };
+        Insert: Partial<Database['nyang']['Tables']['point_events']['Row']> & {
+          discord_user_id: string;
+          kind: string;
+          amount: number;
+        };
+        Update: Partial<Database['nyang']['Tables']['point_events']['Row']>;
+        Relationships: [];
+      };
+      items: {
+        Row: {
+          item_id: string;
+          name: string;
+          rarity: Database['nyang']['Enums']['gacha_rarity'];
+          discord_role_id: string | null;
+          is_active: boolean;
+          is_equippable: boolean;
+          duplicate_refund_points: number;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database['nyang']['Tables']['items']['Row']> & { name: string; rarity: string };
+        Update: Partial<Database['nyang']['Tables']['items']['Row']>;
+        Relationships: [];
+      };
+      gacha_pools: {
+        Row: {
+          pool_id: string;
+          name: string;
+          kind: Database['nyang']['Enums']['gacha_pool_kind'];
+          is_active: boolean;
+          banner_image_url: string | null;
+          cost_points: number;
+          paid_pull_cooldown_seconds: number;
+          free_pull_interval_seconds: number | null;
+          rate_r: number;
+          rate_s: number;
+          rate_ss: number;
+          rate_sss: number;
+          pity_threshold: number | null;
+          pity_rarity: Database['nyang']['Enums']['gacha_rarity'] | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database['nyang']['Tables']['gacha_pools']['Row']> & { name: string };
+        Update: Partial<Database['nyang']['Tables']['gacha_pools']['Row']>;
+        Relationships: [];
+      };
+      gacha_pool_items: {
+        Row: {
+          pool_id: string;
+          item_id: string;
+          weight: number;
+        };
+        Insert: Database['nyang']['Tables']['gacha_pool_items']['Row'];
+        Update: Partial<Database['nyang']['Tables']['gacha_pool_items']['Row']>;
+        Relationships: [];
+      };
+      gacha_user_state: {
+        Row: {
+          discord_user_id: string;
+          pool_id: string;
+          pity_counter: number;
+          free_available_at: string | null;
+          paid_available_at: string | null;
+          updated_at: string;
+        };
+        Insert: Database['nyang']['Tables']['gacha_user_state']['Row'];
+        Update: Partial<Database['nyang']['Tables']['gacha_user_state']['Row']>;
+        Relationships: [];
+      };
+      gacha_pulls: {
+        Row: {
+          pull_id: string;
+          discord_user_id: string;
+          pool_id: string;
+          is_free: boolean;
+          spent_points: number;
+          created_at: string;
+        };
+        Insert: Partial<Database['nyang']['Tables']['gacha_pulls']['Row']> & { discord_user_id: string; pool_id: string };
+        Update: Partial<Database['nyang']['Tables']['gacha_pulls']['Row']>;
+        Relationships: [];
+      };
+      gacha_pull_results: {
+        Row: {
+          pull_id: string;
+          item_id: string;
+          qty: number;
+        };
+        Insert: Database['nyang']['Tables']['gacha_pull_results']['Row'];
+        Update: Partial<Database['nyang']['Tables']['gacha_pull_results']['Row']>;
+        Relationships: [];
+      };
+      inventory: {
+        Row: {
+          discord_user_id: string;
+          item_id: string;
+          qty: number;
+          updated_at: string;
+        };
+        Insert: Partial<Database['nyang']['Tables']['inventory']['Row']> & { discord_user_id: string; item_id: string };
+        Update: Partial<Database['nyang']['Tables']['inventory']['Row']>;
+        Relationships: [];
+      };
+      equipped: {
+        Row: {
+          discord_user_id: string;
+          item_id: string | null;
+          updated_at: string;
+        };
+        Insert: Partial<Database['nyang']['Tables']['equipped']['Row']> & { discord_user_id: string };
+        Update: Partial<Database['nyang']['Tables']['equipped']['Row']>;
+        Relationships: [];
+      };
+      role_sync_jobs: {
+        Row: {
+          job_id: string;
+          discord_user_id: string;
+          add_role_id: string | null;
+          remove_role_id: string | null;
+          reason: string;
+          status: Database['nyang']['Enums']['role_sync_job_status'];
+          attempts: number;
+          last_error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database['nyang']['Tables']['role_sync_jobs']['Row']> & { discord_user_id: string };
+        Update: Partial<Database['nyang']['Tables']['role_sync_jobs']['Row']>;
+        Relationships: [];
+      };
+      notifications: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          content: string;
+          type: 'info' | 'warning' | 'success' | 'error';
+          is_read: boolean;
+          created_at: string;
+          expires_at: string | null;
+          metadata: Json | null;
+          reward_points: number;
+          reward_item_id: string | null;
+          reward_item_qty: number;
+          is_reward_claimed: boolean;
+        };
+        Insert: Partial<Database['nyang']['Tables']['notifications']['Row']> & { 
+          user_id: string;
+          title: string;
+          content: string;
+          type: 'info' | 'warning' | 'success' | 'error';
+        };
+        Update: Partial<Database['nyang']['Tables']['notifications']['Row']>;
+        Relationships: [
+          {
+            foreignKeyName: "notifications_reward_item_id_fkey"
+            columns: ["reward_item_id"]
+            referencedRelation: "items"
+            referencedColumns: ["item_id"]
+          }
+        ];
+      };
+    };
+    Views: Record<string, never>;
+    Functions: {
+      claim_notification_reward: {
+        Args: {
+          p_notification_id: string;
+          p_user_id: string;
+        };
+        Returns: Json;
+      };
+      ensure_user: {
+        Args: { p_discord_user_id: string };
+        Returns: undefined;
+      };
+      admin_adjust_points: {
+        Args: { p_discord_user_id: string; p_amount: number; p_reason?: string };
+        Returns: number;
+      };
+      perform_gacha_draw: {
+        Args: { p_discord_user_id: string; p_pool_id?: string | null };
+        Returns: Array<{
+          item_id: string;
+          name: string;
+          rarity: Database['nyang']['Enums']['gacha_rarity'];
+          discord_role_id: string | null;
+          is_free: boolean;
+          refund_points: number;
+          new_balance: number;
+        }>;
+      };
+      set_equipped_item: {
+        Args: { p_discord_user_id: string; p_item_id: string | null };
+        Returns: Array<{
+          previous_item_id: string | null;
+          new_item_id: string | null;
+          previous_role_id: string | null;
+          new_role_id: string | null;
+        }>;
+      };
+      grant_chat_points: {
+        Args: {
+          p_discord_user_id: string;
+          p_channel_id: string;
+          p_message_length: number;
+          p_message_ts: string;
+          p_message_id?: string | null;
+        };
+        Returns: Array<{ granted_points: number; new_balance: number }>;
+      };
+    };
+    Enums: {
+      role_sync_job_status: 'pending' | 'running' | 'succeeded' | 'failed';
+      gacha_pool_kind: 'permanent' | 'limited';
+      gacha_rarity: 'R' | 'S' | 'SS' | 'SSS';
+    };
+    CompositeTypes: Record<string, never>;
+  };
+  public: {
+    Tables: Record<string, never>;
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
+  };
+};
