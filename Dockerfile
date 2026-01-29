@@ -35,7 +35,7 @@ RUN npm run build
 
 # 6. Build Bot
 WORKDIR /app/apps/bot
-RUN npx tsc
+RUN npm run build
 
 # --- Runtime Stage ---
 FROM node:20-alpine AS runtime
