@@ -5,6 +5,7 @@ import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } 
 import { CSS } from '@dnd-kit/utilities';
 import { Pause, Play, RefreshCw, SkipBack, SkipForward, Square, ListMusic, GripVertical, CheckCircle, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 
 type MusicTrack = {
@@ -76,6 +77,7 @@ export default function MusicControlClient() {
   const [logs, setLogs] = useState<MusicLog[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [query, setQuery] = useState('');
+  const [mounted, setMounted] = useState(false);
   const [feedback, setFeedback] = useState<{ open: boolean; title: string; message: string; kind: 'success' | 'error' }>({
     open: false,
     title: '',
@@ -84,7 +86,10 @@ export default function MusicControlClient() {
   });
   const feedbackTimer = useRef<number | null>(null);
 
+  const current = state?.current_track;
   const queue: MusicTrack[] = state?.queue ?? [];
+  const canAdd = Boolean(current);
+  const canSkip = Boolean(current) && queue.length > 0;
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -114,6 +119,10 @@ export default function MusicControlClient() {
     refreshAll();
     const interval = setInterval(fetchState, 5000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    setMounted(true);
   }, []);
 
   useEffect(() => () => {
@@ -174,6 +183,10 @@ export default function MusicControlClient() {
   const submitAdd = async () => {
     const trimmed = query.trim();
     if (!trimmed) return;
+    if (!canAdd) {
+      showFeedback('error', '추가 불가', '현재 재생 중인 곡이 없어서 노래를 추가할 수 없습니다.');
+      return;
+    }
     const result = await sendControl('add', { query: trimmed });
     if (result.ok) showFeedback('success', '추가 완료', '대기열에 추가했어요.');
     else showFeedback('error', '추가 실패', result.error ?? '요청 실패');
@@ -200,7 +213,6 @@ export default function MusicControlClient() {
       .catch(() => null);
   };
 
-  const current = state?.current_track;
   const currentDuration = useMemo(() => formatDuration(current?.length), [current?.length]);
 
   return (
@@ -248,13 +260,15 @@ export default function MusicControlClient() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') submitAdd();
                 }}
-                placeholder="노래 제목 또는 URL을 입력하세요"
-                className="flex-1 rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-[color:var(--accent-pink)]/20"
+                disabled={!canAdd}
+                placeholder={canAdd ? '노래 제목 또는 URL을 입력하세요' : '재생 중인 곡이 없어서 추가할 수 없어요'}
+                className="flex-1 rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-[color:var(--accent-pink)]/20 disabled:cursor-not-allowed disabled:opacity-60"
               />
               <button
                 type="button"
                 onClick={submitAdd}
-                className="rounded-2xl border border-[color:var(--border)] px-4 py-2 text-sm font-semibold hover:bg-[color:var(--chip)]"
+                disabled={!canAdd}
+                className="rounded-2xl border border-[color:var(--border)] px-4 py-2 text-sm font-semibold hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
               >
                 노래 추가
               </button>
@@ -292,7 +306,8 @@ export default function MusicControlClient() {
               <button
                 type="button"
                 onClick={() => runAction('skip', '다음 곡으로 이동했어요.')}
-                className="rounded-2xl border border-[color:var(--border)] py-3 hover:bg-[color:var(--chip)]"
+                disabled={!canSkip}
+                className="rounded-2xl border border-[color:var(--border)] py-3 hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
               >
                 <SkipForward className="w-5 h-5 mx-auto" />
               </button>
@@ -349,27 +364,29 @@ export default function MusicControlClient() {
         </section>
       </div>
 
-      {feedback.open && (
-        <div className="fixed inset-0 z-[60] flex h-screen w-screen items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="relative w-full max-w-sm rounded-[32px] border border-[color:var(--border)] bg-[color:var(--card)] p-8 text-center shadow-2xl">
-            <div
-              className={`mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-3xl border shadow-[0_0_40px_rgba(16,185,129,0.15)] ${
-                feedback.kind === 'success'
-                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
-                  : 'bg-rose-500/10 border-rose-500/20 text-rose-500'
-              }`}
-            >
-              {feedback.kind === 'success' ? (
-                <CheckCircle className="h-10 w-10" strokeWidth={1.5} />
-              ) : (
-                <XCircle className="h-10 w-10" strokeWidth={1.5} />
-              )}
+      {feedback.open && mounted &&
+        createPortal(
+          <div className="fixed inset-0 z-[60] flex h-screen w-screen items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="relative w-full max-w-sm rounded-[32px] border border-[color:var(--border)] bg-[color:var(--card)] p-8 text-center shadow-2xl">
+              <div
+                className={`mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-3xl border shadow-[0_0_40px_rgba(16,185,129,0.15)] ${
+                  feedback.kind === 'success'
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
+                    : 'bg-rose-500/10 border-rose-500/20 text-rose-500'
+                }`}
+              >
+                {feedback.kind === 'success' ? (
+                  <CheckCircle className="h-10 w-10" strokeWidth={1.5} />
+                ) : (
+                  <XCircle className="h-10 w-10" strokeWidth={1.5} />
+                )}
+              </div>
+              <h2 className="text-2xl font-bold font-bangul text-[color:var(--fg)] mb-2">{feedback.title}</h2>
+              <p className="text-sm text-[color:var(--muted)] leading-relaxed">{feedback.message}</p>
             </div>
-            <h2 className="text-2xl font-bold font-bangul text-[color:var(--fg)] mb-2">{feedback.title}</h2>
-            <p className="text-sm text-[color:var(--muted)] leading-relaxed">{feedback.message}</p>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

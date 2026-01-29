@@ -3,7 +3,7 @@ import type { KazagumoPlayer } from 'kazagumo';
 
 import { getBotContext } from '../context.js';
 import { getAppConfig } from '../services/config.js';
-import { getMusic, updateMusicSetupMessage, updateMusicState } from '../services/music.js';
+import { clearMusicState, getMusic, updateMusicSetupMessage, updateMusicState } from '../services/music.js';
 
 type MusicControlJob = {
   job_id: string;
@@ -39,6 +39,12 @@ const handleJob = async (job: MusicControlJob) => {
   const music = getMusic();
   const player = music.players.get(job.guild_id);
   if (!player) {
+    if (job.action === 'stop') {
+      await clearMusicState(job.guild_id).catch(() => {});
+      await logAction(job, 'success', 'No active player for guild (state cleared)');
+      return;
+    }
+
     await logAction(job, 'failed', 'No active player for guild');
     return;
   }
@@ -55,6 +61,8 @@ const handleJob = async (job: MusicControlJob) => {
       break;
     case 'stop':
       player.destroy();
+      updateMusicSetupMessage(player, null).catch(() => {});
+      clearMusicState(job.guild_id).catch(() => {});
       await logAction(job, 'success', 'Playback stopped');
       break;
     case 'skip':
@@ -139,11 +147,15 @@ export function startMusicControlWorker() {
       if (!jobs?.length) return;
 
       for (const job of jobs as MusicControlJob[]) {
-        await ctx.supabase
+        const claimAt = new Date().toISOString();
+        const { data: claimed, error: claimError } = await ctx.supabase
           .from('music_control_jobs')
-          .update({ status: 'running', updated_at: new Date().toISOString() })
+          .update({ status: 'running', updated_at: claimAt })
           .eq('job_id', job.job_id)
-          .eq('status', 'pending');
+          .eq('status', 'pending')
+          .select('job_id');
+
+        if (claimError || !claimed?.length) continue;
 
         try {
           await handleJob(job);
@@ -158,6 +170,8 @@ export function startMusicControlWorker() {
             .update({ status: 'failed', updated_at: new Date().toISOString(), error_message: msg })
             .eq('job_id', job.job_id);
           await logAction(job, 'failed', msg);
+        } finally {
+          await ctx.supabase.from('music_control_jobs').delete().eq('job_id', job.job_id);
         }
       }
     } finally {

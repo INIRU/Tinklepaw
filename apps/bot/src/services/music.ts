@@ -68,7 +68,7 @@ export const updateMusicSetupMessage = async (
   const message = await channel.messages.fetch(config.music_setup_message_id).catch(() => null);
   if (!message) return;
 
-  const current = trackOverride ?? player.queue.current;
+  const current = trackOverride === undefined ? player.queue.current : trackOverride;
 
   const embed = buildMusicSetupEmbed(config, config.music_command_channel_id);
   const rows = buildMusicSetupRows();
@@ -116,6 +116,16 @@ export const updateMusicState = async (player: { guildId: string; queue: { curre
     guild_id: player.guildId,
     current_track: current,
     queue,
+    updated_at: new Date().toISOString()
+  });
+};
+
+export const clearMusicState = async (guildId: string) => {
+  const ctx = getBotContext();
+  await ctx.supabase.from('music_state').upsert({
+    guild_id: guildId,
+    current_track: null,
+    queue: [],
     updated_at: new Date().toISOString()
   });
 };
@@ -177,7 +187,7 @@ export const initMusic = (client: Client, env: Env): Kazagumo => {
   musicInstance.on('playerDestroy', (player) => {
     console.log('[Music] playerDestroy', { guildId: player.guildId, voiceId: player.voiceId, textId: player.textId });
     updateMusicSetupMessage(player, null).catch(() => {});
-    updateMusicState(player).catch(() => {});
+    clearMusicState(player.guildId).catch(() => {});
   });
 
   musicInstance.on('playerClosed', (player, data) => {
@@ -194,7 +204,7 @@ export const initMusic = (client: Client, env: Env): Kazagumo => {
 
   musicInstance.on('playerEmpty', (player) => {
     updateMusicSetupMessage(player, null).catch(() => {});
-    updateMusicState(player).catch(() => {});
+    clearMusicState(player.guildId).catch(() => {});
     const channel = player.voiceId ? client.channels.cache.get(player.voiceId) : null;
     if (channel && channel.isVoiceBased()) {
       const nonBotCount = channel.members.filter((member) => !member.user.bot).size;

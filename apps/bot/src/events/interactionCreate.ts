@@ -5,7 +5,7 @@ import { commands } from '../commands/index.js';
 import { handleError } from '../errorHandler.js';
 import { getBotContext } from '../context.js';
 import { getAppConfig } from '../services/config.js';
-import { formatDuration, getMusic, getNodeStatus, updateMusicSetupMessage } from '../services/music.js';
+import { clearMusicState, formatDuration, getMusic, getNodeStatus, updateMusicSetupMessage } from '../services/music.js';
 
 import type { SlashCommand } from '../commands/types.js';
 
@@ -568,6 +568,8 @@ export function registerInteractionCreate(client: Client) {
 
         if (interaction.customId === 'music_stop') {
           player.destroy();
+          updateMusicSetupMessage(player, null).catch(() => {});
+          clearMusicState(player.guildId).catch(() => {});
           await interaction.reply({ embeds: [buildMusicStatusEmbed('⏹️ 정지', '재생을 중지했어요.')], ephemeral: true });
           return;
         }
