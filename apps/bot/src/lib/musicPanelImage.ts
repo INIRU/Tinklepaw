@@ -1,6 +1,7 @@
-import { createCanvas, loadImage } from 'canvas';
+import { createCanvas, loadImage, registerFont } from 'canvas';
 import type { CanvasRenderingContext2D, Image } from 'canvas';
 import { AttachmentBuilder } from 'discord.js';
+import { fileURLToPath } from 'url';
 
 import { formatDuration } from '../services/music.js';
 
@@ -25,6 +26,11 @@ const canvasHeight = 480;
 const panelPadding = 32;
 const artSize = 240;
 const queueThumbSize = 44;
+const fontFamily = 'Pretendard, sans-serif';
+
+const fontPath = fileURLToPath(new URL('../assets/fonts/Pretendard-Regular.ttf', import.meta.url));
+registerFont(fontPath, { family: 'Pretendard', weight: '400' });
+registerFont(fontPath, { family: 'Pretendard', weight: '600' });
 
 const drawRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) => {
   ctx.beginPath();
@@ -159,7 +165,7 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
   const availableHeight = Math.max(0, maxTextBottom - titleStartY);
   const maxLinesBySpace = Math.max(1, Math.min(maxTitleLines, Math.floor((availableHeight - (artistLineHeight + artistGap)) / titleLineHeight)));
 
-  ctx.font = '600 18px sans-serif';
+  ctx.font = `600 18px ${fontFamily}`;
   const titleLines = wrapTextLines(ctx, params.title, textMaxWidth, maxLinesBySpace);
   const textCenterX = leftPanelX + leftPanelWidth / 2;
 
@@ -172,7 +178,7 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
   const artistText = truncateText(ctx, params.artist ?? '알 수 없음', textMaxWidth);
   const artistY = titleStartY + titleLines.length * titleLineHeight + artistGap;
   ctx.fillStyle = '#b6b9c6';
-  ctx.font = '12px sans-serif';
+  ctx.font = `12px ${fontFamily}`;
   ctx.fillText(artistText, textCenterX, artistY);
 
   const elapsed = formatDuration(params.positionMs ?? 0);
@@ -190,7 +196,7 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
   ctx.fill();
 
   ctx.fillStyle = '#cbd5f5';
-  ctx.font = '11px sans-serif';
+  ctx.font = `11px ${fontFamily}`;
   ctx.textAlign = 'left';
   ctx.fillText(elapsed, barX, barY + 20);
   ctx.textAlign = 'right';
@@ -202,13 +208,13 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
   const queueWidth = canvasWidth - queueX - panelPadding - 20;
 
   ctx.fillStyle = '#f5f5f9';
-  ctx.font = '600 16px sans-serif';
+  ctx.font = `600 16px ${fontFamily}`;
   ctx.fillText('대기열', queueX, queueY);
 
   const list = params.queue.slice(0, 4);
   if (list.length === 0) {
     ctx.fillStyle = '#9ca3af';
-    ctx.font = '12px sans-serif';
+    ctx.font = `12px ${fontFamily}`;
     ctx.fillText('대기열이 비어있어요.', queueX, queueY + 24);
   } else {
     let y = queueY + 22;
@@ -239,15 +245,15 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
       const titleX = thumbX + queueThumbSize + 12;
       const titleWidth = queueWidth - (titleX - queueX) - 58;
       ctx.fillStyle = '#f3f4f6';
-      ctx.font = '600 13px sans-serif';
+      ctx.font = `600 13px ${fontFamily}`;
       ctx.fillText(truncateText(ctx, track.title, titleWidth), titleX, y + 26);
       ctx.fillStyle = '#a6a9b8';
-      ctx.font = '11px sans-serif';
+      ctx.font = `11px ${fontFamily}`;
       ctx.fillText(truncateText(ctx, track.author ?? '알 수 없음', titleWidth), titleX, y + 44);
 
       const duration = formatDuration(track.length ?? 0);
       ctx.fillStyle = '#d1d5db';
-      ctx.font = '11px sans-serif';
+      ctx.font = `11px ${fontFamily}`;
       const durationWidth = ctx.measureText(duration).width;
       ctx.fillText(duration, queueX + queueWidth - durationWidth - 14, y + 26);
 

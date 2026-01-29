@@ -42,6 +42,11 @@ const formatDuration = (ms?: number | null) => {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 };
 
+const truncateText = (value: string, maxLength: number) => {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 1)}…`;
+};
+
 const QueueRow = ({ track }: { track: MusicTrack }) => {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: track.id });
   const style = {
@@ -58,8 +63,8 @@ const QueueRow = ({ track }: { track: MusicTrack }) => {
         {track.thumbnail && <img src={track.thumbnail} alt="" className="w-full h-full object-cover" />}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold truncate">{track.title}</div>
-        <div className="text-xs muted truncate">{track.author}</div>
+        <div className="text-sm font-semibold truncate">{truncateText(track.title, 44)}</div>
+        <div className="text-xs muted truncate">{truncateText(track.author, 34)}</div>
       </div>
       <div className="text-xs muted">{formatDuration(track.length)}</div>
     </div>
@@ -227,8 +232,10 @@ export default function MusicControlClient() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm muted">현재 재생</div>
-                <div className="text-lg font-semibold truncate">{current?.title ?? '재생 중인 곡이 없습니다.'}</div>
-                <div className="text-xs muted truncate">{current?.author ?? '-'}</div>
+                <div className="text-lg font-semibold truncate">
+                  {current?.title ? truncateText(current.title, 46) : '재생 중인 곡이 없습니다.'}
+                </div>
+                <div className="text-xs muted truncate">{current?.author ? truncateText(current.author, 34) : '-'}</div>
                 <div className="text-xs muted mt-1">{currentDuration}</div>
               </div>
             </div>
@@ -327,7 +334,9 @@ export default function MusicControlClient() {
                   </div>
                   <div className="min-w-0">
                     <div className="text-sm font-semibold truncate">{log.action}</div>
-                    <div className="text-xs muted truncate">{log.message ?? log.status}</div>
+                    <div className="text-xs muted truncate">
+                      {log.message ? truncateText(log.message, 60) : log.status}
+                    </div>
                     <div className="text-[11px] muted truncate">
                       {log.requested_by_user ? `${log.requested_by_user.name} · ${log.requested_by_user.id}` : 'system'}
                     </div>
