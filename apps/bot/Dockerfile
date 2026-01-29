@@ -25,10 +25,11 @@ COPY ../../packages/core/src ./packages/core/src
 RUN npm install
 
 # Copy bot source code
+COPY tsconfig.json ./
 COPY src ./src
 
 # Build TypeScript
-RUN npx tsc
+RUN npm run build
 
 # Stage 2: Production
 FROM node:20-alpine AS runtime

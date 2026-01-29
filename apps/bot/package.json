@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node -e \"const fs = require('node:fs'); if (fs.existsSync('src/assets')) { fs.cpSync('src/assets', 'dist/assets', { recursive: true, force: true }); }\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint ."
   },
