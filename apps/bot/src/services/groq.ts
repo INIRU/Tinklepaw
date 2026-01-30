@@ -11,7 +11,6 @@ export type Intent =
   | { action: 'unequip' }
   | { action: 'game_rps' }
   | { action: 'game_wordchain' }
-  | { action: 'topics' }
   | { action: 'points' };
 
 // JSON Schema for structured output
@@ -20,9 +19,9 @@ const jsonSchema = {
   properties: {
     action: {
       type: 'string',
-      enum: ['chat', 'draw', 'draw10', 'inventory', 'equip', 'unequip', 'game_rps', 'game_wordchain', 'topics', 'points'],
-      description: 'One of: chat, draw, draw10, inventory, equip, unequip, game_rps, game_wordchain, topics, points'
-    },
+    enum: ['chat', 'draw', 'draw10', 'inventory', 'equip', 'unequip', 'game_rps', 'game_wordchain', 'points'],
+    description: 'One of: chat, draw, draw10, inventory, equip, unequip, game_rps, game_wordchain, points'
+  },
     itemName: {
       type: 'string',
       description: 'For equip action, exact item name'
@@ -85,9 +84,8 @@ Decide if the user is asking to:
 - show inventory (action: inventory)
 - equip an item by exact name (action: equip, itemName: string)
 - unequip (action: unequip)
-- suggest conversation topics (action: topics)
-- check their points/currency balance (action: points)
-Otherwise, respond naturally as "Kuro" (action: chat, reply: string).
+ - check their points/currency balance (action: points)
+ Otherwise, respond naturally as "Kuro" (action: chat, reply: string).
 
 IMPORTANT: You MUST return a valid JSON object matching this schema:
 ${JSON.stringify(jsonSchema, null, 2)}`;
@@ -136,10 +134,8 @@ ${JSON.stringify(jsonSchema, null, 2)}`;
         return { action: 'game_rps' };
       case 'game_wordchain':
         return { action: 'game_wordchain' };
-      case 'topics':
-        return { action: 'topics' };
-      case 'points':
-        return { action: 'points' };
+    case 'points':
+      return { action: 'points' };
       case 'chat':
       default:
         return { action: 'chat', reply: parsed.reply ?? '그래.' };

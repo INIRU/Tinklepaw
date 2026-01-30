@@ -17,6 +17,7 @@ import { registerMessageCreate } from './events/messageCreate.js';
 import { startRoleSyncWorker } from './workers/roleSyncWorker.js';
 import { startMusicControlWorker } from './workers/musicControlWorker.js';
 import { initMusic } from './services/music.js';
+import { primeChannelCache } from './services/channelCache.js';
 
 const env = assertEnv(process.env);
 
@@ -37,9 +38,10 @@ setBotContext({ env, supabase });
 
 initMusic(client, env);
 
-client.once('ready', () => {
+client.once('ready', async () => {
   // eslint-disable-next-line no-console
   console.log(`Bot ready as ${client.user?.tag ?? 'unknown'}`);
+  await primeChannelCache(client, env.NYARU_GUILD_ID);
 });
 
 registerInteractionCreate(client);

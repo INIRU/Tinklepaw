@@ -11,7 +11,6 @@ export type Intent =
   | { action: 'unequip' }
   | { action: 'game_rps' }
   | { action: 'game_wordchain' }
-  | { action: 'topics' }
   | { action: 'points' };
 
 const schema: Schema = {
@@ -20,7 +19,7 @@ const schema: Schema = {
     action: {
       type: Type.STRING,
       description:
-        'One of: chat, draw, draw10, inventory, equip, unequip, game_rps, game_wordchain, topics, points'
+        'One of: chat, draw, draw10, inventory, equip, unequip, game_rps, game_wordchain, points'
     },
     itemName: {
       type: Type.STRING,
@@ -78,14 +77,13 @@ Decide if the user is asking to:
 - show inventory (action: inventory)
 - equip an item by exact name (action: equip, itemName: string)
 - unequip (action: unequip)
-- suggest conversation topics (action: topics)
-- check their points/currency balance (action: points)
-Otherwise, respond naturally as "Kuro" (action: chat, reply: string).
+ - check their points/currency balance (action: points)
+ Otherwise, respond naturally as "Kuro" (action: chat, reply: string).
 
 Return JSON with the schema.`;
 
   const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-2.5-flash-lite',
     contents: [
       ...history,
       { role: 'user', parts: [{ text: params.text }] }
@@ -128,8 +126,6 @@ Return JSON with the schema.`;
         return { action: 'game_rps' };
       case 'game_wordchain':
         return { action: 'game_wordchain' };
-      case 'topics':
-        return { action: 'topics' };
       case 'points':
         return { action: 'points' };
       case 'chat':
@@ -139,4 +135,67 @@ Return JSON with the schema.`;
   } catch {
     return null;
   }
+}
+
+const normalizeGeminiWord = (value: string | null | undefined) => {
+  if (!value) return '';
+  return value.replace(/[`"'\n\r]/g, '').trim();
+};
+
+const extractFirstKoreanWord = (value: string) => {
+  const match = value.match(/[가-힣]{2,6}/);
+  return match ? match[0] : '';
+};
+
+export async function getGeminiRpsChoice(): Promise<'가위' | '바위' | '보' | null> {
+  const ctx = getBotContext();
+  const apiKey = ctx.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+
+  const ai = new GoogleGenAI({ apiKey });
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash-lite',
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: '가위바위보에서 너는 뭘 낼래? "가위", "바위", "보" 중 하나만 한 단어로 답해.' }]
+      }
+    ]
+  });
+
+  const raw = normalizeGeminiWord(response.text);
+  if (raw.includes('가위')) return '가위';
+  if (raw.includes('바위')) return '바위';
+  if (raw.includes('보')) return '보';
+  return null;
+}
+
+export async function getGeminiWordChainNext(params: { lastWord: string; used: string[] }): Promise<string | null> {
+  const ctx = getBotContext();
+  const apiKey = ctx.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+
+  const lastChar = Array.from(params.lastWord).pop() ?? '';
+  const ai = new GoogleGenAI({ apiKey });
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash-lite',
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          {
+            text:
+              `끝말잇기야. 이전 단어: ${params.lastWord}. 마지막 글자: ${lastChar}. ` +
+              `이미 나온 단어: ${params.used.join(', ') || '없음'}. ` +
+              `위 조건을 만족하는 한국어 단어를 하나만 말해. 단어 외에는 아무것도 쓰지 마.`
+          }
+        ]
+      }
+    ]
+  });
+
+  const raw = normalizeGeminiWord(response.text);
+  const word = extractFirstKoreanWord(raw);
+  if (!word) return null;
+  return word;
 }
