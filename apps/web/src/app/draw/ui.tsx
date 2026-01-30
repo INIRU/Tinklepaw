@@ -52,7 +52,6 @@ export default function DrawClient() {
   const toast = useToast();
   const [pools, setPools] = useState<Pool[]>([]);
   const [selectedPoolId, setSelectedPoolId] = useState<string>('');
-  const [mounted, setMounted] = useState(false);
 
   // User Status
   const [userStatus, setUserStatus] = useState<{
@@ -68,10 +67,6 @@ export default function DrawClient() {
   const [drawResults, setDrawResults] = useState<DrawResult[]>([]);
   const [showResultModal, setShowResultModal] = useState(false);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   // Computed
   const highestRarityItem = useMemo(() => {
@@ -96,7 +91,7 @@ export default function DrawClient() {
           (body as { pools?: Pool[] } | null)?.pools ?? []
         ).filter((p) => p.is_active);
         setPools(loaded);
-        if (!selectedPoolId && loaded[0]) setSelectedPoolId(loaded[0].pool_id);
+        setSelectedPoolId((prev) => prev || loaded[0]?.pool_id || '');
       })
       .catch((e) =>
         toast.error(

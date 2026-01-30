@@ -265,7 +265,7 @@ export default function InventoryClient() {
                         </div>
                         {query ? (
                           <span className="rounded-full border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-1 text-xs font-semibold text-[color:var(--fg)]">
-                            "{search.trim()}"
+                            &quot;{search.trim()}&quot;
                           </span>
                         ) : null}
                       </div>

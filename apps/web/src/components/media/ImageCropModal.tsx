@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import NextImage from 'next/image';
 
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
@@ -225,16 +226,18 @@ export function ImageCropModal(props: {
             onPointerCancel={onPointerUp}
           >
             {img ? (
-              <img
+              <NextImage
                 src={props.src}
                 alt=""
+                width={img.naturalWidth}
+                height={img.naturalHeight}
+                unoptimized
+                loader={({ src }) => src}
                 className="absolute left-1/2 top-1/2 max-w-none select-none"
                 draggable={false}
                 style={{
                   transform: `translate(-50%, -50%) translate(${clampedOffset.x}px, ${clampedOffset.y}px) scale(${baseScale * zoom})`,
-                  transformOrigin: 'center',
-                  width: img.naturalWidth,
-                  height: img.naturalHeight
+                  transformOrigin: 'center'
                 }}
               />
             ) : (

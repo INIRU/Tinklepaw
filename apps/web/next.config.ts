@@ -28,6 +28,36 @@ const nextConfig: NextConfig = {
         hostname: 'cdn.discordapp.com',
         pathname: '/embed/avatars/**'
       },
+      {
+        protocol: 'https',
+        hostname: 'cdn.discordapp.com',
+        pathname: '/emojis/**'
+      },
+      {
+        protocol: 'https',
+        hostname: 'i.ytimg.com',
+        pathname: '/**'
+      },
+      {
+        protocol: 'https',
+        hostname: 'img.youtube.com',
+        pathname: '/**'
+      },
+      {
+        protocol: 'https',
+        hostname: 'i.scdn.co',
+        pathname: '/**'
+      },
+      {
+        protocol: 'https',
+        hostname: 'mosaic.scdn.co',
+        pathname: '/**'
+      },
+      {
+        protocol: 'https',
+        hostname: 'i1.sndcdn.com',
+        pathname: '/**'
+      },
       ...(supabaseStoragePattern ? [supabaseStoragePattern] : [])
     ]
   }

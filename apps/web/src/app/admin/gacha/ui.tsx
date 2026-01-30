@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useToast } from '@/components/toast/ToastProvider';
 import { ChevronDown, Plus, Trash2 } from 'lucide-react';
+import Image from 'next/image';
 import { ImageCropModal } from '@/components/media/ImageCropModal';
 import { ConfirmModal } from '@/components/modal/ConfirmModal';
 import { CustomSelect } from '@/components/ui/CustomSelect';
@@ -163,7 +164,8 @@ export default function GachaAdminClient() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ poolId: selectedPoolId, itemId, action: add ? 'add' : 'remove' })
         });
-      } catch (e) {
+      } catch (error) {
+        console.error('[AdminGacha] Failed to toggle pool item:', error);
         toast.error('변경 사항을 저장하지 못했습니다.');
       }
     },
@@ -175,7 +177,7 @@ export default function GachaAdminClient() {
       fetch(`/api/admin/gacha/pool-items?poolId=${selectedPoolId}`)
         .then((r) => r.json())
         .then((d) => setPoolItems(new Set(d.itemIds)))
-        .catch(() => {});
+        .catch((error) => console.error('[AdminGacha] Failed to load pool items:', error));
     } else {
       setPoolItems(new Set());
     }
@@ -348,11 +350,13 @@ export default function GachaAdminClient() {
                 className="w-full text-left cursor-pointer"
                 onClick={() => setSelectedPoolId(p.pool_id)}
               >
-                <div className="aspect-[8/3] overflow-hidden rounded-xl border border-[color:var(--border)] bg-black/20">
-                  <img
+                <div className="relative aspect-[8/3] overflow-hidden rounded-xl border border-[color:var(--border)] bg-black/20">
+                  <Image
                     src={p.banner_image_url ?? '/banner.png'}
                     alt=""
-                    className="h-full w-full object-cover"
+                    fill
+                    sizes="320px"
+                    className="object-cover"
                   />
                 </div>
                 <div className="mt-2 text-sm font-semibold truncate">{p.name}</div>
@@ -476,9 +480,11 @@ export default function GachaAdminClient() {
                     </button>
                   </div>
                   <div className="mt-2 overflow-hidden rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]">
-                    <img
+                    <Image
                       src={pool.banner_image_url ?? '/banner.png'}
                       alt=""
+                      width={1600}
+                      height={600}
                       className="h-auto w-full"
                     />
                   </div>

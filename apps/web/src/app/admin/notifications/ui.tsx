@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import Image from 'next/image';
 import {
   Send,
   Plus,
@@ -287,11 +288,7 @@ export function AdminNotificationPageClient() {
                       className='w-full flex items-center gap-3 px-4 py-3 hover:bg-[color:var(--chip)] transition-colors text-left'
                     >
                       {user.avatarUrl ? (
-                        <img
-                          src={user.avatarUrl}
-                          alt=''
-                          className='w-8 h-8 rounded-full'
-                        />
+                        <Image src={user.avatarUrl} alt="" width={32} height={32} className="w-8 h-8 rounded-full object-cover" />
                       ) : (
                         <div className='w-8 h-8 rounded-full bg-[color:var(--chip)]' />
                       )}

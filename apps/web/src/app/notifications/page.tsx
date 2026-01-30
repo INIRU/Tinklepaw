@@ -23,7 +23,6 @@ export default async function NotificationsPage() {
     <div className="container mx-auto py-8 px-4 max-w-4xl">
       <NotificationClientPage
         initialNotifications={(notifications as Notification[]) || []}
-        userId={session.user.id}
       />
     </div>
   );

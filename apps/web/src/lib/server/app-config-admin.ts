@@ -26,6 +26,9 @@ export async function getOrInitAppConfig() {
       reward_interval_seconds: 180,
       reward_daily_cap_points: null,
       reward_min_message_length: 3,
+      voice_reward_points_per_interval: 0,
+      voice_reward_interval_seconds: 60,
+      voice_reward_daily_cap_points: null,
     })
     .select('*')
     .single();

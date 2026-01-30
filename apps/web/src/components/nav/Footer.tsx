@@ -8,6 +8,7 @@ type FooterProps = {
 };
 
 export default function Footer({ user }: FooterProps) {
+  void user;
   return (
     <footer className="relative mt-20 border-t border-[color:var(--border)] bg-[color:var(--card)]/30 backdrop-blur-sm overflow-hidden">
       {/* 장식용 그라데이션 라인 */}

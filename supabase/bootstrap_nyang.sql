@@ -42,6 +42,9 @@ create table if not exists nyang.app_config (
   reward_interval_seconds integer default 60,
   reward_min_message_length integer default 5,
   reward_daily_cap_points integer,
+  voice_reward_points_per_interval integer default 0,
+  voice_reward_interval_seconds integer default 60,
+  voice_reward_daily_cap_points integer,
   
   -- Server Info (Web)
   server_intro text,
@@ -308,7 +311,6 @@ set search_path = nyang, public
 as $$
 declare
   v_cfg app_config%rowtype;
-  v_enabled boolean;
   v_bucket_start timestamptz;
   v_key text;
   v_daily_sum integer;
@@ -320,27 +322,23 @@ begin
     raise exception 'CONFIG_MISSING';
   end if;
 
-  select enabled into v_enabled
-  from reward_channels
-  where channel_id = p_channel_id;
-
-  if coalesce(v_enabled, false) is not true then
+  if v_cfg.voice_reward_points_per_interval <= 0 then
     granted_points := 0;
     select balance into new_balance from point_balances where discord_user_id = p_discord_user_id;
     return next;
   end if;
 
-  v_bucket_start := to_timestamp(floor(extract(epoch from p_voice_ts) / v_cfg.reward_interval_seconds) * v_cfg.reward_interval_seconds);
+  v_bucket_start := to_timestamp(floor(extract(epoch from p_voice_ts) / v_cfg.voice_reward_interval_seconds) * v_cfg.voice_reward_interval_seconds);
   v_key := 'voice:' || p_discord_user_id || ':' || p_channel_id || ':' || extract(epoch from v_bucket_start)::bigint::text;
 
-  if v_cfg.reward_daily_cap_points is not null then
+  if v_cfg.voice_reward_daily_cap_points is not null then
     select coalesce(sum(amount), 0) into v_daily_sum
     from point_events
     where discord_user_id = p_discord_user_id
       and kind = 'voice_grant'
       and created_at >= date_trunc('day', p_voice_ts);
 
-    if v_daily_sum >= v_cfg.reward_daily_cap_points then
+    if v_daily_sum >= v_cfg.voice_reward_daily_cap_points then
       granted_points := 0;
       select balance into new_balance from point_balances where discord_user_id = p_discord_user_id;
       return next;
@@ -351,7 +349,7 @@ begin
   values (
     p_discord_user_id,
     'voice_grant',
-    v_cfg.reward_points_per_interval,
+    v_cfg.voice_reward_points_per_interval,
     v_key,
     jsonb_build_object('channel_id', p_channel_id, 'bucket_start', v_bucket_start)
   )
@@ -359,10 +357,10 @@ begin
 
   if found then
     update point_balances
-      set balance = balance + v_cfg.reward_points_per_interval,
+      set balance = balance + v_cfg.voice_reward_points_per_interval,
           updated_at = now()
     where discord_user_id = p_discord_user_id;
-    granted_points := v_cfg.reward_points_per_interval;
+    granted_points := v_cfg.voice_reward_points_per_interval;
   else
     granted_points := 0;
   end if;

@@ -6,6 +6,7 @@ import { fetchGuildMember, isAdmin } from '@/lib/server/discord';
 import Markdown from '@/components/content/Markdown';
 import HomeActionGrid from '@/components/home/HomeActionGrid';
 import { fetchPublicAppConfig } from '@/lib/server/app-config';
+import Link from 'next/link';
 
 export const runtime = 'nodejs';
 
@@ -44,13 +45,6 @@ export default async function Home() {
   if (!member) redirect('/not-in-guild');
 
   const admin = await isAdmin({ userId, member });
-  const nick = member.nick ?? session.user.name ?? member.user?.username ?? 'user';
-
-  const user = {
-    name: nick,
-    imageUrl: session.user.image ?? null
-  };
-
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
       <div className="rounded-3xl card-glass p-3">
@@ -64,9 +58,9 @@ export default async function Home() {
           <div className="flex items-start justify-between gap-3">
             <h2 className="text-sm sm:text-lg font-semibold font-bangul">서버 소개</h2>
             {admin ? (
-              <a className="rounded-full btn-soft px-2.5 py-1 text-[10px] sm:text-xs font-semibold" href="/admin/settings">
+              <Link className="rounded-full btn-soft px-2.5 py-1 text-[10px] sm:text-xs font-semibold" href="/admin/settings">
                 수정
-              </a>
+              </Link>
             ) : null}
           </div>
           <div className="mt-2.5">

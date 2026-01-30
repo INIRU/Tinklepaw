@@ -1,9 +1,9 @@
 'use client';
 
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { PerspectiveCamera, Environment, Stars, useTexture } from '@react-three/drei';
+import { PerspectiveCamera, Stars } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
-import { useRef, useState, useEffect, useMemo } from 'react';
+import { useRef, useState, useMemo } from 'react';
 import * as THREE from 'three';
 
 type GachaSceneProps = {
@@ -33,37 +33,34 @@ function CinematicCapsule({ isDrawing, rarity, onComplete }: { isDrawing: boolea
   
   const [phase, setPhase] = useState<'idle' | 'unlocking' | 'tension' | 'opening'>('idle');
   const startTime = useRef(0);
+  const wasDrawing = useRef(false);
 
   const targetColor = useMemo(() => {
     return COLORS[(rarity as keyof typeof COLORS) || 'DEFAULT'];
   }, [rarity]);
 
-  useEffect(() => {
-    if (isDrawing) {
-      setPhase('unlocking');
-      startTime.current = Date.now();
-    } else {
-      setPhase('idle');
-      // Reset
-      if (group.current) {
-        group.current.position.set(0, 0, 0);
-        group.current.rotation.set(0, 0, 0);
-        group.current.scale.set(baseScale, baseScale, baseScale);
-      }
-      if (topRef.current) topRef.current.position.y = 0;
-      if (bottomRef.current) bottomRef.current.position.y = 0;
-      if (bandRef.current) {
-        bandRef.current.scale.set(1, 1, 1);
-        const mat = bandRef.current.material as THREE.MeshStandardMaterial;
-        mat.color.set('#333');
-        mat.emissive.set('#000');
-      }
-      if (coreRef.current) coreRef.current.scale.set(0, 0, 0);
-    }
-  }, [isDrawing, baseScale]);
-
   useFrame((state, delta) => {
     if (!group.current || !topRef.current || !bottomRef.current || !bandRef.current || !coreRef.current) return;
+
+    if (isDrawing && !wasDrawing.current) {
+      wasDrawing.current = true;
+      startTime.current = Date.now();
+      setPhase('unlocking');
+    } else if (!isDrawing && wasDrawing.current) {
+      wasDrawing.current = false;
+      setPhase('idle');
+
+      group.current.position.set(0, 0, 0);
+      group.current.rotation.set(0, 0, 0);
+      group.current.scale.set(baseScale, baseScale, baseScale);
+      topRef.current.position.y = 0;
+      bottomRef.current.position.y = 0;
+      bandRef.current.scale.set(1, 1, 1);
+      const mat = bandRef.current.material as THREE.MeshStandardMaterial;
+      mat.color.set('#333');
+      mat.emissive.set('#000');
+      coreRef.current.scale.set(0, 0, 0);
+    }
 
     if (phase === 'idle') {
       // Gentle float

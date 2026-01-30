@@ -1,30 +1,45 @@
 'use client';
 
 import { AnimatePresence, m } from 'framer-motion';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
 type Theme = 'light' | 'dark';
 
 function getCurrentTheme(): Theme {
+  if (typeof document === 'undefined') return 'light';
   const t = document.documentElement.dataset.theme;
   return t === 'dark' ? 'dark' : 'light';
 }
 
-export default function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>('light');
+function subscribeTheme(callback: () => void) {
+  if (typeof document === 'undefined') return () => {};
 
-  useEffect(() => {
-    setTheme(getCurrentTheme());
-  }, []);
+  const observer = new MutationObserver(() => {
+    callback();
+  });
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === 'bangul-theme') callback();
+  };
+  window.addEventListener('storage', onStorage);
+
+  return () => {
+    observer.disconnect();
+    window.removeEventListener('storage', onStorage);
+  };
+}
+
+export default function ThemeToggle() {
+  const theme = useSyncExternalStore(subscribeTheme, getCurrentTheme, () => 'light');
 
   const toggle = useCallback(() => {
-    const next: Theme = getCurrentTheme() === 'dark' ? 'light' : 'dark';
+    const next: Theme = theme === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = next;
     try {
       localStorage.setItem('bangul-theme', next);
     } catch {}
-    setTheme(next);
-  }, []);
+  }, [theme]);
 
   return (
     <m.button
