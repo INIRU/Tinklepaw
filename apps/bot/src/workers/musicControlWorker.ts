@@ -5,7 +5,18 @@ import { getBotContext } from '../context.js';
 import { getAppConfig } from '../services/config.js';
 import { clearMusicState, getMusic, updateMusicSetupMessage, updateMusicState } from '../services/music.js';
 
-const normalizeQuery = (raw: string) => raw.trim().replace(/^<(.+)>$/, '$1').trim();
+const normalizeQuery = (raw: string) => {
+  const trimmed = raw.trim().replace(/^<(.+)>$/, '$1').trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^spotify:/i.test(trimmed)) {
+    const parts = trimmed.split(':');
+    if (parts.length >= 3) return `https://open.spotify.com/${parts[1]}/${parts[2]}`;
+  }
+  if (/^[\w.-]+\.[a-z]{2,}(\/|$)/i.test(trimmed)) return `https://${trimmed}`;
+  return trimmed;
+};
+
+const isSpotifyUrl = (value: string) => /spotify\.com/i.test(value) || /^spotify:/i.test(value);
 
 type MusicControlJob = {
   job_id: string;
@@ -102,6 +113,11 @@ const handleJob = async (job: MusicControlJob) => {
       const query = typeof payload?.query === 'string' ? normalizeQuery(payload?.query) : '';
       if (!query) {
         await logAction(job, 'failed', 'Missing query');
+        break;
+      }
+
+      if (isSpotifyUrl(query)) {
+        await logAction(job, 'failed', 'Spotify URL은 아직 지원하지 않아요. YouTube 또는 SoundCloud URL을 사용해 주세요.');
         break;
       }
 

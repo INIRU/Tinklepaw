@@ -260,6 +260,7 @@ export type Database = {
           pull_id: string;
           item_id: string;
           qty: number;
+          is_pity: boolean;
         };
         Insert: Database['nyang']['Tables']['gacha_pull_results']['Row'];
         Update: Partial<Database['nyang']['Tables']['gacha_pull_results']['Row']>;
