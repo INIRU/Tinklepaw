@@ -44,9 +44,11 @@ export async function triggerGachaUI(
     reward_interval_seconds: 60,
     reward_daily_cap_points: null,
     reward_min_message_length: 0,
+    booster_chat_bonus_points: 0,
     voice_reward_points_per_interval: 0,
     voice_reward_interval_seconds: 60,
     voice_reward_daily_cap_points: null,
+    booster_voice_bonus_points: 0,
     error_log_channel_id: null,
     show_traceback_to_user: true,
   }));
