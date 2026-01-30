@@ -64,6 +64,10 @@ export function registerMessageCreate(client: Client) {
     if (!isMentionOrReplyToBot(message, botId)) return;
 
     const text = message.content.replaceAll(`<@${botId}>`, '').trim();
+    if (!text) {
+      await message.reply('할 말 있어? 메시지를 같이 보내줘.');
+      return;
+    }
 
     try {
       if (

@@ -16,6 +16,7 @@ import { registerGuildMemberAdd } from './events/guildMemberAdd.js';
 import { registerMessageCreate } from './events/messageCreate.js';
 import { startRoleSyncWorker } from './workers/roleSyncWorker.js';
 import { startMusicControlWorker } from './workers/musicControlWorker.js';
+import { startVoiceRewardWorker } from './workers/voiceRewardWorker.js';
 import { initMusic } from './services/music.js';
 import { primeChannelCache } from './services/channelCache.js';
 
@@ -58,6 +59,7 @@ client.once('ready', async () => {
 client.once('ready', () => {
   startRoleSyncWorker(client);
   startMusicControlWorker();
+  startVoiceRewardWorker(client);
 });
 
 await client.login(env.DISCORD_BOT_TOKEN);
