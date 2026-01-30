@@ -197,7 +197,7 @@ begin
   end if;
 
   insert into gacha_pulls(discord_user_id, pool_id, is_free, spent_points)
-  values (p_discord_user_id, v_pool.pool_id, is_free, v_spend)
+  values (p_discord_user_id, v_pool.pool_id, out_is_free, v_spend)
   returning pull_id into v_pull_id;
 
   insert into gacha_pull_results(pull_id, item_id, qty, is_pity)
@@ -244,7 +244,7 @@ begin
       set free_available_at = v_now + make_interval(secs => v_pool.free_pull_interval_seconds),
           updated_at = now()
       where discord_user_id = p_discord_user_id and pool_id = v_pool.pool_id;
-  elsif (not is_free) and v_pool.paid_pull_cooldown_seconds is not null and v_pool.paid_pull_cooldown_seconds > 0 then
+  elsif (not out_is_free) and v_pool.paid_pull_cooldown_seconds is not null and v_pool.paid_pull_cooldown_seconds > 0 then
     update gacha_user_state
       set paid_available_at = v_now + make_interval(secs => v_pool.paid_pull_cooldown_seconds),
           updated_at = now()
