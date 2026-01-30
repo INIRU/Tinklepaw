@@ -15,12 +15,16 @@ export const inventoryCommand: SlashCommand = {
     .toJSON(),
   async execute(interaction: ChatInputCommandInteraction) {
     const ctx = getBotContext();
-    if (!interaction.guildId || interaction.guildId !== ctx.env.NYARU_GUILD_ID) {
-      await interaction.reply({ content: '이 명령어는 지정된 서버에서만 사용할 수 있습니다.', ephemeral: true });
+    try {
+      await interaction.deferReply({ ephemeral: true });
+    } catch {
       return;
     }
 
-    await interaction.deferReply();
+    if (!interaction.guildId || interaction.guildId !== ctx.env.NYARU_GUILD_ID) {
+      await interaction.editReply({ content: '이 명령어는 지정된 서버에서만 사용할 수 있습니다.' });
+      return;
+    }
 
     try {
       const embed = await generateInventoryEmbed(ctx, interaction.user);
