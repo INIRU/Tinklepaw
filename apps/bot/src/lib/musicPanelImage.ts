@@ -26,17 +26,28 @@ const canvasHeight = 480;
 const panelPadding = 32;
 const artSize = 240;
 const queueThumbSize = 44;
-const fontFamily = 'Pretendard, "Noto Sans CJK JP", "Noto Sans Math", "Noto Emoji", sans-serif';
+const fontFamily = 'Pretendard, "Noto Sans JP", "Noto Sans Symbols 2", "Noto Sans Math", "Noto Emoji", sans-serif';
 
 const fontPath = fileURLToPath(new URL('../assets/fonts/Pretendard-Regular.ttf', import.meta.url));
-const cjkFontPath = fileURLToPath(new URL('../assets/fonts/NotoSansCJKjp-Regular.otf', import.meta.url));
+const jpFontPath = fileURLToPath(new URL('../assets/fonts/NotoSansJP-Regular.ttf', import.meta.url));
+const symbolsFontPath = fileURLToPath(new URL('../assets/fonts/NotoSansSymbols2-Regular.ttf', import.meta.url));
 const mathFontPath = fileURLToPath(new URL('../assets/fonts/NotoSansMath-Regular.ttf', import.meta.url));
 const emojiFontPath = fileURLToPath(new URL('../assets/fonts/NotoEmoji-Regular.ttf', import.meta.url));
-registerFont(fontPath, { family: 'Pretendard', weight: '400' });
-registerFont(fontPath, { family: 'Pretendard', weight: '600' });
-registerFont(cjkFontPath, { family: 'Noto Sans CJK JP', weight: '400' });
-registerFont(mathFontPath, { family: 'Noto Sans Math', weight: '400' });
-registerFont(emojiFontPath, { family: 'Noto Emoji', weight: '400' });
+
+const safeRegisterFont = (src: string, options: Parameters<typeof registerFont>[1]) => {
+  try {
+    registerFont(src, options);
+  } catch (error) {
+    console.warn('[MusicPanel] Failed to register font:', options.family, error);
+  }
+};
+
+safeRegisterFont(fontPath, { family: 'Pretendard', weight: '400' });
+safeRegisterFont(fontPath, { family: 'Pretendard', weight: '600' });
+safeRegisterFont(jpFontPath, { family: 'Noto Sans JP', weight: '400' });
+safeRegisterFont(symbolsFontPath, { family: 'Noto Sans Symbols 2', weight: '400' });
+safeRegisterFont(mathFontPath, { family: 'Noto Sans Math', weight: '400' });
+safeRegisterFont(emojiFontPath, { family: 'Noto Emoji', weight: '400' });
 
 const drawRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) => {
   ctx.beginPath();
