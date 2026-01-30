@@ -186,7 +186,7 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
   }
 
   const textMaxWidth = leftPanelWidth - 32;
-  const titleStartY = artY + artSize + 28;
+  const titleStartY = artY + artSize + 36;
   const titleLineHeight = 22;
   const maxTitleLines = 3;
   const barY = leftPanelY + leftPanelHeight - 34;
@@ -197,14 +197,15 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
   const maxLinesBySpace = Math.max(1, Math.min(maxTitleLines, Math.floor((availableHeight - (artistLineHeight + artistGap)) / titleLineHeight)));
 
   const textCenterX = leftPanelX + leftPanelWidth / 2;
+  const labelGap = 8;
+  const labelHeight = 12;
+  ctx.textAlign = 'center';
   ctx.font = `700 10px ${numberFontFamily}`;
   ctx.fillStyle = '#1db954';
-  ctx.fillText('NOW PLAYING', textCenterX, titleStartY - 12);
+  ctx.fillText('NOW PLAYING', textCenterX, titleStartY - (labelGap + labelHeight));
 
   ctx.font = `600 18px ${fontFamily}`;
   const titleLines = wrapTextLines(ctx, params.title, textMaxWidth, maxLinesBySpace);
-
-  ctx.textAlign = 'center';
   ctx.fillStyle = '#f8fafc';
   titleLines.forEach((line, index) => {
     ctx.fillText(line, textCenterX, titleStartY + index * titleLineHeight);
