@@ -1,14 +1,15 @@
-import { type Client, type Message, EmbedBuilder } from 'discord.js';
+import { type Client, type Message } from 'discord.js';
 
 import { getBotContext } from '../context.js';
 import { handleRpsMessage } from '../games/rps.js';
 import { handleWordChainMessage, startWordChain } from '../games/wordchain.js';
 import { setGame } from '../games/state.js';
-import { inferIntentFromGroq } from '../services/groq.js';
+import { inferIntentFromGemini } from '../services/gemini.js';
 import { triggerGachaUI } from '../commands/draw.js';
 import { handleError } from '../errorHandler.js';
 
 import { generateInventoryEmbed } from '../services/inventory.js';
+import { getChannelMentions } from '../services/channelCache.js';
 
 function isMentionOrReplyToBot(message: Message, botUserId: string): boolean {
   if (message.mentions.has(botUserId)) return true;
@@ -63,6 +64,19 @@ export function registerMessageCreate(client: Client) {
     const text = message.content.replaceAll(`<@${botId}>`, '').trim();
 
     try {
+      if (
+        (text.includes('채팅방') || text.includes('채널') || text.includes('채팅')) &&
+        (text.includes('어디') || text.includes('어느') || text.includes('어디로'))
+      ) {
+        const mentions = getChannelMentions(ctx.env.NYARU_GUILD_ID, 5);
+        if (mentions.length > 0) {
+          await message.reply(`여기서 하면 돼: ${mentions.join(' ')}`);
+        } else {
+          await message.reply('채널 정보를 아직 못 가져왔어. 잠깐 뒤에 다시 물어봐.');
+        }
+        return;
+      }
+
       if (text.includes('가위바위보')) {
         setGame(message.channelId, { kind: 'rps', userId: message.author.id, startedAt: Date.now() });
         await message.reply('가위바위보! 가위/바위/보 중에서 골라줘. (그만/종료로 종료)');
@@ -90,7 +104,7 @@ export function registerMessageCreate(client: Client) {
       if ('sendTyping' in message.channel) {
         await message.channel.sendTyping();
       }
-      const intent = await inferIntentFromGroq({ userId: message.author.id, text });
+      const intent = await inferIntentFromGemini({ userId: message.author.id, text });
       if (intent) {
         switch (intent.action) {
           case 'game_rps':
@@ -127,13 +141,10 @@ export function registerMessageCreate(client: Client) {
             const { error: unequipErr } = await ctx.supabase.rpc('set_equipped_item', { p_discord_user_id: message.author.id, p_item_id: null });
             await message.reply(unequipErr ? `해제 실패: ${unequipErr.message}` : '해제 요청 완료.');
             return;
-          case 'topics':
-            await message.reply('주제 추천:\n- 요즘 빠진 게임/음악\n- 올해 가고 싶은 여행지\n- 최근 본 영화/드라마\n- 최애 음식/라면 조합');
+          case 'points':
+            const { data: balanceData } = await ctx.supabase.from('point_balances').select('balance').eq('discord_user_id', message.author.id).single();
+            await message.reply(`현재 포인트: **${balanceData?.balance ?? 0}p**`);
             return;
-        case 'points':
-          const { data: balanceData } = await ctx.supabase.from('point_balances').select('balance').eq('discord_user_id', message.author.id).single();
-          await message.reply(`현재 포인트: **${balanceData?.balance ?? 0}p**`);
-          return;
         case 'chat':
           await message.reply(intent.reply);
           return;
