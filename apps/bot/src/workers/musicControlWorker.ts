@@ -5,6 +5,8 @@ import { getBotContext } from '../context.js';
 import { getAppConfig } from '../services/config.js';
 import { clearMusicState, getMusic, updateMusicSetupMessage, updateMusicState } from '../services/music.js';
 
+const normalizeQuery = (raw: string) => raw.trim().replace(/^<(.+)>$/, '$1').trim();
+
 type MusicControlJob = {
   job_id: string;
   guild_id: string;
@@ -97,7 +99,7 @@ const handleJob = async (job: MusicControlJob) => {
     }
     case 'add': {
       const payload = job.payload && typeof job.payload === 'object' && !Array.isArray(job.payload) ? (job.payload as { query?: Json }) : null;
-      const query = typeof payload?.query === 'string' ? payload?.query.trim() : '';
+      const query = typeof payload?.query === 'string' ? normalizeQuery(payload?.query) : '';
       if (!query) {
         await logAction(job, 'failed', 'Missing query');
         break;

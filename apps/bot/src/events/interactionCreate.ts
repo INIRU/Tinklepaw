@@ -21,6 +21,8 @@ const formatQueueLine = (track: { title: string; uri?: string | null; length?: n
   return `\`${index + 1}.\` ${link} \`${duration}\``;
 };
 
+const normalizeQuery = (raw: string) => raw.trim().replace(/^<(.+)>$/, '$1').trim();
+
 const scheduleMusicStateUpdate = (player: KazagumoPlayer, delayMs = 700) => {
   setTimeout(() => {
     updateMusicState(player).catch(() => {});
@@ -206,7 +208,7 @@ export function registerInteractionCreate(client: Client) {
         return;
       }
 
-      const query = interaction.fields.getTextInputValue('music_query').trim();
+      const query = normalizeQuery(interaction.fields.getTextInputValue('music_query'));
       if (!query) {
         await interaction.reply({ embeds: [buildMusicStatusEmbed('🔎 검색어 필요', '검색어 또는 URL을 입력해 주세요.')], ephemeral: true });
         return;

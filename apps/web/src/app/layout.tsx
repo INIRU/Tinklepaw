@@ -5,7 +5,7 @@ import ThemeScript from '@/components/theme/ThemeScript';
 import MotionProvider from '@/components/motion/MotionProvider';
 import PageTransition from '@/components/motion/PageTransition';
 import MainNav from '@/components/nav/MainNav';
-import Footer from '@/components/nav/Footer';
+import FooterGate from '@/components/nav/FooterGate';
 import { ToastProvider } from '@/components/toast/ToastProvider';
 import { auth } from '../../auth';
 import { fetchPublicAppConfig } from '@/lib/server/app-config';
@@ -89,7 +89,7 @@ export default async function RootLayout({
                 <MainNav user={user} iconUrl={cfg.iconImageUrl} showAdmin={showAdmin} />
                 <PageTransition>{children}</PageTransition>
               </div>
-              <Footer user={user} />
+              <FooterGate user={user} />
             </div>
           </ToastProvider>
         </MotionProvider>

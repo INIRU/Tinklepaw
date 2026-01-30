@@ -27,6 +27,7 @@ const panelPadding = 32;
 const artSize = 240;
 const queueThumbSize = 44;
 const fontFamily = 'Pretendard, "Noto Sans CJK JP", "Noto Sans Symbols 2", "Noto Sans Math", "Noto Color Emoji", sans-serif';
+const numberFontFamily = 'Pretendard, sans-serif';
 
 const fontPath = fileURLToPath(new URL('../assets/fonts/Pretendard-Regular.ttf', import.meta.url));
 const cjkFontPath = fileURLToPath(new URL('../assets/fonts/NotoSansCJKjp-VF.ttf', import.meta.url));
@@ -67,7 +68,14 @@ const drawRoundedImage = (ctx: CanvasRenderingContext2D, image: Image, x: number
   ctx.save();
   drawRoundedRect(ctx, x, y, size, size, radius);
   ctx.clip();
-  ctx.drawImage(image, x, y, size, size);
+
+  const scale = Math.max(size / image.width, size / image.height);
+  const drawWidth = image.width * scale;
+  const drawHeight = image.height * scale;
+  const offsetX = x + (size - drawWidth) / 2;
+  const offsetY = y + (size - drawHeight) / 2;
+  ctx.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+
   ctx.restore();
 };
 
@@ -137,10 +145,16 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
   const ctx = canvas.getContext('2d');
 
   const gradient = ctx.createLinearGradient(0, 0, canvasWidth, canvasHeight);
-  gradient.addColorStop(0, '#0a0a12');
-  gradient.addColorStop(0.45, '#0c0f1b');
-  gradient.addColorStop(1, '#3a1b57');
+  gradient.addColorStop(0, '#0b0f0d');
+  gradient.addColorStop(0.5, '#0f1412');
+  gradient.addColorStop(1, '#0e1311');
   ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+  const glow = ctx.createRadialGradient(180, 120, 40, 180, 120, 300);
+  glow.addColorStop(0, 'rgba(29,185,84,0.35)');
+  glow.addColorStop(1, 'rgba(29,185,84,0)');
+  ctx.fillStyle = glow;
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
   const leftPanelX = panelPadding + 80;
@@ -151,15 +165,15 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
   const artY = leftPanelY + 8;
 
   ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,0.45)';
-  ctx.shadowBlur = 20;
-  ctx.fillStyle = 'rgba(15,17,28,0.55)';
-  drawRoundedRect(ctx, leftPanelX, leftPanelY, leftPanelWidth, leftPanelHeight, 24);
+  ctx.shadowColor = 'rgba(0,0,0,0.5)';
+  ctx.shadowBlur = 22;
+  ctx.fillStyle = 'rgba(20,24,22,0.7)';
+  drawRoundedRect(ctx, leftPanelX, leftPanelY, leftPanelWidth, leftPanelHeight, 26);
   ctx.fill();
   ctx.restore();
 
-  ctx.fillStyle = '#1f2937';
-  drawRoundedRect(ctx, artX, artY, artSize, artSize, 18);
+  ctx.fillStyle = '#0f1311';
+  drawRoundedRect(ctx, artX, artY, artSize, artSize, 20);
   ctx.fill();
 
   if (params.artworkUrl) {
@@ -172,7 +186,7 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
   }
 
   const textMaxWidth = leftPanelWidth - 32;
-  const titleStartY = artY + artSize + 24;
+  const titleStartY = artY + artSize + 28;
   const titleLineHeight = 22;
   const maxTitleLines = 3;
   const barY = leftPanelY + leftPanelHeight - 34;
@@ -182,19 +196,23 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
   const availableHeight = Math.max(0, maxTextBottom - titleStartY);
   const maxLinesBySpace = Math.max(1, Math.min(maxTitleLines, Math.floor((availableHeight - (artistLineHeight + artistGap)) / titleLineHeight)));
 
+  const textCenterX = leftPanelX + leftPanelWidth / 2;
+  ctx.font = `700 10px ${numberFontFamily}`;
+  ctx.fillStyle = '#1db954';
+  ctx.fillText('NOW PLAYING', textCenterX, titleStartY - 12);
+
   ctx.font = `600 18px ${fontFamily}`;
   const titleLines = wrapTextLines(ctx, params.title, textMaxWidth, maxLinesBySpace);
-  const textCenterX = leftPanelX + leftPanelWidth / 2;
 
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#f3f4f6';
+  ctx.fillStyle = '#f8fafc';
   titleLines.forEach((line, index) => {
     ctx.fillText(line, textCenterX, titleStartY + index * titleLineHeight);
   });
 
   const artistText = truncateText(ctx, params.artist ?? '알 수 없음', textMaxWidth);
   const artistY = titleStartY + titleLines.length * titleLineHeight + artistGap;
-  ctx.fillStyle = '#b6b9c6';
+  ctx.fillStyle = '#a3a3a3';
   ctx.font = `12px ${fontFamily}`;
   ctx.fillText(artistText, textCenterX, artistY);
 
@@ -205,15 +223,15 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
   const barHeight = 6;
   const ratio = params.durationMs && params.durationMs > 0 ? Math.min(1, (params.positionMs ?? 0) / params.durationMs) : 0;
 
-  ctx.fillStyle = 'rgba(255,255,255,0.18)';
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
   drawRoundedRect(ctx, barX, barY, barWidth, barHeight, 3);
   ctx.fill();
-  ctx.fillStyle = '#f8fafc';
+  ctx.fillStyle = '#1db954';
   drawRoundedRect(ctx, barX, barY, Math.max(8, barWidth * ratio), barHeight, 3);
   ctx.fill();
 
-  ctx.fillStyle = '#cbd5f5';
-  ctx.font = `11px ${fontFamily}`;
+  ctx.fillStyle = '#a1a1aa';
+  ctx.font = `11px ${numberFontFamily}`;
   ctx.textAlign = 'left';
   ctx.fillText(elapsed, barX, barY + 20);
   ctx.textAlign = 'right';
@@ -224,7 +242,7 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
   const queueY = leftPanelY + 10;
   const queueWidth = canvasWidth - queueX - panelPadding - 20;
 
-  ctx.fillStyle = '#f5f5f9';
+  ctx.fillStyle = '#e2e8f0';
   ctx.font = `600 16px ${fontFamily}`;
   ctx.fillText('대기열', queueX, queueY);
 
@@ -239,14 +257,17 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
       ctx.save();
       ctx.shadowColor = 'rgba(0,0,0,0.35)';
       ctx.shadowBlur = 10;
-      ctx.fillStyle = 'rgba(30,32,45,0.85)';
+      ctx.fillStyle = 'rgba(19,22,24,0.9)';
       drawRoundedRect(ctx, queueX, y, queueWidth, 58, 14);
       ctx.fill();
       ctx.restore();
 
+      ctx.fillStyle = '#1db954';
+      ctx.fillRect(queueX + 10, y + 10, 3, 38);
+
       const thumbX = queueX + 12;
       const thumbY = y + 7;
-      ctx.fillStyle = '#1f2937';
+      ctx.fillStyle = '#0f1311';
       drawRoundedRect(ctx, thumbX, thumbY, queueThumbSize, queueThumbSize, 8);
       ctx.fill();
 
@@ -261,20 +282,27 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
 
       const titleX = thumbX + queueThumbSize + 12;
       const titleWidth = queueWidth - (titleX - queueX) - 58;
-      ctx.fillStyle = '#f3f4f6';
+      ctx.fillStyle = '#f8fafc';
       ctx.font = `600 13px ${fontFamily}`;
       ctx.fillText(truncateText(ctx, track.title, titleWidth), titleX, y + 26);
-      ctx.fillStyle = '#a6a9b8';
-      ctx.font = `11px ${fontFamily}`;
+      ctx.fillStyle = '#9ca3af';
+      ctx.font = `11px ${numberFontFamily}`;
       ctx.fillText(truncateText(ctx, track.author ?? '알 수 없음', titleWidth), titleX, y + 44);
 
       const duration = formatDuration(track.length ?? 0);
-      ctx.fillStyle = '#d1d5db';
-      ctx.font = `11px ${fontFamily}`;
+      ctx.fillStyle = '#d4d4d8';
+      ctx.font = `11px ${numberFontFamily}`;
       const durationWidth = ctx.measureText(duration).width;
       ctx.fillText(duration, queueX + queueWidth - durationWidth - 14, y + 26);
 
       y += 68;
+    }
+
+    const overflowCount = params.queue.length - list.length;
+    if (overflowCount > 0) {
+      ctx.fillStyle = '#9ca3af';
+      ctx.font = `11px ${fontFamily}`;
+      ctx.fillText(`외 ${overflowCount}개 대기열이 있습니다.`, queueX, y + 6);
     }
   }
 
