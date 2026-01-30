@@ -26,11 +26,17 @@ const canvasHeight = 480;
 const panelPadding = 32;
 const artSize = 240;
 const queueThumbSize = 44;
-const fontFamily = 'Pretendard, sans-serif';
+const fontFamily = 'Pretendard, "Noto Sans CJK JP", "Noto Sans Math", "Noto Emoji", sans-serif';
 
 const fontPath = fileURLToPath(new URL('../assets/fonts/Pretendard-Regular.ttf', import.meta.url));
+const cjkFontPath = fileURLToPath(new URL('../assets/fonts/NotoSansCJKjp-Regular.otf', import.meta.url));
+const mathFontPath = fileURLToPath(new URL('../assets/fonts/NotoSansMath-Regular.ttf', import.meta.url));
+const emojiFontPath = fileURLToPath(new URL('../assets/fonts/NotoEmoji-Regular.ttf', import.meta.url));
 registerFont(fontPath, { family: 'Pretendard', weight: '400' });
 registerFont(fontPath, { family: 'Pretendard', weight: '600' });
+registerFont(cjkFontPath, { family: 'Noto Sans CJK JP', weight: '400' });
+registerFont(mathFontPath, { family: 'Noto Sans Math', weight: '400' });
+registerFont(emojiFontPath, { family: 'Noto Emoji', weight: '400' });
 
 const drawRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) => {
   ctx.beginPath();
