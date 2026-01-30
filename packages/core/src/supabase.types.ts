@@ -48,9 +48,11 @@ export type Database = {
           reward_interval_seconds: number;
           reward_daily_cap_points: number | null;
           reward_min_message_length: number;
+          booster_chat_bonus_points: number;
           voice_reward_points_per_interval: number;
           voice_reward_interval_seconds: number;
           voice_reward_daily_cap_points: number | null;
+          booster_voice_bonus_points: number;
           server_intro: string | null;
           banner_image_url: string | null;
           icon_image_url: string | null;
@@ -384,6 +386,7 @@ export type Database = {
           p_message_length: number;
           p_message_ts: string;
           p_message_id?: string | null;
+          p_is_booster?: boolean;
         };
         Returns: Array<{ granted_points: number; new_balance: number }>;
       };
@@ -392,6 +395,7 @@ export type Database = {
           p_discord_user_id: string;
           p_channel_id: string;
           p_voice_ts: string;
+          p_is_booster?: boolean;
         };
         Returns: Array<{ granted_points: number; new_balance: number }>;
       };

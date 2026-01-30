@@ -30,13 +30,15 @@ export function startVoiceRewardWorker(client: Client) {
         if (!state.channelId) return;
         const member = state.member;
         if (!member || member.user.bot) return;
+        const isBooster = Boolean(member.premiumSinceTimestamp);
 
         tasks.push(
           ctx.supabase
             .rpc('grant_voice_points', {
               p_discord_user_id: member.id,
               p_channel_id: state.channelId,
-              p_voice_ts: now
+              p_voice_ts: now,
+              p_is_booster: isBooster
             })
             .then(({ error: rpcError }) => {
               if (rpcError) {
