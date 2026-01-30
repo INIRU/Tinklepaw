@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { useToast } from '@/components/toast/ToastProvider';
 import { ChevronLeft, Bot, Check, ChevronDown } from 'lucide-react';
 
@@ -30,6 +31,8 @@ type BotConfig = {
   error_log_channel_id?: string | null;
   show_traceback_to_user?: boolean;
   last_heartbeat_at?: string | null;
+  bot_online?: boolean;
+  heartbeat_age_ms?: number | null;
 };
 
 type RewardChannel = { channel_id: string; enabled: boolean };
@@ -38,12 +41,10 @@ type DiscordChannel = { id: string; name: string };
 type StatusLevel = 'operational' | 'degraded' | 'down' | 'unknown';
 type StatusSample = { service: 'bot' | 'lavalink'; status: StatusLevel; created_at: string };
 
-function HeartbeatStatus({ lastAt }: { lastAt?: string | null }) {
+function HeartbeatStatus({ lastAt, online }: { lastAt?: string | null; online?: boolean }) {
   if (!lastAt) return <span className="text-red-500">오프라인</span>;
-  
-  const last = new Date(lastAt).getTime();
-  const diff = Date.now() - last;
-  const isOnline = diff < 30000;
+
+  const isOnline = online === true;
 
   return (
     <div className="flex items-center gap-2">
@@ -119,14 +120,17 @@ function parseDiscordEmojis(text: string) {
       const url = `https://cdn.discordapp.com/emojis/${emojiId}.${extension}`;
 
       result.push(
-        <img
+        <Image
           key={`${emojiId}-${i}-${match.index}`}
           src={url}
           alt={match[2]}
+          width={22}
+          height={22}
           className="inline-block h-[1.375em] w-[1.375em] align-text-bottom mx-[0.05em]"
           onError={(e) => {
-            (e.target as HTMLImageElement).style.display = 'none';
+            (e.currentTarget as HTMLImageElement).style.display = 'none';
           }}
+          unoptimized
         />
       );
 
@@ -946,8 +950,8 @@ export default function BotSettingsClient() {
                             try {
                               const parsed = JSON.parse(e.target.value);
                               setCfg(prev => prev ? ({ ...prev, help_embed_fields: parsed }) : null);
-                            } catch (err) {
-                              // Ignore invalid JSON
+                            } catch {
+                              return;
                             }
                           }}
                           placeholder='[{"name": "/명령어", "value": "설명", "inline": true}]'
@@ -989,7 +993,7 @@ export default function BotSettingsClient() {
                               {cfg?.help_embed_show_timestamp !== false && (
                                 <>
                                   <span className="text-[8px]">•</span>
-                                  <span>오늘 {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                  <span>오늘 12:34</span>
                                 </>
                               )}
                             </div>
@@ -1140,11 +1144,15 @@ export default function BotSettingsClient() {
                           <td className="px-4 py-3 font-medium">
                             <div className="flex items-center gap-3">
                               {log.users?.avatar_url ? (
-                                <img 
-                                  src={log.users.avatar_url} 
-                                  alt="User Avatar" 
-                                  className="w-8 h-8 rounded-full border border-[color:var(--border)]"
-                                  onError={(e) => { (e.target as HTMLImageElement).src = 'https://cdn.discordapp.com/embed/avatars/0.png'; }}
+                                <Image
+                                  src={log.users.avatar_url}
+                                  alt="User Avatar"
+                                  width={32}
+                                  height={32}
+                                  className="w-8 h-8 rounded-full border border-[color:var(--border)] object-cover"
+                                  onError={(e) => {
+                                    (e.currentTarget as HTMLImageElement).src = 'https://cdn.discordapp.com/embed/avatars/0.png';
+                                  }}
                                 />
                               ) : (
                                 <div className="w-8 h-8 rounded-full bg-[color:var(--chip)] border border-[color:var(--border)] flex items-center justify-center text-[10px] muted">

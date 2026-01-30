@@ -37,6 +37,9 @@ export async function PUT(req: Request) {
     reward_interval_seconds?: number;
     reward_daily_cap_points?: number | null;
     reward_min_message_length?: number;
+    voice_reward_points_per_interval?: number;
+    voice_reward_interval_seconds?: number;
+    voice_reward_daily_cap_points?: number | null;
   };
 
   const patch: Record<string, unknown> = {};
@@ -53,6 +56,9 @@ export async function PUT(req: Request) {
   if (body.reward_interval_seconds !== undefined) patch.reward_interval_seconds = body.reward_interval_seconds;
   if (body.reward_daily_cap_points !== undefined) patch.reward_daily_cap_points = body.reward_daily_cap_points ?? null;
   if (body.reward_min_message_length !== undefined) patch.reward_min_message_length = body.reward_min_message_length;
+  if (body.voice_reward_points_per_interval !== undefined) patch.voice_reward_points_per_interval = body.voice_reward_points_per_interval;
+  if (body.voice_reward_interval_seconds !== undefined) patch.voice_reward_interval_seconds = body.voice_reward_interval_seconds;
+  if (body.voice_reward_daily_cap_points !== undefined) patch.voice_reward_daily_cap_points = body.voice_reward_daily_cap_points ?? null;
 
     const supabase = createSupabaseAdminClient();
 

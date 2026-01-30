@@ -10,25 +10,25 @@ if (!discordClientId || !discordClientSecret || !authSecret) {
   if (!discordClientId) missing.push('DISCORD_CLIENT_ID');
   if (!discordClientSecret) missing.push('DISCORD_CLIENT_SECRET');
   if (!authSecret) missing.push('AUTH_SECRET (or NEXTAUTH_SECRET)');
-  // Don't crash at build-time; surface the misconfig at runtime via NextAuth's error page/logs.
-  // eslint-disable-next-line no-console
   console.warn(`[auth] Missing env: ${missing.join(', ')}`);
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: authSecret,
   // Fixes "UntrustedHost" during local dev or proxy setups.
-  trustHost: process.env.AUTH_TRUST_HOST === 'true' || process.env.NODE_ENV !== 'production',
+  trustHost:
+    process.env.AUTH_TRUST_HOST === 'true' ||
+    process.env.NODE_ENV !== 'production',
   providers: [
     Discord({
       clientId: discordClientId ?? '',
       clientSecret: discordClientSecret ?? '',
       authorization: {
         params: {
-          scope: 'identify'
-        }
-      }
-    })
+          scope: 'identify',
+        },
+      },
+    }),
   ],
   callbacks: {
     async jwt({ token, account, trigger }) {
@@ -49,7 +49,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const userId = token.discordUserId as string | undefined;
         if (userId) {
           try {
-            const { fetchGuildMember, isAdmin } = await import('./src/lib/server/discord');
+            const { fetchGuildMember, isAdmin } =
+              await import('./src/lib/server/discord');
             const member = await fetchGuildMember({ userId });
             if (member) {
               token.isAdmin = await isAdmin({ userId, member });
@@ -60,7 +61,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             }
           } catch (e) {
             // If Discord API fails, keep previous isAdmin value (don't reset to false)
-            console.error('[auth] Failed to check admin status:', e instanceof Error ? e.message : e);
+            console.error(
+              '[auth] Failed to check admin status:',
+              e instanceof Error ? e.message : e,
+            );
             // Don't update adminCheckedAt so it will retry on next session access
           }
         }
@@ -71,9 +75,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async session({ session, token }) {
       const discordUserId = token.discordUserId as string | undefined;
       if (discordUserId) session.user.id = discordUserId;
-      session.discordAccessToken = token.discordAccessToken as string | undefined;
+      session.discordAccessToken = token.discordAccessToken as
+        | string
+        | undefined;
       session.isAdmin = token.isAdmin as boolean | undefined;
       return session;
-    }
-  }
+    },
+  },
 });

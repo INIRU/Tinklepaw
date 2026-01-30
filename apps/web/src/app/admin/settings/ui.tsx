@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import NextImage from 'next/image';
 import MarkdownPreview from '@/components/content/MarkdownPreview';
 import { useToast } from '@/components/toast/ToastProvider';
 import { Check, ChevronDown, ChevronLeft } from 'lucide-react';
@@ -16,6 +18,9 @@ type AppConfig = {
   reward_interval_seconds: number;
   reward_daily_cap_points: number | null;
   reward_min_message_length: number;
+  voice_reward_points_per_interval: number;
+  voice_reward_interval_seconds: number;
+  voice_reward_daily_cap_points: number | null;
 };
 
 type DiscordChannel = { id: string; name: string };
@@ -213,16 +218,17 @@ function CropModal(props: {
             onPointerCancel={onPointerUp}
           >
             {img ? (
-              <img
+              <NextImage
                 src={props.src}
                 alt=""
+                width={img.naturalWidth}
+                height={img.naturalHeight}
+                unoptimized
                 className="absolute left-1/2 top-1/2 max-w-none select-none"
                 draggable={false}
                 style={{
                   transform: `translate(-50%, -50%) translate(${clampedOffset.x}px, ${clampedOffset.y}px) scale(${baseScale * zoom})`,
-                  transformOrigin: 'center',
-                  width: img.naturalWidth,
-                  height: img.naturalHeight
+                  transformOrigin: 'center'
                 }}
               />
             ) : (
@@ -572,9 +578,9 @@ export default function SettingsClient() {
                 >
                   다시 시도
                 </button>
-                <a className="rounded-2xl btn-soft px-4 py-3 text-sm font-semibold" href="/">
+                <Link className="rounded-2xl btn-soft px-4 py-3 text-sm font-semibold" href="/">
                   홈으로
-                </a>
+                </Link>
               </div>
               <div className="mt-4 text-xs muted">
                 DB를 초기화하셨다면 `supabase/bootstrap_nyang.sql`을 실행하고, Supabase API 설정의 Exposed schemas에 `nyang`를 추가해 주세요.
@@ -665,11 +671,16 @@ export default function SettingsClient() {
                   새 이미지
                 </button>
               </div>
-              <div className="mt-3 overflow-hidden rounded-2xl border border-[color:var(--border)] bg-black/20" style={{ aspectRatio: '8 / 3' }}>
-                <img
+              <div
+                className="relative mt-3 overflow-hidden rounded-2xl border border-[color:var(--border)] bg-black/20"
+                style={{ aspectRatio: '8 / 3' }}
+              >
+                <NextImage
                   src={stagedBanner?.publicUrl ?? cfg.banner_image_url ?? '/banner.png'}
                   alt=""
-                  className="h-full w-full object-cover"
+                  fill
+                  sizes="(max-width: 768px) 100vw, 672px"
+                  className="object-cover"
                 />
               </div>
               {stagedBanner ? (
@@ -712,9 +723,11 @@ export default function SettingsClient() {
               </div>
               <div className="mt-3 flex items-center gap-4">
                 <div className="h-16 w-16 overflow-hidden rounded-2xl border border-[color:var(--border)] bg-black/20">
-                  <img
+                  <NextImage
                     src={stagedIcon?.publicUrl ?? cfg.icon_image_url ?? '/icon.jpg'}
                     alt=""
+                    width={64}
+                    height={64}
                     className="h-full w-full object-cover"
                   />
                 </div>
@@ -842,6 +855,45 @@ export default function SettingsClient() {
               type="number"
               value={cfg.reward_min_message_length}
               onChange={(e) => setCfg({ ...cfg, reward_min_message_length: Number(e.target.value) })}
+            />
+          </label>
+        </div>
+      </section>
+
+      <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+        <h2 className="text-lg font-semibold">음성 보상</h2>
+        <p className="mt-2 text-xs muted">모든 음성 채널에 적용됩니다.</p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm">
+            주기당 포인트
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              value={cfg.voice_reward_points_per_interval}
+              onChange={(e) => setCfg({ ...cfg, voice_reward_points_per_interval: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            주기(초)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              value={cfg.voice_reward_interval_seconds}
+              onChange={(e) => setCfg({ ...cfg, voice_reward_interval_seconds: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            일일 상한(비우면 무제한)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              value={cfg.voice_reward_daily_cap_points ?? ''}
+              onChange={(e) =>
+                setCfg({
+                  ...cfg,
+                  voice_reward_daily_cap_points: e.target.value === '' ? null : Number(e.target.value)
+                })
+              }
             />
           </label>
         </div>

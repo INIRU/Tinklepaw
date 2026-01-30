@@ -15,33 +15,19 @@ export function startVoiceRewardWorker(client: Client) {
     try {
       const ctx = getBotContext();
       const config = await getAppConfig().catch(() => null);
-      const intervalSeconds = config?.reward_interval_seconds ?? 60;
+      const intervalSeconds = config?.voice_reward_interval_seconds ?? 60;
       nextDelayMs = Math.max(intervalSeconds, 15) * 1000;
 
-      if (!config || config.reward_points_per_interval <= 0) return;
+      if (!config || config.voice_reward_points_per_interval <= 0) return;
 
       const guild = await client.guilds.fetch(ctx.env.NYARU_GUILD_ID).catch(() => null);
       if (!guild) return;
-
-      const { data: rewardChannels, error } = await ctx.supabase
-        .from('reward_channels')
-        .select('channel_id')
-        .eq('enabled', true);
-
-      if (error) {
-        console.error('[VoicePoints] Failed to load reward channels:', error);
-        return;
-      }
-
-      const allowed = new Set((rewardChannels ?? []).map((c) => c.channel_id));
-      if (allowed.size === 0) return;
 
       const now = new Date().toISOString();
       const tasks: PromiseLike<void>[] = [];
 
       guild.voiceStates.cache.forEach((state) => {
         if (!state.channelId) return;
-        if (!allowed.has(state.channelId)) return;
         const member = state.member;
         if (!member || member.user.bot) return;
 

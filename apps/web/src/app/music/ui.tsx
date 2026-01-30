@@ -3,11 +3,12 @@
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Pause, Play, RefreshCw, SkipBack, SkipForward, Square, ListMusic, GripVertical, CheckCircle, XCircle } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { Pause, Play, RefreshCw, SkipBack, SkipForward, Square, ListMusic, GripVertical } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Image from 'next/image';
 
 import { supabaseBrowser } from '@/lib/supabase-browser';
+import FeedbackModal from './FeedbackModal';
 
 type MusicTrack = {
   id: string;
@@ -62,7 +63,16 @@ const QueueRow = ({ track }: { track: MusicTrack }) => {
         <GripVertical className="w-4 h-4" />
       </button>
       <div className="w-12 h-12 rounded-xl overflow-hidden bg-black/40 shrink-0">
-        {track.thumbnail && <img src={track.thumbnail} alt="" className="w-full h-full object-cover" />}
+        {track.thumbnail && (
+          <Image
+            src={track.thumbnail}
+            alt=""
+            width={48}
+            height={48}
+            className="w-full h-full object-cover"
+            unoptimized
+          />
+        )}
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-semibold truncate">{truncateText(track.title, 44)}</div>
@@ -78,7 +88,6 @@ export default function MusicControlClient() {
   const [logs, setLogs] = useState<MusicLog[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [query, setQuery] = useState('');
-  const [mounted, setMounted] = useState(false);
   const [feedback, setFeedback] = useState<{ open: boolean; title: string; message: string; kind: 'success' | 'error' }>({
     open: false,
     title: '',
@@ -99,7 +108,7 @@ export default function MusicControlClient() {
     })
   );
 
-  const fetchState = async () => {
+  const fetchState = useCallback(async () => {
     try {
       const res = await fetch('/api/music/state', { cache: 'no-store' });
       if (!res.ok) return false;
@@ -110,9 +119,9 @@ export default function MusicControlClient() {
       console.error('[Music] Failed to fetch state:', error);
       return false;
     }
-  };
+  }, []);
 
-  const fetchLogs = async () => {
+  const fetchLogs = useCallback(async () => {
     try {
       const res = await fetch('/api/music/logs', { cache: 'no-store' });
       if (!res.ok) return false;
@@ -123,23 +132,25 @@ export default function MusicControlClient() {
       console.error('[Music] Failed to fetch logs:', error);
       return false;
     }
-  };
+  }, []);
 
-  const scheduleStateRefresh = () => {
+  const scheduleStateRefresh = useCallback(() => {
     if (stateRefreshTimer.current) window.clearTimeout(stateRefreshTimer.current);
     stateRefreshTimer.current = window.setTimeout(() => {
       void fetchState();
     }, 150);
-  };
+  }, [fetchState]);
 
-  const refreshAll = async () => {
+  const refreshAll = useCallback(async () => {
     setIsLoading(true);
     await Promise.all([fetchState(), fetchLogs()]);
     setIsLoading(false);
-  };
+  }, [fetchLogs, fetchState]);
 
   useEffect(() => {
-    refreshAll();
+    const initialLoad = window.setTimeout(() => {
+      void refreshAll();
+    }, 0);
     const stateChannel = supabaseBrowser
       .channel('music_state')
       .on(
@@ -162,17 +173,14 @@ export default function MusicControlClient() {
     const logsInterval = window.setInterval(fetchLogs, 30000);
 
     return () => {
+      window.clearTimeout(initialLoad);
       supabaseBrowser.removeChannel(stateChannel);
       supabaseBrowser.removeChannel(logsChannel);
       window.clearInterval(stateInterval);
       window.clearInterval(logsInterval);
       if (stateRefreshTimer.current) window.clearTimeout(stateRefreshTimer.current);
     };
-  }, []);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  }, [fetchLogs, fetchState, refreshAll, scheduleStateRefresh]);
 
   useEffect(() => () => {
     if (feedbackTimer.current) window.clearTimeout(feedbackTimer.current);
@@ -297,7 +305,16 @@ export default function MusicControlClient() {
           <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6 space-y-6">
             <div className="flex items-center gap-4">
               <div className="w-20 h-20 rounded-2xl overflow-hidden bg-[color:var(--chip)]">
-                {current?.thumbnail && <img src={current.thumbnail} alt="" className="w-full h-full object-cover" />}
+                {current?.thumbnail && (
+                  <Image
+                    src={current.thumbnail}
+                    alt=""
+                    width={80}
+                    height={80}
+                    className="w-full h-full object-cover"
+                    unoptimized
+                  />
+                )}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm muted">현재 재생</div>
@@ -401,7 +418,14 @@ export default function MusicControlClient() {
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-9 h-9 rounded-full overflow-hidden bg-[color:var(--chip)] shrink-0">
                     {log.requested_by_user?.avatarUrl && (
-                      <img src={log.requested_by_user.avatarUrl} alt="" className="w-full h-full object-cover" />
+                      <Image
+                        src={log.requested_by_user.avatarUrl}
+                        alt=""
+                        width={36}
+                        height={36}
+                        className="w-full h-full object-cover"
+                        unoptimized
+                      />
                     )}
                   </div>
                   <div className="min-w-0">
@@ -421,29 +445,7 @@ export default function MusicControlClient() {
         </section>
       </div>
 
-      {feedback.open && mounted &&
-        createPortal(
-          <div className="fixed inset-0 z-[60] flex h-screen w-screen items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="relative w-full max-w-sm rounded-[32px] border border-[color:var(--border)] bg-[color:var(--card)] p-8 text-center shadow-2xl">
-              <div
-                className={`mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-3xl border shadow-[0_0_40px_rgba(16,185,129,0.15)] ${
-                  feedback.kind === 'success'
-                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
-                    : 'bg-rose-500/10 border-rose-500/20 text-rose-500'
-                }`}
-              >
-                {feedback.kind === 'success' ? (
-                  <CheckCircle className="h-10 w-10" strokeWidth={1.5} />
-                ) : (
-                  <XCircle className="h-10 w-10" strokeWidth={1.5} />
-                )}
-              </div>
-              <h2 className="text-2xl font-bold font-bangul text-[color:var(--fg)] mb-2">{feedback.title}</h2>
-              <p className="text-sm text-[color:var(--muted)] leading-relaxed">{feedback.message}</p>
-            </div>
-          </div>,
-          document.body
-        )}
+      <FeedbackModal feedback={feedback} />
     </div>
   );
 }

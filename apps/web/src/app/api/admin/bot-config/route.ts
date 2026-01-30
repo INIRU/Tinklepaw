@@ -49,10 +49,15 @@ export async function GET() {
       show_traceback_to_user: true,
       last_heartbeat_at: null
     };
-    return NextResponse.json(defaultBotConfig);
+    return NextResponse.json({ ...defaultBotConfig, bot_online: false, heartbeat_age_ms: null });
   }
+
+  const now = Date.now();
+  const last = data.last_heartbeat_at ? new Date(data.last_heartbeat_at).getTime() : null;
+  const ageMs = last ? Math.max(0, now - last) : null;
+  const bot_online = ageMs !== null && ageMs < 30000;
   
-  return NextResponse.json(data);
+  return NextResponse.json({ ...data, bot_online, heartbeat_age_ms: ageMs });
 }
 
 export async function PUT(req: Request) {

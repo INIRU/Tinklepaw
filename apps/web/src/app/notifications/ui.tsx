@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Bell,
-  RefreshCw,
   Trash2,
   Check,
   Gift,
@@ -16,44 +15,22 @@ import {
   X,
 } from 'lucide-react';
 import { m, AnimatePresence } from 'framer-motion';
-import { NotificationList } from '../../components/notification/NotificationList';
 import { Notification } from '../../components/notification/NotificationItem';
 import { markAsRead, deleteNotification, claimReward, markAllAsRead, deleteAllRead } from './actions';
 
 export function NotificationClientPage({
   initialNotifications,
-  userId,
 }: {
   initialNotifications: Notification[];
-  userId: string;
 }) {
   const [notifications, setNotifications] = useState(initialNotifications);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'all' | 'unread'>('all');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const fetchUnreadCount = async () => {
-    try {
-      const res = await fetch('/api/notifications/unread');
-      const data = await res.json();
-      setUnreadCount(data.count || 0);
-    } catch (error) {
-      console.error('Failed to fetch unread count:', error);
-    }
-  };
-
-  useEffect(() => {
-    fetchUnreadCount();
-  }, [notifications]);
+  const unreadCount = useMemo(() => notifications.filter((n) => !n.is_read).length, [notifications]);
 
   const handleRead = async (id: string) => {
     setNotifications((prev) =>
@@ -104,8 +81,6 @@ export function NotificationClientPage({
     const result = await markAllAsRead();
     if (!result.success) {
       console.error('Failed to mark all as read:', result.message);
-      // Revert if failed (optional, but good practice)
-      await fetchUnreadCount(); // Refresh actual state
     }
     setIsLoading(false);
   };
@@ -454,7 +429,7 @@ export function NotificationClientPage({
       </m.div>
 
       {/* 성공 모달 */}
-      {mounted &&
+      {typeof document !== 'undefined' &&
         createPortal(
           <AnimatePresence>
             {showSuccessModal && (
@@ -499,7 +474,7 @@ export function NotificationClientPage({
         )}
 
       {/* 에러 모달 */}
-      {mounted &&
+      {typeof document !== 'undefined' &&
         createPortal(
           <AnimatePresence>
             {showErrorModal && (
@@ -544,7 +519,7 @@ export function NotificationClientPage({
         )}
 
       {/* 확인 모달 */}
-      {mounted &&
+      {typeof document !== 'undefined' &&
         createPortal(
           <AnimatePresence>
             {showConfirmModal && (
