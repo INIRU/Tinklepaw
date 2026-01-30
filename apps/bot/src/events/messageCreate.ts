@@ -55,7 +55,9 @@ export function registerMessageCreate(client: Client) {
           await message.react('💰'); 
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error('[Points] Failed to grant chat points:', e);
+    }
 
     const botId = client.user?.id;
     if (!botId) return;
@@ -95,6 +97,7 @@ export function registerMessageCreate(client: Client) {
           const embed = await generateInventoryEmbed(ctx, message.author);
           await message.reply({ embeds: [embed] });
         } catch (e) {
+          console.error('[MessageCreate] Failed to fetch inventory (keyword):', e);
           const errMsg = e instanceof Error ? e.message : '인벤토리 조회 실패';
           await message.reply(errMsg);
         }
@@ -123,6 +126,7 @@ export function registerMessageCreate(client: Client) {
               const embed = await generateInventoryEmbed(ctx, message.author);
               await message.reply({ embeds: [embed] });
             } catch (e) {
+              console.error('[MessageCreate] Failed to fetch inventory (intent):', e);
               const errMsg = e instanceof Error ? e.message : '인벤토리 조회 실패';
               await message.reply(errMsg);
             }

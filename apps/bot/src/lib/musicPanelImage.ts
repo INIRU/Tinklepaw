@@ -149,8 +149,8 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
     try {
       const artwork = await loadImage(params.artworkUrl);
       drawRoundedImage(ctx, artwork, artX, artY, artSize, 18);
-    } catch {
-      // keep placeholder
+    } catch (error) {
+      console.warn('[MusicPanel] Failed to load artwork:', params.artworkUrl, error);
     }
   }
 
@@ -237,8 +237,8 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
         try {
           const art = await loadImage(track.thumbnail);
           drawRoundedImage(ctx, art, thumbX, thumbY, queueThumbSize, 8);
-        } catch {
-          // fallback
+        } catch (error) {
+          console.warn('[MusicPanel] Failed to load thumbnail:', track.thumbnail, error);
         }
       }
 

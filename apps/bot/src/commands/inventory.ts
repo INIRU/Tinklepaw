@@ -17,7 +17,8 @@ export const inventoryCommand: SlashCommand = {
     const ctx = getBotContext();
     try {
       await interaction.deferReply({ ephemeral: true });
-    } catch {
+    } catch (error) {
+      console.error('[Inventory] Failed to defer reply:', error);
       return;
     }
 

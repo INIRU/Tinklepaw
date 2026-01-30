@@ -67,7 +67,7 @@ Your role:
       personaPrompt = config.persona_prompt;
     }
   } catch (error) {
-    /* empty */
+    console.warn('[Groq] Failed to load persona prompt:', error);
   }
 
   const groq = new Groq({ apiKey });

@@ -252,7 +252,9 @@ export async function triggerGachaUI(context: ChatInputCommandInteraction | Mess
             try {
               const role = await guild.roles.fetch(row.out_discord_role_id);
               if (role) displayName = role.name;
-            } catch (e) {}
+            } catch (e) {
+              console.warn('[Draw] Failed to fetch role name:', row.out_discord_role_id, e);
+            }
           }
           results.push({
             name: displayName,

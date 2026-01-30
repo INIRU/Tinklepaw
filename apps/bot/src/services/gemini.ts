@@ -60,7 +60,7 @@ Your role:
       personaPrompt = config.persona_prompt;
     }
   } catch (error) {
-    /* empty */
+    console.warn('[Gemini] Failed to load persona prompt:', error);
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -132,7 +132,8 @@ Return JSON with the schema.`;
       default:
         return { action: 'chat', reply: parsed.reply ?? '그래.' };
     }
-  } catch {
+  } catch (error) {
+    console.warn('[Gemini] Failed to parse intent response:', error);
     return null;
   }
 }

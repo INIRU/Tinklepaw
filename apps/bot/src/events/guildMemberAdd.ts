@@ -18,7 +18,8 @@ export function registerGuildMemberAdd(client: Client) {
     let cfg;
     try {
       cfg = await getAppConfig();
-    } catch {
+    } catch (error) {
+      console.error('[GuildMemberAdd] Failed to load app config:', error);
       return;
     }
 
