@@ -32,12 +32,13 @@ export async function POST(req: Request) {
 
   const path = `${base}.${ext}`;
   const { publicUrl } = await uploadPublicImage({ path, file, upsert: true });
+  const versionedUrl = `${publicUrl}?v=${Date.now()}`;
 
   const supabase = createSupabaseAdminClient();
-  const { error } = await supabase.from('gacha_pools').update({ banner_image_url: publicUrl }).eq('pool_id', poolId);
+  const { error } = await supabase.from('gacha_pools').update({ banner_image_url: versionedUrl }).eq('pool_id', poolId);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-  return NextResponse.json({ ok: true, publicUrl });
+  return NextResponse.json({ ok: true, publicUrl: versionedUrl });
 }
 
 export async function DELETE(req: Request) {
