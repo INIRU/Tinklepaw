@@ -13,6 +13,7 @@ type DrawResult = {
   name: string;
   rarity: string;
   discordRoleId: string | null;
+  rewardPoints?: number;
 };
 
 type Pool = {
@@ -445,6 +446,13 @@ export default function DrawClient() {
                         <div className='font-bold text-center break-keep'>
                           {item.name}
                         </div>
+                        {!item.discordRoleId && (
+                          <div className='mt-2 text-xs font-semibold text-[color:var(--muted)]'>
+                            {item.rewardPoints && item.rewardPoints > 0
+                              ? `포인트 +${item.rewardPoints}p`
+                              : '꽝'}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
