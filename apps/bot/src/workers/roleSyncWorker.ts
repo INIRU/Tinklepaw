@@ -62,23 +62,36 @@ type StatusSample = {
 
 async function recordStatusSample(sample: StatusSample) {
   const ctx = getBotContext();
-  const { data: last } = await ctx.supabase
-    .from('status_samples')
-    .select('created_at')
-    .eq('service', sample.service)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  try {
+    const { data: last, error: lastError } = await ctx.supabase
+      .from('status_samples')
+      .select('created_at')
+      .eq('service', sample.service)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-  if (last?.created_at) {
-    const lastAt = new Date(last.created_at).getTime();
-    if (Date.now() - lastAt < STATUS_SAMPLE_INTERVAL_MS) return;
+    if (lastError) {
+      console.error('[StatusSamples] Failed to load last sample:', sample.service, lastError);
+      return;
+    }
+
+    if (last?.created_at) {
+      const lastAt = new Date(last.created_at).getTime();
+      if (Date.now() - lastAt < STATUS_SAMPLE_INTERVAL_MS) return;
+    }
+
+    const { error: insertError } = await ctx.supabase.from('status_samples').insert({
+      service: sample.service,
+      status: sample.status
+    });
+
+    if (insertError) {
+      console.error('[StatusSamples] Failed to insert sample:', sample, insertError);
+    }
+  } catch (e) {
+    console.error('[StatusSamples] Unexpected error while recording sample:', sample, e);
   }
-
-  await ctx.supabase.from('status_samples').insert({
-    service: sample.service,
-    status: sample.status
-  });
 }
 
 async function syncStatusSamples() {
@@ -94,7 +107,8 @@ async function syncStatusSamples() {
     } else {
       samples.push({ service: 'lavalink', status: 'degraded' });
     }
-  } catch {
+  } catch (error) {
+    console.warn('[StatusSamples] Failed to read Lavalink status:', error);
     samples.push({ service: 'lavalink', status: 'unknown' });
   }
 
@@ -139,6 +153,7 @@ export function startRoleSyncWorker(client: Client) {
             .eq('job_id', job.job_id);
         } catch (e) {
           const msg = e instanceof Error ? e.message : 'Unknown error';
+          console.error('[RoleSync] Job failed:', { jobId: job.job_id, userId: job.discord_user_id, error: msg });
           await ctx.supabase
             .from('role_sync_jobs')
             .update({ status: 'failed', updated_at: new Date().toISOString(), last_error: msg })

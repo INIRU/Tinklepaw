@@ -65,6 +65,7 @@ export async function POST(req: Request) {
     }
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Failed to draw';
+    console.error('[GachaDraw] POST failed:', error);
     return NextResponse.json({ error: msg }, { status: 400 });
   }
 

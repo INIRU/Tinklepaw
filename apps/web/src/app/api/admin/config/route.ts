@@ -14,6 +14,7 @@ export async function GET() {
     return NextResponse.json(cfg);
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Failed to load config';
+    console.error('[AdminConfig] GET failed:', e);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
@@ -61,6 +62,7 @@ export async function PUT(req: Request) {
     return NextResponse.json(data);
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Failed to update config';
+    console.error('[AdminConfig] PUT failed:', e);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

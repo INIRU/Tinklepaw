@@ -22,6 +22,7 @@ export async function GET() {
     return NextResponse.json({ pools: data ?? [] });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Failed to load pools';
+    console.error('[AdminGachaPools] GET failed:', e);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
@@ -79,6 +80,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ pool: data });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Failed to save pool';
+    console.error('[AdminGachaPools] POST failed:', e);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
@@ -99,6 +101,7 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ success: true });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Failed to delete pool';
+    console.error('[AdminGachaPools] DELETE failed:', e);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

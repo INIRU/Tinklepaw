@@ -106,7 +106,8 @@ export default function MusicControlClient() {
       const json = await res.json();
       setState(json.state ?? null);
       return true;
-    } catch {
+    } catch (error) {
+      console.error('[Music] Failed to fetch state:', error);
       return false;
     }
   };
@@ -118,7 +119,8 @@ export default function MusicControlClient() {
       const json = await res.json();
       setLogs(json.logs ?? []);
       return true;
-    } catch {
+    } catch (error) {
+      console.error('[Music] Failed to fetch logs:', error);
       return false;
     }
   };

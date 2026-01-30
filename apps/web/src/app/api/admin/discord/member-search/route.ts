@@ -21,6 +21,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ members });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Discord API failed';
+    console.error('[AdminDiscordMemberSearch] GET failed:', e);
     return NextResponse.json({ error: msg }, { status: 502 });
   }
 }
