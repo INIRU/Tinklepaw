@@ -360,6 +360,14 @@ export type Database = {
         };
         Returns: Array<{ granted_points: number; new_balance: number }>;
       };
+      grant_voice_points: {
+        Args: {
+          p_discord_user_id: string;
+          p_channel_id: string;
+          p_voice_ts: string;
+        };
+        Returns: Array<{ granted_points: number; new_balance: number }>;
+      };
     };
     Enums: {
       role_sync_job_status: 'pending' | 'running' | 'succeeded' | 'failed';

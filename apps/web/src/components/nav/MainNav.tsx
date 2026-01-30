@@ -63,7 +63,7 @@ export default function MainNav(props: {
               </div>
             </Link>
 
-            <div className="ml-3 hidden items-center gap-1 md:flex">
+            <div className="ml-3 hidden items-center gap-1 lg:flex">
               {navLinks.filter(link => link.href !== '/notifications').map((link) => (
                 <Link
                   key={link.href}
@@ -92,7 +92,7 @@ export default function MainNav(props: {
             <ThemeToggle />
 
             {props.user && (
-              <div className="hidden md:flex items-center">
+              <div className="hidden lg:flex items-center">
                 <Link
                   href="/notifications"
                   className="relative flex items-center justify-center h-9 w-9 rounded-full btn-soft mr-2"
@@ -149,7 +149,7 @@ export default function MainNav(props: {
             )}
 
             <button
-              className="flex h-9 w-9 items-center justify-center rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] text-[color:var(--fg)] md:hidden"
+              className="flex h-9 w-9 items-center justify-center rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] text-[color:var(--fg)] lg:hidden"
               onClick={() => setIsMenuOpen(!isMenuOpen)}
               aria-label={isMenuOpen ? "메뉴 닫기" : "메뉴 열기"}
             >

@@ -82,18 +82,27 @@ Decide if the user is asking to:
 
 Return JSON with the schema.`;
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-lite',
-    contents: [
-      ...history,
-      { role: 'user', parts: [{ text: params.text }] }
-    ],
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: schema,
-      systemInstruction: { parts: [{ text: systemInstruction }] }
+  let response: Awaited<ReturnType<typeof ai.models.generateContent>>;
+  try {
+    response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-lite',
+      contents: [
+        ...history,
+        { role: 'user', parts: [{ text: params.text }] }
+      ],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: schema,
+        systemInstruction: { parts: [{ text: systemInstruction }] }
+      }
+    });
+  } catch (error) {
+    if (isGeminiRateLimit(error)) {
+      return { action: 'chat', reply: '지금 제미니 한도가 다 됐어. 잠깐 뒤에 다시 불러줘.' };
     }
-  });
+    console.error('[Gemini] Request failed:', error);
+    return null;
+  }
 
   const raw = response.text;
   if (!raw) return null;
@@ -137,6 +146,13 @@ Return JSON with the schema.`;
     return null;
   }
 }
+
+const isGeminiRateLimit = (error: unknown) => {
+  const err = error as { status?: number; code?: number; message?: string } | null;
+  if (err?.status === 429 || err?.code === 429) return true;
+  const message = err?.message ?? (error instanceof Error ? error.message : '');
+  return message.includes('429') || message.includes('RESOURCE_EXHAUSTED') || message.includes('quota');
+};
 
 const normalizeGeminiWord = (value: string | null | undefined) => {
   if (!value) return '';
