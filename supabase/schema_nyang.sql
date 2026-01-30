@@ -180,6 +180,7 @@ create table if not exists nyang.gacha_pull_results (
   pull_id uuid not null references nyang.gacha_pulls(pull_id) on delete cascade,
   item_id uuid not null references nyang.items(item_id) on delete cascade,
   qty integer not null default 1,
+  is_pity boolean not null default false,
   primary key (pull_id, item_id)
 );
 

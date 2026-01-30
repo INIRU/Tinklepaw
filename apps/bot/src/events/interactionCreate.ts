@@ -21,7 +21,18 @@ const formatQueueLine = (track: { title: string; uri?: string | null; length?: n
   return `\`${index + 1}.\` ${link} \`${duration}\``;
 };
 
-const normalizeQuery = (raw: string) => raw.trim().replace(/^<(.+)>$/, '$1').trim();
+const normalizeQuery = (raw: string) => {
+  const trimmed = raw.trim().replace(/^<(.+)>$/, '$1').trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^spotify:/i.test(trimmed)) {
+    const parts = trimmed.split(':');
+    if (parts.length >= 3) return `https://open.spotify.com/${parts[1]}/${parts[2]}`;
+  }
+  if (/^[\w.-]+\.[a-z]{2,}(\/|$)/i.test(trimmed)) return `https://${trimmed}`;
+  return trimmed;
+};
+
+const isSpotifyUrl = (value: string) => /spotify\.com/i.test(value) || /^spotify:/i.test(value);
 
 const scheduleMusicStateUpdate = (player: KazagumoPlayer, delayMs = 700) => {
   setTimeout(() => {
@@ -244,6 +255,13 @@ export function registerInteractionCreate(client: Client) {
         voiceId,
         volume: 60
       });
+
+      if (isSpotifyUrl(query)) {
+        await interaction.editReply({
+          embeds: [buildMusicStatusEmbed('🚫 Spotify 미지원', 'Spotify URL은 아직 지원하지 않아요. YouTube 또는 SoundCloud URL을 사용해 주세요.')]
+        });
+        return;
+      }
 
       const searchResult = await music.search(query, { requester: interaction.user });
       if (!searchResult.tracks.length) {
