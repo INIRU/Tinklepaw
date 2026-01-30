@@ -1,6 +1,7 @@
 import type { Message } from 'discord.js';
 
 import { clearGame, getGame, setGame } from './state.js';
+import { getGeminiWordChainNext } from '../services/gemini.js';
 
 const START_WORDS = ['사과', '바다', '고양이', '학교', '기차', '하늘', '친구', '노트', '라면', '연필'];
 const WORDS = [
@@ -87,7 +88,16 @@ export async function handleWordChainMessage(message: Message): Promise<boolean>
   used.add(trimmed);
   usedByChannel.set(message.channelId, used);
 
-  const next = pickNext(trimmed, used);
+  const geminiNext = await getGeminiWordChainNext({
+    lastWord: trimmed,
+    used: Array.from(used)
+  }).catch(() => null);
+  const validGemini =
+    geminiNext &&
+    geminiNext.length >= 2 &&
+    firstChar(geminiNext) === expected &&
+    !used.has(geminiNext);
+  const next = validGemini ? geminiNext : pickNext(trimmed, used);
   if (!next) {
     clearGame(message.channelId);
     usedByChannel.delete(message.channelId);

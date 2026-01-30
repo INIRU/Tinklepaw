@@ -1,6 +1,7 @@
 import type { Message } from 'discord.js';
 
 import { clearGame, getGame } from './state.js';
+import { getGeminiRpsChoice } from '../services/gemini.js';
 
 const KOREAN: Record<string, 'rock' | 'paper' | 'scissors'> = {
   바위: 'rock',
@@ -48,7 +49,8 @@ export async function handleRpsMessage(message: Message): Promise<boolean> {
     return true;
   }
 
-  const botChoice = pickBotChoice();
+  const geminiChoice = await getGeminiRpsChoice().catch(() => null);
+  const botChoice = geminiChoice ? KOREAN[geminiChoice] : pickBotChoice();
   const r = result(userChoice, botChoice);
   clearGame(message.channelId);
 
