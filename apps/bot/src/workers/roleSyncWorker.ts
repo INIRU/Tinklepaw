@@ -2,6 +2,7 @@ import type { Client } from 'discord.js';
 
 import { getBotContext } from '../context.js';
 import { getAppConfig } from '../services/config.js';
+import { getMusic, getNodeStatus } from '../services/music.js';
 
 type RoleSyncJob = {
   job_id: string;
@@ -52,6 +53,54 @@ async function syncHeartbeat() {
   }
 }
 
+const STATUS_SAMPLE_INTERVAL_MS = 10 * 60 * 1000;
+
+type StatusSample = {
+  service: 'bot' | 'lavalink';
+  status: 'operational' | 'degraded' | 'down' | 'unknown';
+};
+
+async function recordStatusSample(sample: StatusSample) {
+  const ctx = getBotContext();
+  const { data: last } = await ctx.supabase
+    .from('status_samples')
+    .select('created_at')
+    .eq('service', sample.service)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (last?.created_at) {
+    const lastAt = new Date(last.created_at).getTime();
+    if (Date.now() - lastAt < STATUS_SAMPLE_INTERVAL_MS) return;
+  }
+
+  await ctx.supabase.from('status_samples').insert({
+    service: sample.service,
+    status: sample.status
+  });
+}
+
+async function syncStatusSamples() {
+  const samples: StatusSample[] = [{ service: 'bot', status: 'operational' }];
+
+  try {
+    const music = getMusic();
+    const nodeStatus = getNodeStatus(music);
+    if (nodeStatus.ready) {
+      samples.push({ service: 'lavalink', status: 'operational' });
+    } else if (nodeStatus.summary.includes('연결된 Lavalink 노드가 없습니다')) {
+      samples.push({ service: 'lavalink', status: 'down' });
+    } else {
+      samples.push({ service: 'lavalink', status: 'degraded' });
+    }
+  } catch {
+    samples.push({ service: 'lavalink', status: 'unknown' });
+  }
+
+  await Promise.all(samples.map(recordStatusSample));
+}
+
 export function startRoleSyncWorker(client: Client) {
   let isRunning = false;
 
@@ -63,6 +112,7 @@ export function startRoleSyncWorker(client: Client) {
       const ctx = getBotContext();
       
       await syncHeartbeat();
+      await syncStatusSamples();
 
       const { data: jobs, error } = await ctx.supabase
         .from('role_sync_jobs')

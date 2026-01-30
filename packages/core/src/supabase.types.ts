@@ -43,6 +43,20 @@ export type Database = {
         Update: Partial<Database['nyang']['Tables']['app_config']['Row']>;
         Relationships: [];
       };
+      status_samples: {
+        Row: {
+          id: string;
+          service: string;
+          status: string;
+          created_at: string;
+        };
+        Insert: Partial<Database['nyang']['Tables']['status_samples']['Row']> & {
+          service: string;
+          status: string;
+        };
+        Update: Partial<Database['nyang']['Tables']['status_samples']['Row']>;
+        Relationships: [];
+      };
       music_control_jobs: {
         Row: {
           job_id: string;
