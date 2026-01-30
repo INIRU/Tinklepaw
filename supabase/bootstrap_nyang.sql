@@ -126,6 +126,7 @@ create table if not exists nyang.items (
   is_active boolean default true,
   is_equippable boolean default true,
   duplicate_refund_points integer default 0,
+  reward_points integer default 0,
   metadata jsonb default '{}'::jsonb,
   created_at timestamptz default now(),
   updated_at timestamptz default now(),
@@ -543,6 +544,7 @@ returns table (
   out_discord_role_id text,
   out_is_free boolean,
   out_refund_points integer,
+  out_reward_points integer,
   out_new_balance integer
 )
 language plpgsql
@@ -556,6 +558,7 @@ declare
   v_paid_ok boolean := true;
   v_spend integer := 0;
   v_refund integer := 0;
+  v_reward_points integer := 0;
   v_balance integer := 0;
   v_item record;
   v_pull_id uuid;
@@ -644,7 +647,8 @@ begin
       i.name,
       i.rarity,
       i.discord_role_id,
-      i.duplicate_refund_points
+      i.duplicate_refund_points,
+      i.reward_points
     from items i
     where
       i.is_active = true
@@ -664,15 +668,20 @@ begin
      raise exception 'POOL_EMPTY_FOR_RARITY';
   end if;
 
-  -- Refund check
-  select qty into v_current_qty
-  from inventory
-  where discord_user_id = p_discord_user_id and item_id = v_item.item_id;
-
-  if coalesce(v_current_qty, 0) > 0 then
-    v_refund := greatest(coalesce(v_item.duplicate_refund_points, 0), 0);
-  else
+  -- Refund / Reward check
+  if v_item.discord_role_id is null then
+    v_reward_points := greatest(coalesce(v_item.reward_points, 0), 0);
     v_refund := 0;
+  else
+    select qty into v_current_qty
+    from inventory
+    where discord_user_id = p_discord_user_id and item_id = v_item.item_id;
+
+    if coalesce(v_current_qty, 0) > 0 then
+      v_refund := greatest(coalesce(v_item.duplicate_refund_points, 0), 0);
+    else
+      v_refund := 0;
+    end if;
   end if;
 
   -- Record Pull
@@ -683,11 +692,13 @@ begin
   insert into gacha_pull_results(pull_id, item_id, qty, is_pity)
   values (v_pull_id, v_item.item_id, 1, v_force_rarity);
 
-  insert into inventory(discord_user_id, item_id, qty)
-  values (p_discord_user_id, v_item.item_id, 1)
-  on conflict (discord_user_id, item_id) do update
-    set qty = inventory.qty + 1,
-        updated_at = now();
+  if v_item.discord_role_id is not null then
+    insert into inventory(discord_user_id, item_id, qty)
+    values (p_discord_user_id, v_item.item_id, 1)
+    on conflict (discord_user_id, item_id) do update
+      set qty = inventory.qty + 1,
+          updated_at = now();
+  end if;
 
   -- Deduct / Log Points
   if (not v_is_free) and v_spend <> 0 then
@@ -704,6 +715,15 @@ begin
     values (p_discord_user_id, 'duplicate_refund', v_refund, jsonb_build_object('item_id', v_item.item_id, 'pull_id', v_pull_id));
     update point_balances
       set balance = balance + v_refund,
+      updated_at = now()
+    where discord_user_id = p_discord_user_id;
+  end if;
+
+  if v_reward_points <> 0 then
+    insert into point_events(discord_user_id, kind, amount, meta)
+    values (p_discord_user_id, 'gacha_reward', v_reward_points, jsonb_build_object('item_id', v_item.item_id, 'pull_id', v_pull_id));
+    update point_balances
+      set balance = balance + v_reward_points,
       updated_at = now()
     where discord_user_id = p_discord_user_id;
   end if;
@@ -745,6 +765,7 @@ begin
   out_discord_role_id := v_item.discord_role_id;
   out_is_free := v_is_free;
   out_refund_points := v_refund;
+  out_reward_points := v_reward_points;
   out_new_balance := v_balance;
   return next;
 end;

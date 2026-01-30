@@ -17,6 +17,7 @@ type Item = {
   discord_role_id: string | null;
   is_active: boolean;
   duplicate_refund_points: number;
+  reward_points: number;
 };
 type Pool = {
   pool_id: string;
@@ -271,7 +272,8 @@ export default function GachaAdminClient() {
         rarity: 'R',
         discord_role_id: null,
         is_active: true,
-        duplicate_refund_points: 0
+        duplicate_refund_points: 0,
+        reward_points: 0
       };
       const res = await fetch('/api/admin/gacha/items', {
         method: 'POST',
@@ -764,14 +766,22 @@ export default function GachaAdminClient() {
                         </div>
 
                         <div className="sm:col-span-2 lg:col-span-1">
-                          <CustomSelect
-                            label="디스코드 역할"
-                            value={it.discord_role_id ?? ''}
-                            onChange={(value) =>
-                              setItems((prev) =>
-                                prev.map((x) => (x.item_id === it.item_id ? { ...x, discord_role_id: value || null } : x))
-                              )
-                            }
+                            <CustomSelect
+                              label="디스코드 역할"
+                              value={it.discord_role_id ?? ''}
+                              onChange={(value) =>
+                                setItems((prev) =>
+                                  prev.map((x) =>
+                                    x.item_id === it.item_id
+                                      ? {
+                                          ...x,
+                                          discord_role_id: value || null,
+                                          reward_points: value ? 0 : x.reward_points
+                                        }
+                                      : x
+                                  )
+                                )
+                              }
                             options={[
                               { value: '', label: '(없음)' },
                               ...roles.map((r) => ({ value: r.id, label: r.name }))
@@ -794,8 +804,28 @@ export default function GachaAdminClient() {
                                 )
                               )
                             }
+                            disabled={!it.discord_role_id}
                           />
                         </div>
+
+                        {!it.discord_role_id && (
+                          <div>
+                            <label className="block text-xs font-medium muted mb-1.5">포인트 보상</label>
+                            <input
+                              className="w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)] focus:border-[color:var(--fg)]/40 transition"
+                              type="number"
+                              min={0}
+                              value={it.reward_points}
+                              onChange={(e) =>
+                                setItems((prev) =>
+                                  prev.map((x) =>
+                                    x.item_id === it.item_id ? { ...x, reward_points: Number(e.target.value) } : x
+                                  )
+                                )
+                              }
+                            />
+                          </div>
+                        )}
                       </div>
 
                       <div className="mt-4 flex items-center justify-between gap-3">

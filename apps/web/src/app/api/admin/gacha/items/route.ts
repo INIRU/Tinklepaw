@@ -12,7 +12,7 @@ export async function GET() {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from('items')
-    .select('item_id, name, rarity, discord_role_id, is_active, duplicate_refund_points')
+    .select('item_id, name, rarity, discord_role_id, is_active, duplicate_refund_points, reward_points')
     .order('updated_at', { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
@@ -29,6 +29,7 @@ export async function POST(req: Request) {
     discord_role_id: string | null;
     is_active: boolean;
     duplicate_refund_points: number;
+    reward_points?: number;
   };
 
   const supabase = createSupabaseAdminClient();
@@ -40,9 +41,10 @@ export async function POST(req: Request) {
       rarity: body.rarity,
       discord_role_id: body.discord_role_id,
       is_active: body.is_active,
-      duplicate_refund_points: body.duplicate_refund_points
+      duplicate_refund_points: body.duplicate_refund_points,
+      reward_points: body.reward_points ?? 0
     })
-    .select('item_id, name, rarity, discord_role_id, is_active, duplicate_refund_points')
+    .select('item_id, name, rarity, discord_role_id, is_active, duplicate_refund_points, reward_points')
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });

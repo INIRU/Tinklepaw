@@ -188,6 +188,7 @@ export type Database = {
           is_active: boolean;
           is_equippable: boolean;
           duplicate_refund_points: number;
+          reward_points: number;
           metadata: Json;
           created_at: string;
           updated_at: string;
@@ -363,6 +364,7 @@ export type Database = {
           discord_role_id: string | null;
           is_free: boolean;
           refund_points: number;
+          reward_points: number;
           new_balance: number;
         }>;
       };
