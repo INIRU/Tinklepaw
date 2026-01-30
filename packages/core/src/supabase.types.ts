@@ -358,14 +358,14 @@ export type Database = {
       perform_gacha_draw: {
         Args: { p_discord_user_id: string; p_pool_id?: string | null };
         Returns: Array<{
-          item_id: string;
-          name: string;
-          rarity: Database['nyang']['Enums']['gacha_rarity'];
-          discord_role_id: string | null;
-          is_free: boolean;
-          refund_points: number;
-          reward_points: number;
-          new_balance: number;
+          out_item_id: string;
+          out_name: string;
+          out_rarity: Database['nyang']['Enums']['gacha_rarity'];
+          out_discord_role_id: string | null;
+          out_is_free: boolean;
+          out_refund_points: number;
+          out_reward_points: number;
+          out_new_balance: number;
         }>;
       };
       set_equipped_item: {
