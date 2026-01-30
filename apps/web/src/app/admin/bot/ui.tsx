@@ -31,8 +31,6 @@ type BotConfig = {
   error_log_channel_id?: string | null;
   show_traceback_to_user?: boolean;
   last_heartbeat_at?: string | null;
-  bot_online?: boolean;
-  heartbeat_age_ms?: number | null;
 };
 
 type RewardChannel = { channel_id: string; enabled: boolean };
@@ -41,21 +39,6 @@ type DiscordChannel = { id: string; name: string };
 type StatusLevel = 'operational' | 'degraded' | 'down' | 'unknown';
 type StatusSample = { service: 'bot' | 'lavalink'; status: StatusLevel; created_at: string };
 
-function HeartbeatStatus({ lastAt, online }: { lastAt?: string | null; online?: boolean }) {
-  if (!lastAt) return <span className="text-red-500">오프라인</span>;
-
-  const isOnline = online === true;
-
-  return (
-    <div className="flex items-center gap-2">
-      <div className={`h-2 w-2 rounded-full animate-pulse ${isOnline ? 'bg-green-500' : 'bg-red-500'}`} />
-      <span className={isOnline ? 'text-green-500' : 'text-red-500'}>
-        {isOnline ? '온라인' : '응답 없음'}
-      </span>
-      <span className="text-[10px] muted">({new Date(lastAt).toLocaleString()})</span>
-    </div>
-  );
-}
 
 const STATUS_LABELS: Record<StatusLevel, string> = {
   operational: '정상',
@@ -336,8 +319,6 @@ export default function BotSettingsClient() {
               <h1 className="text-3xl font-semibold tracking-tight font-bangul">봇 설정</h1>
               <div className="flex items-center gap-2 mt-1">
                 <p className="text-sm muted">쿠로봇의 상태와 행동 방식을 설정합니다.</p>
-                <div className="h-1 w-1 rounded-full bg-[color:var(--muted-2)]" />
-                <HeartbeatStatus lastAt={cfg?.last_heartbeat_at} />
               </div>
             </div>
           </div>
@@ -415,10 +396,6 @@ export default function BotSettingsClient() {
                         aria-label="데이터 동기화 주기 (밀리초)"
                       />
                     <p className="mt-1 text-[10px] muted">역할 동기화 및 생존 신고(Heartbeat) 주기입니다.</p>
-                  </div>
-                  <div className="flex flex-col justify-center p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/10 mt-6">
-                    <div className="text-xs font-semibold text-indigo-500/70 uppercase tracking-wider mb-1">현재 상태</div>
-                    <HeartbeatStatus lastAt={cfg?.last_heartbeat_at} />
                   </div>
                 </div>
 
