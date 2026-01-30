@@ -35,6 +35,9 @@ type BotConfig = {
 type RewardChannel = { channel_id: string; enabled: boolean };
 type DiscordChannel = { id: string; name: string };
 
+type StatusLevel = 'operational' | 'degraded' | 'down' | 'unknown';
+type StatusSample = { service: 'bot' | 'lavalink'; status: StatusLevel; created_at: string };
+
 function HeartbeatStatus({ lastAt }: { lastAt?: string | null }) {
   if (!lastAt) return <span className="text-red-500">오프라인</span>;
   
@@ -49,6 +52,48 @@ function HeartbeatStatus({ lastAt }: { lastAt?: string | null }) {
         {isOnline ? '온라인' : '응답 없음'}
       </span>
       <span className="text-[10px] muted">({new Date(lastAt).toLocaleString()})</span>
+    </div>
+  );
+}
+
+const STATUS_LABELS: Record<StatusLevel, string> = {
+  operational: '정상',
+  degraded: '지연',
+  down: '오프라인',
+  unknown: '알 수 없음'
+};
+
+const STATUS_COLORS: Record<StatusLevel, string> = {
+  operational: 'bg-emerald-500',
+  degraded: 'bg-amber-400',
+  down: 'bg-rose-500',
+  unknown: 'bg-zinc-400'
+};
+
+function StatusBars({ label, samples, count = 60 }: { label: string; samples: StatusSample[]; count?: number }) {
+  const recent = samples.slice(-count);
+  const missing = Math.max(0, count - recent.length);
+  const bars: StatusSample[] = [
+    ...Array.from({ length: missing }).map(() => ({ service: 'bot', status: 'unknown', created_at: '' } as StatusSample)),
+    ...recent
+  ];
+  const latest = recent[recent.length - 1]?.status ?? 'unknown';
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-semibold text-[color:var(--fg)]">{label}</span>
+        <span className="text-[color:var(--muted)]">{STATUS_LABELS[latest]}</span>
+      </div>
+      <div className="flex items-end gap-[2px] h-10">
+        {bars.map((sample, idx) => (
+          <span
+            key={`${label}-${idx}`}
+            className={`h-full w-[6px] rounded-[2px] ${STATUS_COLORS[sample.status]}`}
+            title={sample.created_at ? `${new Date(sample.created_at).toLocaleString()} · ${STATUS_LABELS[sample.status]}` : STATUS_LABELS[sample.status]}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -111,6 +156,25 @@ export default function BotSettingsClient() {
   const [rewardChannels, setRewardChannels] = useState<string[]>([]);
   const [rewardSearch, setRewardSearch] = useState('');
   const [rewardSaving, setRewardSaving] = useState(false);
+  const [statusHistory, setStatusHistory] = useState<{ bot: StatusSample[]; lavalink: StatusSample[] }>({
+    bot: [],
+    lavalink: []
+  });
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const statusRes = await fetch('/api/admin/status');
+      if (statusRes.ok) {
+        const body = await statusRes.json();
+        setStatusHistory({
+          bot: (body.bot ?? []) as StatusSample[],
+          lavalink: (body.lavalink ?? []) as StatusSample[]
+        });
+      }
+    } catch (e) {
+      console.error('Failed to load status history', e);
+    }
+  }, []);
 
   type PointEventLog = {
     id: string;
@@ -156,6 +220,8 @@ export default function BotSettingsClient() {
             .map((c: RewardChannel) => c.channel_id);
           setRewardChannels(enabledIds);
         }
+
+        await fetchStatus();
       } catch (e) {
         console.error('Failed to load bot settings', e);
         toast.error('설정을 불러오지 못했습니다.');
@@ -165,7 +231,9 @@ export default function BotSettingsClient() {
     };
 
     void fetchData();
-  }, [toast]);
+    const interval = window.setInterval(fetchStatus, 60000);
+    return () => window.clearInterval(interval);
+  }, [fetchStatus, toast]);
 
   const fetchLogs = useCallback(async () => {
     setLogsLoading(true);
@@ -320,6 +388,16 @@ export default function BotSettingsClient() {
             <section className="rounded-3xl card-glass p-6">
               <h2 className="text-lg font-semibold mb-4">기본 설정</h2>
               <div className="space-y-6">
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-semibold text-[color:var(--fg)]">상태 히스토리</span>
+                    <span className="text-[10px] muted">최근 10시간</span>
+                  </div>
+                  <div className="space-y-4">
+                    <StatusBars label="Kuro Bot" samples={statusHistory.bot} />
+                    <StatusBars label="Lavalink" samples={statusHistory.lavalink} />
+                  </div>
+                </div>
                 <div className="grid gap-6 sm:grid-cols-2">
                   <div>
                       <label className="text-sm font-semibold block mb-2">데이터 동기화 주기 (ms)</label>
