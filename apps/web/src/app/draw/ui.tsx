@@ -32,6 +32,14 @@ type Pool = {
   rate_sss: number;
 };
 
+type PoolItem = {
+  itemId: string;
+  name: string;
+  rarity: 'R' | 'S' | 'SS' | 'SSS';
+  discordRoleId: string | null;
+  rewardPoints: number;
+};
+
 const PityGauge = ({ current, max }: { current: number; max: number }) => (
   <div className='mt-2 w-full max-w-[200px] mx-auto backdrop-blur-sm bg-[color:var(--card)]/50 p-2 rounded-xl border border-[color:var(--border)] shadow-sm'>
     <div className='flex justify-between text-[10px] text-[color:var(--muted)] mb-1 px-1 font-semibold'>
@@ -62,6 +70,8 @@ export default function DrawClient() {
   const [showProbModal, setShowProbModal] = useState(false);
   const [showInsufficientModal, setShowInsufficientModal] = useState(false);
   const [showPoolListMobile, setShowPoolListMobile] = useState(false);
+  const [poolItems, setPoolItems] = useState<PoolItem[]>([]);
+  const [poolItemsLoading, setPoolItemsLoading] = useState(false);
 
   // Animation & Result State
   const [isDrawing, setIsDrawing] = useState(false);
@@ -106,6 +116,19 @@ export default function DrawClient() {
     [pools, selectedPoolId],
   );
 
+  const itemsByRarity = useMemo(() => {
+    const grouped: Record<'R' | 'S' | 'SS' | 'SSS', PoolItem[]> = {
+      R: [],
+      S: [],
+      SS: [],
+      SSS: []
+    };
+    poolItems.forEach((item) => {
+      grouped[item.rarity]?.push(item);
+    });
+    return grouped;
+  }, [poolItems]);
+
   const fetchStatus = useCallback(async () => {
     try {
       const url = selectedPoolId
@@ -124,6 +147,32 @@ export default function DrawClient() {
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
+
+  useEffect(() => {
+    if (!showProbModal || !selectedPoolId) return;
+    let canceled = false;
+
+    setPoolItemsLoading(true);
+    fetch(`/api/gacha/pool-items?poolId=${selectedPoolId}`)
+      .then((r) => r.json())
+      .then((body) => {
+        if (canceled) return;
+        setPoolItems((body?.items ?? []) as PoolItem[]);
+      })
+      .catch((e) => {
+        if (canceled) return;
+        console.error('[DrawClient] Failed to load pool items:', e);
+        setPoolItems([]);
+      })
+      .finally(() => {
+        if (canceled) return;
+        setPoolItemsLoading(false);
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [selectedPoolId, showProbModal]);
 
   const onDraw = useCallback(
     async (amount: number) => {
@@ -520,6 +569,51 @@ export default function DrawClient() {
                     <span className='font-bold text-gray-400'>R</span>
                     <span className='font-mono'>{selectedPool.rate_r}%</span>
                   </div>
+                </div>
+
+                <div className='mt-4 space-y-3'>
+                  <div className='text-xs font-semibold muted'>등급별 등장 아이템</div>
+                  {poolItemsLoading ? (
+                    <div className='space-y-2'>
+                      {[1, 2, 3].map((i) => (
+                        <Skeleton key={i} className='h-4 w-full' />
+                      ))}
+                    </div>
+                  ) : (
+                    (['SSS', 'SS', 'S', 'R'] as const).map((rarity) => (
+                      <div key={rarity} className='rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] p-3'>
+                        <div className='text-xs font-bold mb-2 flex items-center gap-2'>
+                          <span
+                            className={
+                              rarity === 'SSS'
+                                ? 'text-amber-400'
+                                : rarity === 'SS'
+                                  ? 'text-purple-400'
+                                  : rarity === 'S'
+                                    ? 'text-blue-400'
+                                    : 'text-gray-400'
+                            }
+                          >
+                            {rarity}
+                          </span>
+                          <span className='muted'>({itemsByRarity[rarity].length}개)</span>
+                        </div>
+                        <div className='flex flex-wrap gap-2 text-xs text-[color:var(--fg)]'>
+                          {itemsByRarity[rarity].length === 0 ? (
+                            <span className='muted'>없음</span>
+                          ) : (
+                            itemsByRarity[rarity].map((item) => (
+                              <span key={item.itemId} className='rounded-full bg-black/10 px-2 py-1'>
+                                {item.name}
+                                {!item.discordRoleId && item.rewardPoints > 0 && ` (+${item.rewardPoints}p)`}
+                                {!item.discordRoleId && item.rewardPoints === 0 && ' (꽝)'}
+                              </span>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
 
                 <p className='mt-4 text-xs text-center text-[color:var(--muted)]'>
