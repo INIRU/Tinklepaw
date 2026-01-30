@@ -18,9 +18,11 @@ type AppConfig = {
   reward_interval_seconds: number;
   reward_daily_cap_points: number | null;
   reward_min_message_length: number;
+  booster_chat_bonus_points: number;
   voice_reward_points_per_interval: number;
   voice_reward_interval_seconds: number;
   voice_reward_daily_cap_points: number | null;
+  booster_voice_bonus_points: number;
 };
 
 type DiscordChannel = { id: string; name: string };
@@ -857,6 +859,15 @@ export default function SettingsClient() {
               onChange={(e) => setCfg({ ...cfg, reward_min_message_length: Number(e.target.value) })}
             />
           </label>
+          <label className="text-sm">
+            부스터 추가 포인트
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              value={cfg.booster_chat_bonus_points}
+              onChange={(e) => setCfg({ ...cfg, booster_chat_bonus_points: Number(e.target.value) })}
+            />
+          </label>
         </div>
       </section>
 
@@ -894,6 +905,15 @@ export default function SettingsClient() {
                   voice_reward_daily_cap_points: e.target.value === '' ? null : Number(e.target.value)
                 })
               }
+            />
+          </label>
+          <label className="text-sm">
+            부스터 추가 포인트
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              value={cfg.booster_voice_bonus_points}
+              onChange={(e) => setCfg({ ...cfg, booster_voice_bonus_points: Number(e.target.value) })}
             />
           </label>
         </div>

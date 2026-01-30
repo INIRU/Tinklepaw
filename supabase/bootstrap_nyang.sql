@@ -45,6 +45,8 @@ create table if not exists nyang.app_config (
   voice_reward_points_per_interval integer default 0,
   voice_reward_interval_seconds integer default 60,
   voice_reward_daily_cap_points integer,
+  booster_chat_bonus_points integer default 0,
+  booster_voice_bonus_points integer default 0,
   
   -- Server Info (Web)
   server_intro text,
@@ -301,7 +303,8 @@ $$;
 create or replace function nyang.grant_voice_points(
   p_discord_user_id text,
   p_channel_id text,
-  p_voice_ts timestamptz
+  p_voice_ts timestamptz,
+  p_is_booster boolean default false
 )
 returns table (
   granted_points integer,
@@ -315,6 +318,9 @@ declare
   v_bucket_start timestamptz;
   v_key text;
   v_daily_sum integer;
+  v_bonus integer := 0;
+  v_grant integer := 0;
+  v_remaining integer;
 begin
   perform ensure_user(p_discord_user_id);
 
@@ -324,6 +330,15 @@ begin
   end if;
 
   if v_cfg.voice_reward_points_per_interval <= 0 then
+    granted_points := 0;
+    select balance into new_balance from point_balances where discord_user_id = p_discord_user_id;
+    return next;
+  end if;
+
+  v_bonus := case when p_is_booster then v_cfg.booster_voice_bonus_points else 0 end;
+  v_grant := greatest(v_cfg.voice_reward_points_per_interval + v_bonus, 0);
+
+  if v_grant = 0 then
     granted_points := 0;
     select balance into new_balance from point_balances where discord_user_id = p_discord_user_id;
     return next;
@@ -344,24 +359,33 @@ begin
       select balance into new_balance from point_balances where discord_user_id = p_discord_user_id;
       return next;
     end if;
+
+    v_remaining := v_cfg.voice_reward_daily_cap_points - v_daily_sum;
+    v_grant := least(v_grant, v_remaining);
+  end if;
+
+  if v_grant <= 0 then
+    granted_points := 0;
+    select balance into new_balance from point_balances where discord_user_id = p_discord_user_id;
+    return next;
   end if;
 
   insert into point_events(discord_user_id, kind, amount, idempotency_key, meta)
   values (
     p_discord_user_id,
     'voice_grant',
-    v_cfg.voice_reward_points_per_interval,
+    v_grant,
     v_key,
-    jsonb_build_object('channel_id', p_channel_id, 'bucket_start', v_bucket_start)
+    jsonb_build_object('channel_id', p_channel_id, 'bucket_start', v_bucket_start, 'booster', p_is_booster)
   )
   on conflict (idempotency_key) do nothing;
 
   if found then
     update point_balances
-      set balance = balance + v_cfg.voice_reward_points_per_interval,
+      set balance = balance + v_grant,
           updated_at = now()
     where discord_user_id = p_discord_user_id;
-    granted_points := v_cfg.voice_reward_points_per_interval;
+    granted_points := v_grant;
   else
     granted_points := 0;
   end if;
@@ -377,7 +401,8 @@ create or replace function nyang.grant_chat_points(
   p_channel_id text,
   p_message_length integer,
   p_message_ts timestamptz,
-  p_message_id text default null
+  p_message_id text default null,
+  p_is_booster boolean default false
 )
 returns table (
   granted_points integer,
@@ -392,6 +417,9 @@ declare
   v_bucket_start timestamptz;
   v_key text;
   v_daily_sum integer;
+  v_bonus integer := 0;
+  v_grant integer := 0;
+  v_remaining integer;
 begin
   perform ensure_user(p_discord_user_id);
 
@@ -420,6 +448,15 @@ begin
     return next;
   end if;
 
+  v_bonus := case when p_is_booster then v_cfg.booster_chat_bonus_points else 0 end;
+  v_grant := greatest(v_cfg.reward_points_per_interval + v_bonus, 0);
+
+  if v_grant = 0 then
+    granted_points := 0;
+    select balance into new_balance from point_balances where discord_user_id = p_discord_user_id;
+    return next;
+  end if;
+
   v_bucket_start := to_timestamp(floor(extract(epoch from p_message_ts) / v_cfg.reward_interval_seconds) * v_cfg.reward_interval_seconds);
   v_key := 'chat:' || p_discord_user_id || ':' || p_channel_id || ':' || extract(epoch from v_bucket_start)::bigint::text;
 
@@ -435,24 +472,33 @@ begin
       select balance into new_balance from point_balances where discord_user_id = p_discord_user_id;
       return next;
     end if;
+
+    v_remaining := v_cfg.reward_daily_cap_points - v_daily_sum;
+    v_grant := least(v_grant, v_remaining);
+  end if;
+
+  if v_grant <= 0 then
+    granted_points := 0;
+    select balance into new_balance from point_balances where discord_user_id = p_discord_user_id;
+    return next;
   end if;
 
   insert into point_events(discord_user_id, kind, amount, idempotency_key, meta)
   values (
     p_discord_user_id,
     'chat_grant',
-    v_cfg.reward_points_per_interval,
+    v_grant,
     v_key,
-    jsonb_build_object('channel_id', p_channel_id, 'message_id', p_message_id, 'bucket_start', v_bucket_start)
+    jsonb_build_object('channel_id', p_channel_id, 'message_id', p_message_id, 'bucket_start', v_bucket_start, 'booster', p_is_booster)
   )
   on conflict (idempotency_key) do nothing;
 
   if found then
     update point_balances
-      set balance = balance + v_cfg.reward_points_per_interval,
+      set balance = balance + v_grant,
           updated_at = now()
       where discord_user_id = p_discord_user_id;
-    granted_points := v_cfg.reward_points_per_interval;
+    granted_points := v_grant;
   else
     granted_points := 0;
   end if;

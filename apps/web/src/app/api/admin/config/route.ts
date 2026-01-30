@@ -40,6 +40,8 @@ export async function PUT(req: Request) {
     voice_reward_points_per_interval?: number;
     voice_reward_interval_seconds?: number;
     voice_reward_daily_cap_points?: number | null;
+    booster_chat_bonus_points?: number;
+    booster_voice_bonus_points?: number;
   };
 
   const patch: Record<string, unknown> = {};
@@ -59,6 +61,8 @@ export async function PUT(req: Request) {
   if (body.voice_reward_points_per_interval !== undefined) patch.voice_reward_points_per_interval = body.voice_reward_points_per_interval;
   if (body.voice_reward_interval_seconds !== undefined) patch.voice_reward_interval_seconds = body.voice_reward_interval_seconds;
   if (body.voice_reward_daily_cap_points !== undefined) patch.voice_reward_daily_cap_points = body.voice_reward_daily_cap_points ?? null;
+  if (body.booster_chat_bonus_points !== undefined) patch.booster_chat_bonus_points = body.booster_chat_bonus_points;
+  if (body.booster_voice_bonus_points !== undefined) patch.booster_voice_bonus_points = body.booster_voice_bonus_points;
 
     const supabase = createSupabaseAdminClient();
 

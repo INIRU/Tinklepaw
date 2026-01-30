@@ -31,12 +31,14 @@ export function registerMessageCreate(client: Client) {
     if (await handleWordChainMessage(message)) return;
 
     try {
+      const isBooster = Boolean(message.member?.premiumSinceTimestamp);
       const { data } = await ctx.supabase.rpc('grant_chat_points', {
         p_discord_user_id: message.author.id,
         p_channel_id: message.channelId,
         p_message_length: message.content.trim().length,
         p_message_ts: new Date(message.createdTimestamp).toISOString(),
-        p_message_id: message.id
+        p_message_id: message.id,
+        p_is_booster: isBooster
       });
 
       // eslint-disable-next-line no-console

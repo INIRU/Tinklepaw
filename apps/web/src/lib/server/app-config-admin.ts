@@ -29,6 +29,8 @@ export async function getOrInitAppConfig() {
       voice_reward_points_per_interval: 0,
       voice_reward_interval_seconds: 60,
       voice_reward_daily_cap_points: null,
+      booster_chat_bonus_points: 0,
+      booster_voice_bonus_points: 0,
     })
     .select('*')
     .single();
