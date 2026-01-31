@@ -34,6 +34,8 @@ type Pool = {
   rate_sss: number;
   pity_threshold: number | null;
   pity_rarity: 'R' | 'S' | 'SS' | 'SSS' | null;
+  start_at?: string | null;
+  end_at?: string | null;
 };
 
 const RARITIES: Array<Item['rarity']> = ['R', 'S', 'SS', 'SSS'];
@@ -44,6 +46,21 @@ type RateKey = (typeof RATE_KEYS)[number];
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
 const safeNumber = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) ? n : 0);
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+const toDatetimeLocal = (iso: string | null | undefined) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+
+const toIsoOrNull = (local: string) => {
+  if (!local) return null;
+  const d = new Date(local);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+};
 
 function rebalanceRates(pool: Pool, changedKey: RateKey, rawValue: number): Pool {
   const next: Pool = { ...pool };
@@ -342,6 +359,9 @@ export default function GachaAdminClient() {
   const createPool = useCallback(
     async (kind: Pool['kind']) => {
       try {
+        const now = Date.now();
+        const startAt = kind === 'limited' ? new Date(now).toISOString() : null;
+        const endAt = kind === 'limited' ? new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString() : null;
         const base: Omit<Pool, 'pool_id'> = {
           name: kind === 'permanent' ? '상시 뽑기' : '한정 뽑기',
           kind,
@@ -355,7 +375,9 @@ export default function GachaAdminClient() {
           rate_ss: 17,
           rate_sss: 3,
           pity_threshold: null,
-          pity_rarity: null
+          pity_rarity: null,
+          start_at: startAt,
+          end_at: endAt
         };
 
         const res = await fetch('/api/admin/gacha/pools', {
@@ -550,7 +572,16 @@ export default function GachaAdminClient() {
                         className="w-full appearance-none rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 pr-10 text-sm text-[color:var(--fg)]"
                         value={pool.kind}
                         onChange={(e) =>
-                          setPools((prev) => prev.map((x) => (x.pool_id === pool.pool_id ? { ...x, kind: e.target.value as Pool['kind'] } : x)))
+                          setPools((prev) =>
+                            prev.map((x) => {
+                              if (x.pool_id !== pool.pool_id) return x;
+                              const nextKind = e.target.value as Pool['kind'];
+                              if (nextKind === 'permanent') {
+                                return { ...x, kind: nextKind, start_at: null, end_at: null };
+                              }
+                              return { ...x, kind: nextKind };
+                            })
+                          )
                         }
                       >
                         <option value="permanent">상시</option>
@@ -579,6 +610,53 @@ export default function GachaAdminClient() {
                     </div>
                   </label>
                 </div>
+
+                {pool.kind === 'limited' && (
+                  <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] p-4">
+                    <div className="text-sm font-semibold">기간 (한정 픽업)</div>
+                    <p className="mt-1 text-xs muted">
+                      종료 시간이 지나면 이 풀은 뽑기 목록에서 자동으로 숨겨집니다. (아이템은 삭제되지 않습니다)
+                    </p>
+                    <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                      <label className="text-sm">
+                        시작
+                        <input
+                          className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)]/60 px-3 py-2 text-sm text-[color:var(--fg)]"
+                          type="datetime-local"
+                          value={toDatetimeLocal(pool.start_at ?? null)}
+                          onChange={(e) => {
+                            const iso = toIsoOrNull(e.target.value);
+                            setPools((prev) =>
+                              prev.map((x) =>
+                                x.pool_id === pool.pool_id
+                                  ? { ...x, start_at: iso }
+                                  : x
+                              )
+                            );
+                          }}
+                        />
+                      </label>
+                      <label className="text-sm">
+                        종료
+                        <input
+                          className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)]/60 px-3 py-2 text-sm text-[color:var(--fg)]"
+                          type="datetime-local"
+                          value={toDatetimeLocal(pool.end_at ?? null)}
+                          onChange={(e) => {
+                            const iso = toIsoOrNull(e.target.value);
+                            setPools((prev) =>
+                              prev.map((x) =>
+                                x.pool_id === pool.pool_id
+                                  ? { ...x, end_at: iso }
+                                  : x
+                              )
+                            );
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                )}
 
                 <label className="text-sm">
                   배너

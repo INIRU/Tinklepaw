@@ -19,6 +19,35 @@ export async function GET(req: Request) {
   if (!poolId) return NextResponse.json({ error: 'POOL_ID_REQUIRED' }, { status: 400 });
 
   const supabase = createSupabaseAdminClient();
+
+  type PoolRow = {
+    pool_id: string;
+    is_active: boolean;
+    start_at: string | null;
+    end_at: string | null;
+  };
+
+  const { data: poolRaw, error: poolErr } = await supabase
+    .from('gacha_pools')
+    .select('pool_id, is_active, start_at, end_at')
+    .eq('pool_id', poolId)
+    .maybeSingle();
+
+  if (poolErr) return NextResponse.json({ error: poolErr.message }, { status: 400 });
+  const pool = poolRaw as unknown as PoolRow | null;
+  if (!pool || !pool.is_active) {
+    return NextResponse.json({ error: 'POOL_NOT_ACTIVE' }, { status: 400 });
+  }
+  const now = Date.now();
+  const startAt = pool.start_at;
+  const endAt = pool.end_at;
+  if (startAt && new Date(startAt).getTime() > now) {
+    return NextResponse.json({ error: 'POOL_NOT_STARTED' }, { status: 400 });
+  }
+  if (endAt && new Date(endAt).getTime() <= now) {
+    return NextResponse.json({ error: 'POOL_ENDED' }, { status: 400 });
+  }
+
   const { data, error } = await supabase
     .from('gacha_pool_items')
     .select('item_id, items(item_id, name, rarity, discord_role_id, reward_points)')

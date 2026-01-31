@@ -34,6 +34,8 @@ type Pool = {
   rate_s: number;
   rate_ss: number;
   rate_sss: number;
+  start_at?: string | null;
+  end_at?: string | null;
 };
 
 type HistoryEntry = {
@@ -95,6 +97,7 @@ const PityGauge = ({
 export default function DrawClient() {
   const toast = useToast();
   const searchParams = useSearchParams();
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [pools, setPools] = useState<Pool[]>([]);
   const [selectedPoolId, setSelectedPoolId] = useState<string>('');
 
@@ -140,6 +143,11 @@ export default function DrawClient() {
   const [showResultModal, setShowResultModal] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   // Computed
   const highestRarityItem = useMemo(() => {
     if (drawResults.length === 0) return null;
@@ -163,7 +171,10 @@ export default function DrawClient() {
           (body as { pools?: Pool[] } | null)?.pools ?? []
         ).filter((p) => p.is_active);
         setPools(loaded);
-        setSelectedPoolId((prev) => prev || loaded[0]?.pool_id || '');
+        setSelectedPoolId((prev) => {
+          if (prev && loaded.some((p) => p.pool_id === prev)) return prev;
+          return loaded[0]?.pool_id || '';
+        });
       })
       .catch((e) =>
         toast.error(
@@ -569,6 +580,41 @@ export default function DrawClient() {
     }
   } as const;
 
+  const pad2 = (n: number) => String(n).padStart(2, '0');
+  const isoToMs = (iso?: string | null) => {
+    if (!iso) return null;
+    const ms = new Date(iso).getTime();
+    return Number.isNaN(ms) ? null : ms;
+  };
+  const startOfDayMs = (ms: number) => {
+    const d = new Date(ms);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  };
+  const formatAt = (ms: number) => {
+    const d = new Date(ms);
+    return `${d.getFullYear()}.${pad2(d.getMonth() + 1)}.${pad2(d.getDate())}`;
+  };
+  const formatDDay = (endIso?: string | null) => {
+    const endMs = isoToMs(endIso);
+    if (!endMs) return null;
+    const days = Math.floor((startOfDayMs(endMs) - startOfDayMs(nowMs)) / 86400000);
+    if (days <= 0) return 'D-Day';
+    return `D-${days}`;
+  };
+  const formatRemaining = (targetMs: number) => {
+    const diff = targetMs - nowMs;
+    if (diff <= 0) return '종료됨';
+    const totalMin = Math.floor(diff / 60000);
+    const days = Math.floor(totalMin / (60 * 24));
+    const hours = Math.floor((totalMin % (60 * 24)) / 60);
+    const mins = totalMin % 60;
+    if (days > 0) return `${days}일 ${hours}시간`;
+    if (hours > 0) return `${hours}시간 ${mins}분`;
+    if (mins > 0) return `${mins}분`;
+    return '1분 미만';
+  };
+
   return (
     <main className='flex h-[calc(100vh-64px)] overflow-hidden'>
       {/* Left Sidebar - Pool List */}
@@ -630,6 +676,17 @@ export default function DrawClient() {
                     >
                       {p.kind === 'permanent' ? '상시' : '한정'}
                     </span>
+                    {p.kind === 'limited' && p.end_at && (
+                      (() => {
+                        const dDay = formatDDay(p.end_at);
+                        if (!dDay) return null;
+                        return (
+                          <span className='inline-flex items-center rounded-full border border-[color:var(--accent-pink)]/30 bg-[color:var(--accent-pink)]/10 px-2 py-0.5 text-[10px] font-bold text-[color:var(--accent-pink)] font-mono'>
+                            {dDay}
+                          </span>
+                        );
+                      })()
+                    )}
                     <span>•</span>
                     <span>{p.cost_points}P</span>
                   </div>
@@ -713,6 +770,36 @@ export default function DrawClient() {
                     max={selectedPool.pity_threshold}
                     rarity={selectedPool.pity_rarity}
                   />
+                )}
+                {selectedPool.kind === 'limited' && (selectedPool.start_at || selectedPool.end_at) && (
+                  (() => {
+                    const startMs = isoToMs(selectedPool.start_at);
+                    const endMs = isoToMs(selectedPool.end_at);
+                    const range =
+                      startMs && endMs
+                        ? `${formatAt(startMs)} ~ ${formatAt(endMs)}`
+                        : startMs
+                          ? `${formatAt(startMs)} ~`
+                          : endMs
+                            ? `~ ${formatAt(endMs)}`
+                            : null;
+                    if (!range) return null;
+
+                    const remaining = endMs ? formatRemaining(endMs) : null;
+                    return (
+                      <div className='mt-2 text-[10px] sm:text-xs text-center text-[color:var(--muted)]'>
+                        <span className='inline-flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-[color:var(--card)]/80 backdrop-blur-md border border-[color:var(--border)]'>
+                          <span className='font-semibold text-[color:var(--fg)]'>기간</span>
+                          <span className='font-mono'>{range}</span>
+                          {endMs && (
+                            <span className='rounded-full bg-[color:var(--chip)] border border-[color:var(--border)] px-2 py-0.5 font-semibold text-[color:var(--fg)]'>
+                              남은 {remaining}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })()
                 )}
               </>
             )}
@@ -1590,6 +1677,17 @@ export default function DrawClient() {
                           >
                             {p.kind === 'permanent' ? '상시' : '한정'}
                           </span>
+                          {p.kind === 'limited' && p.end_at && (
+                            (() => {
+                              const dDay = formatDDay(p.end_at);
+                              if (!dDay) return null;
+                              return (
+                                <span className='inline-flex items-center rounded-full border border-[color:var(--accent-pink)]/30 bg-[color:var(--accent-pink)]/10 px-2 py-0.5 text-[9px] font-bold text-[color:var(--accent-pink)] font-mono'>
+                                  {dDay}
+                                </span>
+                              );
+                            })()
+                          )}
                           <span>•</span>
                           <span>{p.cost_points}P</span>
                         </div>
