@@ -1,7 +1,7 @@
 'use client';
 
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { PerspectiveCamera, Stars } from '@react-three/drei';
+import { PerspectiveCamera, Sparkles, Stars } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import { useRef, useState, useMemo } from 'react';
 import * as THREE from 'three';
@@ -25,11 +25,15 @@ function CinematicCapsule({ isDrawing, rarity, onComplete }: { isDrawing: boolea
   const isMobile = viewport.width < 3; 
   const baseScale = isMobile ? 0.55 : 1;
 
+  const isSSS = rarity === 'SSS';
+
   const group = useRef<THREE.Group>(null);
   const topRef = useRef<THREE.Mesh>(null);
   const bottomRef = useRef<THREE.Mesh>(null);
   const bandRef = useRef<THREE.Mesh>(null);
   const coreRef = useRef<THREE.Mesh>(null);
+  const haloRef = useRef<THREE.Mesh>(null);
+  const shockRef = useRef<THREE.Mesh>(null);
   
   const [phase, setPhase] = useState<'idle' | 'unlocking' | 'tension' | 'opening'>('idle');
   const startTime = useRef(0);
@@ -60,6 +64,17 @@ function CinematicCapsule({ isDrawing, rarity, onComplete }: { isDrawing: boolea
       mat.color.set('#333');
       mat.emissive.set('#000');
       coreRef.current.scale.set(0, 0, 0);
+
+      if (haloRef.current) {
+        haloRef.current.scale.set(0, 0, 0);
+        const mat = haloRef.current.material as THREE.MeshBasicMaterial;
+        mat.opacity = 0;
+      }
+      if (shockRef.current) {
+        shockRef.current.scale.set(0, 0, 0);
+        const mat = shockRef.current.material as THREE.MeshBasicMaterial;
+        mat.opacity = 0;
+      }
     }
 
     if (phase === 'idle') {
@@ -67,6 +82,19 @@ function CinematicCapsule({ isDrawing, rarity, onComplete }: { isDrawing: boolea
       group.current.rotation.z = Math.sin(state.clock.elapsedTime * 0.5) * 0.1 + Math.PI / 4;
       group.current.position.y = Math.sin(state.clock.elapsedTime) * 0.2;
       group.current.scale.lerp(new THREE.Vector3(baseScale, baseScale, baseScale), delta * 2);
+
+      if (isSSS && haloRef.current) {
+        const halo = haloRef.current;
+        const mat = halo.material as THREE.MeshBasicMaterial;
+        const pulse = 0.35 + Math.sin(state.clock.elapsedTime * 2.0) * 0.08;
+        halo.scale.lerp(new THREE.Vector3(1, 1, 1), delta * 2);
+        mat.opacity = THREE.MathUtils.lerp(mat.opacity, pulse, delta * 2);
+      } else if (haloRef.current) {
+        const mat = haloRef.current.material as THREE.MeshBasicMaterial;
+        mat.opacity = THREE.MathUtils.lerp(mat.opacity, 0, delta * 3);
+        haloRef.current.scale.lerp(new THREE.Vector3(0, 0, 0), delta * 3);
+      }
+
       return;
     }
 
@@ -83,6 +111,13 @@ function CinematicCapsule({ isDrawing, rarity, onComplete }: { isDrawing: boolea
       // Band stays mechanical dark
       const bandMat = bandRef.current.material as THREE.MeshStandardMaterial;
       bandMat.emissive.set('#222');
+
+      if (isSSS && haloRef.current) {
+        const halo = haloRef.current;
+        const mat = halo.material as THREE.MeshBasicMaterial;
+        halo.scale.lerp(new THREE.Vector3(1.05, 1.05, 1.05), delta * 4);
+        mat.opacity = THREE.MathUtils.lerp(mat.opacity, 0.35, delta * 3);
+      }
       
       if (elapsed > 1.5) setPhase('tension');
 
@@ -91,12 +126,13 @@ function CinematicCapsule({ isDrawing, rarity, onComplete }: { isDrawing: boolea
       // Stop spinning, start shaking
       group.current.rotation.y = THREE.MathUtils.lerp(group.current.rotation.y, 0, delta * 5);
       
-      const shake = 0.02 + (elapsed - 1.5) * 0.05; // Increase shake
+      const shakeBase = 0.02 + (elapsed - 1.5) * 0.05; // Increase shake
+      const shake = isSSS ? shakeBase * 1.8 : shakeBase;
       group.current.position.x = (Math.random() - 0.5) * shake;
       group.current.position.y = (Math.random() - 0.5) * shake;
 
       // Crack open slightly to reveal light
-      const openAmount = 0.05 + Math.sin(elapsed * 20) * 0.02;
+      const openAmount = (isSSS ? 0.075 : 0.05) + Math.sin(elapsed * 20) * 0.02;
       topRef.current.position.y = THREE.MathUtils.lerp(topRef.current.position.y, openAmount, delta * 5);
       bottomRef.current.position.y = THREE.MathUtils.lerp(bottomRef.current.position.y, -openAmount, delta * 5);
 
@@ -118,7 +154,15 @@ function CinematicCapsule({ isDrawing, rarity, onComplete }: { isDrawing: boolea
       coreRef.current.scale.setScalar(0.8);
       coreMat.color.set(targetColor);
       coreMat.emissive.set(targetColor);
-      coreMat.emissiveIntensity = 2;
+      coreMat.emissiveIntensity = isSSS ? 3 : 2;
+
+      if (isSSS && haloRef.current) {
+        const halo = haloRef.current;
+        const mat = halo.material as THREE.MeshBasicMaterial;
+        const pulse = 0.5 + Math.sin(elapsed * 10) * 0.2;
+        halo.scale.lerp(new THREE.Vector3(1.12, 1.12, 1.12), delta * 4);
+        mat.opacity = THREE.MathUtils.lerp(mat.opacity, pulse, delta * 6);
+      }
 
       if (elapsed > 3.5) setPhase('opening');
 
@@ -130,17 +174,30 @@ function CinematicCapsule({ isDrawing, rarity, onComplete }: { isDrawing: boolea
       
       // Core expands and consumes screen
       const coreMat = coreRef.current.material as THREE.MeshStandardMaterial;
-      coreRef.current.scale.lerp(new THREE.Vector3(10, 10, 10), delta * 2);
-      coreMat.emissiveIntensity = 5;
+      coreRef.current.scale.lerp(new THREE.Vector3(isSSS ? 12 : 10, isSSS ? 12 : 10, isSSS ? 12 : 10), delta * 2);
+      coreMat.emissiveIntensity = isSSS ? 8 : 5;
 
       // Keep capsule glowing
       const topMat = topRef.current.material as THREE.MeshStandardMaterial;
       const botMat = bottomRef.current.material as THREE.MeshStandardMaterial;
-      topMat.emissiveIntensity = 2;
-      botMat.emissiveIntensity = 2;
+      topMat.emissiveIntensity = isSSS ? 3 : 2;
+      botMat.emissiveIntensity = isSSS ? 3 : 2;
 
       // Band scales down/disappears
       bandRef.current.scale.lerp(new THREE.Vector3(0, 0, 0), delta * 5);
+
+      if (isSSS && shockRef.current) {
+        const shock = shockRef.current;
+        const mat = shock.material as THREE.MeshBasicMaterial;
+        shock.scale.lerp(new THREE.Vector3(6, 6, 6), delta * 3);
+        mat.opacity = THREE.MathUtils.lerp(mat.opacity, 0.0, delta * 2);
+      }
+      if (isSSS && haloRef.current) {
+        const halo = haloRef.current;
+        const mat = halo.material as THREE.MeshBasicMaterial;
+        halo.scale.lerp(new THREE.Vector3(1.25, 1.25, 1.25), delta * 3);
+        mat.opacity = THREE.MathUtils.lerp(mat.opacity, 0, delta * 2);
+      }
 
       if (coreRef.current.scale.x > 8) {
         if (onComplete) onComplete();
@@ -174,11 +231,38 @@ function CinematicCapsule({ isDrawing, rarity, onComplete }: { isDrawing: boolea
         <sphereGeometry args={[1, 32, 32]} />
         <meshStandardMaterial color="#000" emissive="#000" emissiveIntensity={0} />
       </mesh>
+
+      {/* SSS Halo */}
+      <mesh ref={haloRef} position={[0, 0, 0.35]} scale={[0, 0, 0]}>
+        <ringGeometry args={[1.35, 1.55, 64]} />
+        <meshBasicMaterial
+          color={COLORS.SSS}
+          transparent
+          opacity={0}
+          side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+
+      {/* SSS Shockwave */}
+      <mesh ref={shockRef} position={[0, 0, 0.25]} scale={[0, 0, 0]}>
+        <ringGeometry args={[1.55, 1.75, 64]} />
+        <meshBasicMaterial
+          color={COLORS.SSS}
+          transparent
+          opacity={0.45}
+          side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
     </group>
   );
 }
 
 export function GachaScene({ isDrawing, rarity, onAnimationComplete }: GachaSceneProps) {
+  const isSSS = rarity === 'SSS';
   return (
     <div className="w-full h-full relative">
       <Canvas>
@@ -192,7 +276,18 @@ export function GachaScene({ isDrawing, rarity, onAnimationComplete }: GachaScen
         <directionalLight position={[5, 10, 5]} intensity={1.5} />
         
         {/* Background */}
-        <Stars radius={100} depth={50} count={2000} factor={3} saturation={0} fade speed={0.5} />
+        <Stars radius={100} depth={50} count={2000} factor={3} saturation={0} fade speed={isSSS ? 1.0 : 0.5} />
+
+        {isSSS && (
+          <Sparkles
+            count={80}
+            scale={[6, 6, 6]}
+            size={3}
+            speed={0.6}
+            opacity={0.6}
+            color={COLORS.SSS}
+          />
+        )}
         
         <CinematicCapsule 
           isDrawing={isDrawing} 
@@ -202,7 +297,7 @@ export function GachaScene({ isDrawing, rarity, onAnimationComplete }: GachaScen
 
         <EffectComposer enableNormalPass={false}>
           {/* Subtle Bloom only for the core light */}
-          <Bloom luminanceThreshold={0.5} mipmapBlur intensity={1.0} radius={0.5} />
+          <Bloom luminanceThreshold={isSSS ? 0.35 : 0.5} mipmapBlur intensity={isSSS ? 1.8 : 1.0} radius={isSSS ? 0.7 : 0.5} />
         </EffectComposer>
       </Canvas>
     </div>
