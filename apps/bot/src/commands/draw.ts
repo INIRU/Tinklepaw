@@ -67,15 +67,42 @@ export async function triggerGachaUI(
     return;
   }
 
-  const { data: pools } = await ctx.supabase
+  type PoolRow = {
+    pool_id: string;
+    name: string;
+    kind: 'permanent' | 'limited';
+    banner_image_url: string | null;
+    cost_points: number;
+    rate_r: number;
+    rate_s: number;
+    rate_ss: number;
+    rate_sss: number;
+    pity_threshold: number | null;
+    pity_rarity: 'R' | 'S' | 'SS' | 'SSS' | null;
+    start_at?: string | null;
+    end_at?: string | null;
+  };
+
+  const { data: poolsRaw } = await ctx.supabase
     .from('gacha_pools')
     .select(
-      'pool_id, name, kind, banner_image_url, cost_points, rate_r, rate_s, rate_ss, rate_sss, pity_threshold, pity_rarity',
+      'pool_id, name, kind, banner_image_url, cost_points, rate_r, rate_s, rate_ss, rate_sss, pity_threshold, pity_rarity, start_at, end_at',
     )
     .eq('is_active', true)
     .order('created_at', { ascending: true });
 
-  if (!pools || pools.length === 0) {
+  const pools = poolsRaw as unknown as PoolRow[] | null;
+
+  const nowMs = Date.now();
+  const activePools = (pools ?? []).filter((p) => {
+    const startAt = (p as { start_at?: string | null }).start_at;
+    const endAt = (p as { end_at?: string | null }).end_at;
+    const startOk = !startAt || new Date(startAt).getTime() <= nowMs;
+    const endOk = !endAt || new Date(endAt).getTime() > nowMs;
+    return startOk && endOk;
+  });
+
+  if (activePools.length === 0) {
     const msg = '활성화된 뽑기 풀이 없습니다.';
     if (context instanceof Message) {
       await context.reply(msg);
@@ -100,7 +127,7 @@ export async function triggerGachaUI(
     index: number,
     isEdit = false,
   ): Promise<Message | null> => {
-    const pool = pools[index];
+    const pool = activePools[index];
 
     const { data: poolItemIds } = await ctx.supabase
       .from('gacha_pool_items')
@@ -162,15 +189,36 @@ export async function triggerGachaUI(
       pityInfo = `\n천장: **${pityCounter}/${pool.pity_threshold}** (${remaining}회 남음, ${pool.pity_rarity} 확정)`;
     }
 
-    const embedDescription = (
+    const startAtIso = (pool as { start_at?: string | null }).start_at ?? null;
+    const endAtIso = (pool as { end_at?: string | null }).end_at ?? null;
+    const startUnix = startAtIso ? Math.floor(new Date(startAtIso).getTime() / 1000) : null;
+    const endUnix = endAtIso ? Math.floor(new Date(endAtIso).getTime() / 1000) : null;
+    let periodInfo = '';
+    if (pool.kind === 'limited' && (startUnix || endUnix)) {
+      if (startUnix && endUnix) {
+        periodInfo = `\n기간: <t:${startUnix}:f> ~ <t:${endUnix}:f> (종료 <t:${endUnix}:R>)`;
+      } else if (endUnix) {
+        periodInfo = `\n기간: ~ <t:${endUnix}:f> (종료 <t:${endUnix}:R>)`;
+      } else if (startUnix) {
+        periodInfo = `\n기간: <t:${startUnix}:f> ~`;
+      }
+    }
+
+    const template =
       (botConfig.gacha_embed_description as string) ||
-      '현재 포인트: **{points}p**\n1회 뽑기 비용: **{cost1}p**\n10회 뽑기 비용: **{cost10}p**{pity}\n\n**확률표 & 획득 가능 역할**\n{rarityDisplay}'
-    )
+      '현재 포인트: **{points}p**\n1회 뽑기 비용: **{cost1}p**\n10회 뽑기 비용: **{cost10}p**{pity}{period}\n\n**확률표 & 획득 가능 역할**\n{rarityDisplay}';
+
+    let embedDescription = template
       .replace('{points}', currentPoints.toLocaleString())
       .replace('{cost1}', pool.cost_points.toLocaleString())
       .replace('{cost10}', (pool.cost_points * 10).toLocaleString())
       .replace('{pity}', pityInfo)
+      .replace('{period}', periodInfo)
       .replace('{rarityDisplay}', rarityDisplay);
+
+    if (!template.includes('{period}') && periodInfo) {
+      embedDescription += periodInfo;
+    }
 
     const embed = new EmbedBuilder()
       .setTitle(botConfig.gacha_embed_title || `🎰 ${pool.name}`)
@@ -182,14 +230,14 @@ export async function triggerGachaUI(
           'https://via.placeholder.com/800x300?text=Gacha+Banner',
       )
       .setColor(parseColor(botConfig.gacha_embed_color))
-      .setFooter({ text: `풀 ${index + 1} / ${pools.length}` });
+      .setFooter({ text: `풀 ${index + 1} / ${activePools.length}` });
 
     const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setCustomId('prev')
         .setEmoji('⬅️')
         .setStyle(ButtonStyle.Secondary)
-        .setDisabled(pools.length === 1),
+        .setDisabled(activePools.length === 1),
       new ButtonBuilder()
         .setCustomId('draw1')
         .setLabel('1회 뽑기')
@@ -202,7 +250,7 @@ export async function triggerGachaUI(
         .setCustomId('next')
         .setEmoji('➡️')
         .setStyle(ButtonStyle.Secondary)
-        .setDisabled(pools.length === 1),
+        .setDisabled(activePools.length === 1),
     );
 
     if (isEdit) {
@@ -241,18 +289,18 @@ export async function triggerGachaUI(
     'collect',
     async (buttonInteraction: MessageComponentInteraction) => {
       if (buttonInteraction.customId === 'prev') {
-        currentIndex = (currentIndex - 1 + pools.length) % pools.length;
+        currentIndex = (currentIndex - 1 + activePools.length) % activePools.length;
         await buttonInteraction.deferUpdate();
         await showPool(currentIndex, true);
       } else if (buttonInteraction.customId === 'next') {
-        currentIndex = (currentIndex + 1) % pools.length;
+        currentIndex = (currentIndex + 1) % activePools.length;
         await buttonInteraction.deferUpdate();
         await showPool(currentIndex, true);
       } else if (
         buttonInteraction.customId === 'draw1' ||
         buttonInteraction.customId === 'draw10'
       ) {
-        const selectedPool = pools[currentIndex];
+        const selectedPool = activePools[currentIndex];
         const drawCount = buttonInteraction.customId === 'draw10' ? 10 : 1;
 
         const processingTitle = botConfig.gacha_processing_title.replace(

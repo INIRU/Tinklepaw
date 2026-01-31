@@ -14,7 +14,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from('gacha_pools')
       .select(
-        'pool_id, name, kind, is_active, banner_image_url, cost_points, paid_pull_cooldown_seconds, free_pull_interval_seconds, rate_r, rate_s, rate_ss, rate_sss, pity_threshold, pity_rarity'
+        'pool_id, name, kind, is_active, banner_image_url, cost_points, paid_pull_cooldown_seconds, free_pull_interval_seconds, rate_r, rate_s, rate_ss, rate_sss, pity_threshold, pity_rarity, start_at, end_at'
       )
       .order('updated_at', { ascending: false });
 
@@ -46,6 +46,8 @@ export async function POST(req: Request) {
       rate_sss?: number;
       pity_threshold: number | null;
       pity_rarity: 'R' | 'S' | 'SS' | 'SSS' | null;
+      start_at?: string | null;
+      end_at?: string | null;
     };
 
     const supabase = createSupabaseAdminClient();
@@ -63,7 +65,9 @@ export async function POST(req: Request) {
       rate_ss: body.rate_ss ?? 17,
       rate_sss: body.rate_sss ?? 3,
       pity_threshold: body.pity_threshold,
-      pity_rarity: body.pity_rarity
+      pity_rarity: body.pity_rarity,
+      start_at: body.start_at ?? null,
+      end_at: body.end_at ?? null
     };
 
     const q = body.pool_id
@@ -72,7 +76,7 @@ export async function POST(req: Request) {
 
     const { data, error } = await q
       .select(
-        'pool_id, name, kind, is_active, banner_image_url, cost_points, paid_pull_cooldown_seconds, free_pull_interval_seconds, rate_r, rate_s, rate_ss, rate_sss, pity_threshold, pity_rarity'
+        'pool_id, name, kind, is_active, banner_image_url, cost_points, paid_pull_cooldown_seconds, free_pull_interval_seconds, rate_r, rate_s, rate_ss, rate_sss, pity_threshold, pity_rarity, start_at, end_at'
       )
       .single();
 
