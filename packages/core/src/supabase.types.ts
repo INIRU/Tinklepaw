@@ -264,6 +264,7 @@ export type Database = {
           item_id: string;
           qty: number;
           is_pity: boolean;
+          is_variant: boolean;
         };
         Insert: Database['nyang']['Tables']['gacha_pull_results']['Row'];
         Update: Partial<Database['nyang']['Tables']['gacha_pull_results']['Row']>;
@@ -368,6 +369,7 @@ export type Database = {
           out_refund_points: number;
           out_reward_points: number;
           out_new_balance: number;
+          out_is_variant: boolean;
         }>;
       };
       set_equipped_item: {
