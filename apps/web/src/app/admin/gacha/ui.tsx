@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useToast } from '@/components/toast/ToastProvider';
-import { ChevronDown, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, Dices, Plus, Trash2 } from 'lucide-react';
 import Image from 'next/image';
 import { ImageCropModal } from '@/components/media/ImageCropModal';
 import { ConfirmModal } from '@/components/modal/ConfirmModal';
@@ -38,6 +38,59 @@ type Pool = {
 
 const RARITIES: Array<Item['rarity']> = ['R', 'S', 'SS', 'SSS'];
 
+const RATE_KEYS = ['rate_r', 'rate_s', 'rate_ss', 'rate_sss'] as const;
+type RateKey = (typeof RATE_KEYS)[number];
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
+const safeNumber = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) ? n : 0);
+
+function rebalanceRates(pool: Pool, changedKey: RateKey, rawValue: number): Pool {
+  const next: Pool = { ...pool };
+  const changedValue = round2(clamp(safeNumber(rawValue), 0, 100));
+  next[changedKey] = changedValue as never;
+
+  const otherKeys = RATE_KEYS.filter((k) => k !== changedKey);
+  const desiredOtherSum = round2(100 - changedValue);
+
+  if (desiredOtherSum <= 0) {
+    for (const k of otherKeys) next[k] = 0 as never;
+    return next;
+  }
+
+  const currentOtherSum = otherKeys.reduce((sum, k) => sum + safeNumber(next[k]), 0);
+  if (currentOtherSum <= 0) {
+    const per = desiredOtherSum / otherKeys.length;
+    for (const k of otherKeys) next[k] = round2(per) as never;
+  } else {
+    const scale = desiredOtherSum / currentOtherSum;
+    for (const k of otherKeys) next[k] = round2(safeNumber(next[k]) * scale) as never;
+  }
+
+  // Fix rounding drift without violating [0, 100].
+  const sum = round2(RATE_KEYS.reduce((s, k) => s + safeNumber(next[k]), 0));
+  let diff = round2(100 - sum);
+  if (diff === 0) return next;
+
+  const ordered = [...otherKeys].sort((a, b) =>
+    diff < 0 ? safeNumber(next[b]) - safeNumber(next[a]) : safeNumber(next[a]) - safeNumber(next[b]),
+  );
+
+  for (const k of ordered) {
+    if (diff === 0) break;
+    const v = safeNumber(next[k]);
+    const canAdd = round2(100 - v);
+    const canSub = round2(v);
+    const delta =
+      diff > 0 ? Math.min(diff, canAdd) : Math.max(diff, -canSub);
+    if (delta === 0) continue;
+    next[k] = round2(v + delta) as never;
+    diff = round2(diff - delta);
+  }
+
+  return next;
+}
+
 export default function GachaAdminClient() {
   const toast = useToast();
   const [roles, setRoles] = useState<Role[]>([]);
@@ -45,6 +98,16 @@ export default function GachaAdminClient() {
   const [pools, setPools] = useState<Pool[]>([]);
   const [selectedPoolId, setSelectedPoolId] = useState<string>('');
   const [poolItems, setPoolItems] = useState<Set<string>>(new Set());
+  const [autoBalanceRates, setAutoBalanceRates] = useState(true);
+
+  const [simAmount, setSimAmount] = useState<number>(1000);
+  const [simBusy, setSimBusy] = useState(false);
+  const [simResult, setSimResult] = useState<{
+    n: number;
+    pityForcedCount: number;
+    rarityCounts: Record<Item['rarity'], number>;
+    topItems: Array<{ itemId: string; name: string; rarity: Item['rarity']; count: number }>;
+  } | null>(null);
   
   // Item Filters
   const [searchText, setSearchText] = useState('');
@@ -70,6 +133,77 @@ export default function GachaAdminClient() {
   });
 
   const pool = useMemo(() => pools.find((p) => p.pool_id === selectedPoolId) ?? null, [pools, selectedPoolId]);
+
+  const simulate = useCallback(() => {
+    if (!pool) return;
+    const n = Math.max(1, Math.min(200_000, Math.floor(simAmount || 0)));
+
+    const inPool = items.filter((it) => it.is_active && poolItems.has(it.item_id));
+    const any = inPool.length > 0 ? inPool : items.filter((it) => it.is_active);
+
+    const byRarity: Record<Item['rarity'], Item[]> = { R: [], S: [], SS: [], SSS: [] };
+    for (const it of any) byRarity[it.rarity]?.push(it);
+
+    const counts: Record<Item['rarity'], number> = { R: 0, S: 0, SS: 0, SSS: 0 };
+    const itemCounts = new Map<string, { it: Item; count: number }>();
+
+    const pityThreshold = pool.pity_threshold;
+    const pityRarity = pool.pity_rarity as Item['rarity'] | null;
+    let pityCounter = 0;
+    let pityForcedCount = 0;
+
+    for (let i = 0; i < n; i++) {
+      let forcePity = false;
+      let rarity: Item['rarity'];
+
+      if (pityThreshold && pityRarity && pityCounter >= Math.max(pityThreshold - 1, 0)) {
+        forcePity = true;
+        rarity = pityRarity;
+      } else {
+        const roll = Math.random() * 100;
+        if (roll <= pool.rate_r) rarity = 'R';
+        else if (roll <= pool.rate_r + pool.rate_s) rarity = 'S';
+        else if (roll <= pool.rate_r + pool.rate_s + pool.rate_ss) rarity = 'SS';
+        else rarity = 'SSS';
+      }
+
+      const candidates = byRarity[rarity] ?? [];
+      const picked =
+        candidates.length > 0
+          ? candidates[Math.floor(Math.random() * candidates.length)]
+          : any.length > 0
+            ? any[Math.floor(Math.random() * any.length)]
+            : null;
+
+      const finalRarity = (picked?.rarity ?? rarity) as Item['rarity'];
+      counts[finalRarity] = (counts[finalRarity] ?? 0) + 1;
+
+      if (picked) {
+        const prev = itemCounts.get(picked.item_id);
+        if (prev) prev.count += 1;
+        else itemCounts.set(picked.item_id, { it: picked, count: 1 });
+      }
+
+      if (forcePity) pityForcedCount += 1;
+
+      if (pityThreshold && pityRarity) {
+        if (finalRarity === pityRarity) pityCounter = 0;
+        else pityCounter += 1;
+      }
+    }
+
+    const topItems = Array.from(itemCounts.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10)
+      .map(({ it, count }) => ({
+        itemId: it.item_id,
+        name: it.name,
+        rarity: it.rarity,
+        count,
+      }));
+
+    setSimResult({ n, pityForcedCount, rarityCounts: counts, topItems });
+  }, [items, pool, poolItems, simAmount]);
 
   const refresh = useCallback(async () => {
     const [rRes, iRes, pRes] = await Promise.all([
@@ -322,8 +456,8 @@ export default function GachaAdminClient() {
   }, [items, searchText, filterRarity, filterInPool, poolItems]);
 
   return (
-    <main className="flex h-screen">
-      <aside className="w-80 border-r border-[color:var(--border)] bg-[color:var(--card)] p-4 overflow-auto">
+    <main className="flex h-[calc(100dvh-64px)] overflow-hidden">
+      <aside className="w-80 flex-shrink-0 border-r border-[color:var(--border)] bg-[color:var(--card)] p-4 overflow-y-auto">
         <div className="text-[11px] tracking-[0.28em] muted-2">BANGULNYANG</div>
         <h1 className="mt-3 text-2xl font-semibold tracking-tight font-bangul">가챠 관리</h1>
         <p className="mt-1 text-xs muted">풀 선택 후 설정하세요.</p>
@@ -386,7 +520,7 @@ export default function GachaAdminClient() {
         </div>
       </aside>
 
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 min-h-0 overflow-y-auto p-6">
         {!pool ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-sm muted">왼쪽에서 풀을 선택하거나 추가하세요.</p>
@@ -575,6 +709,13 @@ export default function GachaAdminClient() {
                 <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] p-4">
                   <div className="text-sm font-semibold">희귀도 확률(%)</div>
                   <p className="mt-1 text-xs muted">R/S/SS/SSS를 먼저 뽑은 뒤, 해당 희귀도 내에서 아이템을 선택합니다.</p>
+                  <div className="mt-3">
+                    <Checkbox
+                      checked={autoBalanceRates}
+                      onChange={setAutoBalanceRates}
+                      label="입력한 값 기준으로 나머지 확률을 자동 배분 (합계 100%)"
+                    />
+                  </div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-4">
                     {(
                       [
@@ -596,7 +737,16 @@ export default function GachaAdminClient() {
                           onChange={(e) => {
                             const v = Number(e.target.value);
                             setPools((prev) =>
-                              prev.map((x) => (x.pool_id === pool.pool_id ? { ...x, [key]: Number.isFinite(v) ? v : 0 } : x))
+                              prev.map((x) => {
+                                if (x.pool_id !== pool.pool_id) return x;
+                                if (!autoBalanceRates) {
+                                  return {
+                                    ...x,
+                                    [key]: Number.isFinite(v) ? v : 0,
+                                  };
+                                }
+                                return rebalanceRates(x, key, v);
+                              })
                             );
                           }}
                         />
@@ -606,6 +756,110 @@ export default function GachaAdminClient() {
                   <div className="mt-2 text-xs muted">
                     합계: {(pool.rate_r + pool.rate_s + pool.rate_ss + pool.rate_sss).toFixed(2)}% (100%가 되어야 저장됩니다)
                   </div>
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold">시뮬레이터</div>
+                      <p className="mt-1 text-xs muted">
+                        현재 선택된 풀 설정/아이템으로 N회 가상 뽑기를 돌려 분포를 확인합니다.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        className="w-28 rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)]/60 px-3 py-2 text-sm text-[color:var(--fg)]"
+                        type="number"
+                        min={1}
+                        max={200000}
+                        step={1}
+                        value={simAmount}
+                        onChange={(e) => setSimAmount(Number(e.target.value))}
+                      />
+                      <button
+                        type="button"
+                        className="flex items-center gap-2 rounded-xl btn-soft px-3 py-2 text-xs font-semibold cursor-pointer"
+                        onClick={() => {
+                          setSimBusy(true);
+                          setTimeout(() => {
+                            try {
+                              simulate();
+                            } finally {
+                              setSimBusy(false);
+                            }
+                          }, 0);
+                        }}
+                        disabled={simBusy}
+                        title="시뮬레이션 실행"
+                      >
+                        <Dices className="h-4 w-4" />
+                        {simBusy ? '계산 중…' : '실행'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {simResult ? (
+                    <div className="mt-4 grid gap-4">
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)]/40 p-3 text-xs">
+                          <div className="font-semibold">희귀도 분포</div>
+                          <div className="mt-2 grid gap-1">
+                            {(
+                              [
+                                ['SSS', 'SSS'] as const,
+                                ['SS', 'SS'] as const,
+                                ['S', 'S'] as const,
+                                ['R', 'R'] as const
+                              ]
+                            ).map(([label, r]) => {
+                              const c = simResult.rarityCounts[r];
+                              const pct = simResult.n ? (c / simResult.n) * 100 : 0;
+                              return (
+                                <div key={r} className="flex items-center justify-between">
+                                  <span className="font-semibold">{label}</span>
+                                  <span className="font-mono">
+                                    {c.toLocaleString()} ({pct.toFixed(2)}%)
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)]/40 p-3 text-xs">
+                          <div className="font-semibold">천장</div>
+                          <div className="mt-2 flex items-center justify-between">
+                            <span className="muted">강제 발동 횟수</span>
+                            <span className="font-mono">{simResult.pityForcedCount.toLocaleString()}</span>
+                          </div>
+                          <div className="mt-2 text-[11px] muted">
+                            * 천장 설정(횟수/희귀도)이 켜져 있을 때만 의미가 있습니다.
+                          </div>
+                        </div>
+                      </div>
+
+                      {simResult.topItems.length > 0 && (
+                        <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)]/40 p-3 text-xs">
+                          <div className="font-semibold">상위 아이템(Top 10)</div>
+                          <div className="mt-2 grid gap-1">
+                            {simResult.topItems.map((x) => (
+                              <div key={x.itemId} className="flex items-center justify-between gap-3">
+                                <span className="truncate">
+                                  <span className="font-semibold mr-2">{x.rarity}</span>
+                                  {x.name}
+                                </span>
+                                <span className="font-mono">{x.count.toLocaleString()}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="mt-4 text-xs muted">
+                      실행을 누르면 결과가 여기에 표시됩니다.
+                    </div>
+                  )}
                 </div>
 
                 <button

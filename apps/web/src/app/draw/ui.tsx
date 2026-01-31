@@ -1,12 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '@/components/toast/ToastProvider';
 import { GachaScene } from './GachaScene';
 import { AnimatePresence, m } from 'framer-motion';
-import { X, Info, Coins, AlertCircle, ChevronDown } from 'lucide-react';
+import { X, Info, Coins, AlertCircle, ChevronDown, History, Copy, Download, Search } from 'lucide-react';
 import Image from 'next/image';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { useSearchParams } from 'next/navigation';
+import { CustomSelect } from '@/components/ui/CustomSelect';
 
 type DrawResult = {
   itemId: string;
@@ -26,10 +28,28 @@ type Pool = {
   free_pull_interval_seconds: number | null;
   paid_pull_cooldown_seconds: number;
   pity_threshold: number | null;
+  pity_rarity: 'R' | 'S' | 'SS' | 'SSS' | null;
   rate_r: number;
   rate_s: number;
   rate_ss: number;
   rate_sss: number;
+};
+
+type HistoryEntry = {
+  pullId: string;
+  createdAt: string;
+  pool: { poolId: string; name: string | null; kind: 'permanent' | 'limited' | null };
+  isFree: boolean;
+  spentPoints: number;
+  result: {
+    itemId: string;
+    name: string | null;
+    rarity: 'R' | 'S' | 'SS' | 'SSS' | null;
+    discordRoleId: string | null;
+    rewardPoints: number;
+    qty: number;
+    isPity: boolean;
+  } | null;
 };
 
 type PoolItem = {
@@ -40,12 +60,24 @@ type PoolItem = {
   rewardPoints: number;
 };
 
-const PityGauge = ({ current, max }: { current: number; max: number }) => (
+const PityGauge = ({
+  current,
+  max,
+  rarity
+}: {
+  current: number;
+  max: number;
+  rarity?: 'R' | 'S' | 'SS' | 'SSS' | null;
+}) => {
+  const remaining = Math.max(max - current, 0);
+  return (
   <div className='mt-2 w-full max-w-[200px] mx-auto backdrop-blur-sm bg-[color:var(--card)]/50 p-2 rounded-xl border border-[color:var(--border)] shadow-sm'>
     <div className='flex justify-between text-[10px] text-[color:var(--muted)] mb-1 px-1 font-semibold'>
-      <span>천장</span>
       <span>
-        {current} / {max}
+        천장{rarity ? ` ${rarity}` : ''}
+      </span>
+      <span>
+        남은 {remaining}회
       </span>
     </div>
     <div className='h-2 w-full bg-black/5 dark:bg-black/40 rounded-full overflow-hidden border border-[color:var(--border)]'>
@@ -55,10 +87,12 @@ const PityGauge = ({ current, max }: { current: number; max: number }) => (
       />
     </div>
   </div>
-);
+  );
+};
 
 export default function DrawClient() {
   const toast = useToast();
+  const searchParams = useSearchParams();
   const [pools, setPools] = useState<Pool[]>([]);
   const [selectedPoolId, setSelectedPoolId] = useState<string>('');
 
@@ -68,6 +102,31 @@ export default function DrawClient() {
     pityCounter: number;
   } | null>(null);
   const [showProbModal, setShowProbModal] = useState(false);
+  const [openRarities, setOpenRarities] = useState<
+    Record<'SSS' | 'SS' | 'S' | 'R', boolean>
+  >({
+    SSS: false,
+    SS: false,
+    S: false,
+    R: false,
+  });
+
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const historyInFlight = useRef(false);
+  const historyOffsetRef = useRef(0);
+  const [historyHasMore, setHistoryHasMore] = useState(true);
+  const [historyPoolId, setHistoryPoolId] = useState<string>('');
+  const [historyRarities, setHistoryRarities] = useState<
+    Record<'R' | 'S' | 'SS' | 'SSS', boolean>
+  >({ R: true, S: true, SS: true, SSS: true });
+  const [historyQueryInput, setHistoryQueryInput] = useState('');
+  const [historyQuery, setHistoryQuery] = useState('');
+  const [openHistoryGroups, setOpenHistoryGroups] = useState<Record<string, boolean>>({});
+  const [historyFocusPullId, setHistoryFocusPullId] = useState<string | null>(
+    null,
+  );
   const [showInsufficientModal, setShowInsufficientModal] = useState(false);
   const [showPoolListMobile, setShowPoolListMobile] = useState(false);
   const [poolItems, setPoolItems] = useState<PoolItem[]>([]);
@@ -129,6 +188,56 @@ export default function DrawClient() {
     return grouped;
   }, [poolItems]);
 
+  const activeHistoryRarities = useMemo(() => {
+    return (['SSS', 'SS', 'S', 'R'] as const).filter((r) => historyRarities[r]);
+  }, [historyRarities]);
+
+  const historyGroups = useMemo(() => {
+    const MAX = 10;
+    const ADJ_MS = 3500;
+    const WINDOW_MS = 20000;
+
+    const groups: Array<{ key: string; entries: HistoryEntry[]; isTenPull: boolean }> = [];
+    const entries = historyEntries;
+
+    let i = 0;
+    while (i < entries.length) {
+      const first = entries[i];
+      const firstT = new Date(first.createdAt).getTime();
+      const poolId = first.pool.poolId;
+
+      const group: HistoryEntry[] = [first];
+      let prevT = firstT;
+      let j = i + 1;
+
+      while (j < entries.length && group.length < MAX) {
+        const next = entries[j];
+        if (next.pool.poolId !== poolId) break;
+
+        const nextT = new Date(next.createdAt).getTime();
+        const dtAdj = prevT - nextT;
+        const dtWindow = firstT - nextT;
+
+        if (dtAdj > ADJ_MS) break;
+        if (dtWindow > WINDOW_MS) break;
+
+        group.push(next);
+        prevT = nextT;
+        j += 1;
+      }
+
+      if (group.length === MAX) {
+        groups.push({ key: group[0].pullId, entries: group, isTenPull: true });
+        i = j;
+      } else {
+        groups.push({ key: first.pullId, entries: [first], isTenPull: false });
+        i += 1;
+      }
+    }
+
+    return groups;
+  }, [historyEntries]);
+
   const fetchStatus = useCallback(async () => {
     try {
       const url = selectedPoolId
@@ -147,6 +256,15 @@ export default function DrawClient() {
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
+
+  useEffect(() => {
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.documentElement.style.overflow = '';
+      document.body.style.overflow = '';
+    };
+  }, []);
 
   useEffect(() => {
     if (!showProbModal || !selectedPoolId) return;
@@ -173,6 +291,190 @@ export default function DrawClient() {
       canceled = true;
     };
   }, [selectedPoolId, showProbModal]);
+
+  useEffect(() => {
+    if (!showProbModal) return;
+    setOpenRarities({
+      SSS: false,
+      SS: false,
+      S: false,
+      R: false,
+    });
+  }, [showProbModal]);
+
+  useEffect(() => {
+    const shouldOpen = searchParams.get('history') === '1';
+    const focusPull = searchParams.get('focusPull');
+    if (!shouldOpen && !focusPull) return;
+
+    setShowHistoryModal(true);
+    if (focusPull) setHistoryFocusPullId(focusPull);
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!showHistoryModal) return;
+    const t = setTimeout(() => {
+      setHistoryQuery(historyQueryInput.trim());
+    }, 250);
+    return () => clearTimeout(t);
+  }, [historyQueryInput, showHistoryModal]);
+
+  const fetchHistory = useCallback(
+    async ({ reset }: { reset?: boolean } = {}) => {
+      if (historyInFlight.current) return;
+      const nextOffset = reset ? 0 : historyOffsetRef.current;
+
+      historyInFlight.current = true;
+      setHistoryLoading(true);
+      try {
+        const qs = new URLSearchParams();
+        qs.set('limit', '30');
+        qs.set('offset', String(nextOffset));
+        if (historyPoolId) qs.set('poolId', historyPoolId);
+        if (activeHistoryRarities.length > 0 && activeHistoryRarities.length < 4) {
+          qs.set('rarities', activeHistoryRarities.join(','));
+        }
+        if (historyQuery) qs.set('q', historyQuery);
+
+        const res = await fetch(`/api/gacha/history?${qs.toString()}`);
+        const body = (await res.json().catch(() => null)) as
+          | { entries?: HistoryEntry[]; nextOffset?: number; exhausted?: boolean; error?: string }
+          | null;
+
+        if (!res.ok) {
+          throw new Error(body?.error ?? `요청 실패: ${res.status}`);
+        }
+
+        const entries = (body?.entries ?? []) as HistoryEntry[];
+        const returnedNextOffset = typeof body?.nextOffset === 'number' ? body.nextOffset : nextOffset;
+
+        setHistoryEntries((prev) => (reset ? entries : [...prev, ...entries]));
+        historyOffsetRef.current = returnedNextOffset;
+        setHistoryHasMore(Boolean(!body?.exhausted && entries.length > 0));
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : '내역을 불러오지 못했습니다.');
+      } finally {
+        historyInFlight.current = false;
+        setHistoryLoading(false);
+      }
+    },
+    [
+      activeHistoryRarities,
+      historyInFlight,
+      historyPoolId,
+      historyOffsetRef,
+      historyQuery,
+      toast,
+    ],
+  );
+
+  const downloadHistoryCsv = useCallback(() => {
+    if (historyEntries.length === 0) {
+      toast.error('내역이 없습니다.');
+      return;
+    }
+
+    const csvEscape = (v: unknown) => {
+      const s = v === null || v === undefined ? '' : String(v);
+      const escaped = s.replace(/"/g, '""');
+      return /[",\n\r]/.test(s) ? `"${escaped}"` : escaped;
+    };
+
+    const header = [
+      'createdAt',
+      'poolName',
+      'poolId',
+      'rarity',
+      'itemName',
+      'isPity',
+      'isFree',
+      'spentPoints',
+      'rewardPoints',
+      'pullId',
+      'sharePath',
+    ];
+
+    const lines = [header.join(',')];
+
+    for (const e of historyEntries) {
+      const createdAt = e.createdAt;
+      const poolName = e.pool.name ?? '';
+      const poolId = e.pool.poolId;
+      const rarity = e.result?.rarity ?? '';
+      const itemName = e.result?.name ?? '';
+      const isPity = e.result?.isPity ? 1 : 0;
+      const isFree = e.isFree ? 1 : 0;
+      const spentPoints = e.spentPoints ?? 0;
+      const rewardPoints = e.result?.rewardPoints ?? 0;
+      const pullId = e.pullId;
+      const sharePath = `/draw?history=1&focusPull=${encodeURIComponent(pullId)}`;
+
+      lines.push(
+        [
+          createdAt,
+          poolName,
+          poolId,
+          rarity,
+          itemName,
+          isPity,
+          isFree,
+          spentPoints,
+          rewardPoints,
+          pullId,
+          sharePath,
+        ]
+          .map(csvEscape)
+          .join(','),
+      );
+    }
+
+    const csv = lines.join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `gacha-history-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    URL.revokeObjectURL(url);
+    toast.success('CSV를 다운로드했습니다.');
+  }, [historyEntries, toast]);
+
+  useEffect(() => {
+    if (!showHistoryModal) return;
+    historyOffsetRef.current = 0;
+    setHistoryHasMore(true);
+    setOpenHistoryGroups({});
+    setHistoryEntries([]);
+    void fetchHistory({ reset: true });
+  }, [activeHistoryRarities, fetchHistory, historyPoolId, showHistoryModal]);
+
+  useEffect(() => {
+    if (!showHistoryModal || !historyFocusPullId) return;
+    if (historyLoading) return;
+
+    const el = document.getElementById(`pull-${historyFocusPullId}`);
+    if (el) {
+      el.scrollIntoView({ block: 'center' });
+      return;
+    }
+
+    const groupKey = historyGroups.find(
+      (g) => g.isTenPull && g.entries.some((x) => x.pullId === historyFocusPullId),
+    )?.key;
+    if (groupKey && !openHistoryGroups[groupKey]) {
+      setOpenHistoryGroups((prev) => ({ ...prev, [groupKey]: true }));
+    }
+  }, [
+    historyFocusPullId,
+    historyGroups,
+    historyLoading,
+    openHistoryGroups,
+    showHistoryModal,
+  ]);
 
   const onDraw = useCallback(
     async (amount: number) => {
@@ -261,7 +563,11 @@ export default function DrawClient() {
   return (
     <main className='flex h-[calc(100vh-64px)] overflow-hidden'>
       {/* Left Sidebar - Pool List */}
-      <aside className='w-80 border-r border-[color:var(--border)] bg-[color:var(--card)] p-4 overflow-y-auto flex-shrink-0 z-10 hidden md:block'>
+      <aside
+        className={`w-80 border-r border-[color:var(--border)] bg-[color:var(--card)] p-4 flex-shrink-0 z-10 hidden md:block ${
+          pools.length > 0 ? 'overflow-y-auto' : 'overflow-y-hidden'
+        }`}
+      >
         <div className='text-[11px] tracking-[0.28em] muted-2 mb-6'>
           BANGULNYANG
         </div>
@@ -338,7 +644,7 @@ export default function DrawClient() {
         <div
           className={`absolute inset-0 z-10 pointer-events-none flex flex-col justify-between p-8 transition-opacity duration-500 ${isDrawing ? 'opacity-0' : 'opacity-100'}`}
         >
-          {/* Top Left Info (Mobile) / Top Right (Desktop) */}
+          {/* Top Left Info (Mobile) */}
           <div className='absolute top-4 left-4 pointer-events-auto flex md:hidden items-center gap-2'>
             <button
               onClick={() => setShowProbModal(true)}
@@ -346,6 +652,16 @@ export default function DrawClient() {
               title='확률 정보'
             >
               <Info className='w-5 h-5' />
+            </button>
+            <button
+              onClick={() => {
+                setHistoryPoolId((prev) => prev || selectedPoolId);
+                setShowHistoryModal(true);
+              }}
+              className='flex h-9 w-9 items-center justify-center rounded-xl bg-[color:var(--card)]/80 backdrop-blur-md border border-[color:var(--border)] text-[color:var(--muted)] shadow-sm cursor-pointer'
+              title='뽑기 내역'
+            >
+              <History className='w-5 h-5' />
             </button>
           </div>
 
@@ -386,6 +702,7 @@ export default function DrawClient() {
                   <PityGauge
                     current={userStatus.pityCounter}
                     max={selectedPool.pity_threshold}
+                    rarity={selectedPool.pity_rarity}
                   />
                 )}
               </>
@@ -449,6 +766,16 @@ export default function DrawClient() {
             >
               <Info className='w-4 h-4' />
               <span>확률 정보</span>
+            </button>
+            <button
+              onClick={() => {
+                setHistoryPoolId((prev) => prev || selectedPoolId);
+                setShowHistoryModal(true);
+              }}
+              className='flex items-center gap-2 px-4 py-2 rounded-xl bg-[color:var(--card)]/80 backdrop-blur-md border border-[color:var(--border)] text-[color:var(--muted)] hover:bg-[color:var(--chip)] hover:text-[color:var(--fg)] transition-colors text-xs font-medium cursor-pointer'
+            >
+              <History className='w-4 h-4' />
+              <span>내역</span>
             </button>
           </div>
         </div>
@@ -537,7 +864,7 @@ export default function DrawClient() {
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
-                className='relative max-w-sm w-full bg-[color:var(--card)] border border-[color:var(--border)] rounded-3xl p-6 shadow-2xl'
+                className='relative max-w-sm w-full bg-[color:var(--card)] border border-[color:var(--border)] rounded-3xl shadow-2xl'
               >
                 <button
                   onClick={() => setShowProbModal(false)}
@@ -546,80 +873,539 @@ export default function DrawClient() {
                   <X className='w-5 h-5 text-[color:var(--muted)]' />
                 </button>
 
-                <h2 className='text-xl font-bold mb-4 font-bangul text-center'>
-                  확률 정보
-                </h2>
+                <div className='p-6 flex flex-col'>
+                  <div className='flex items-center justify-center gap-2 mb-4 flex-shrink-0'>
+                    <h2 className='text-xl font-bold font-bangul'>확률 정보</h2>
+                    {selectedPool.pity_threshold && (
+                      <span className='rounded-full bg-[color:var(--chip)] border border-[color:var(--border)] px-2 py-1 text-[10px] sm:text-xs text-[color:var(--muted)]'>
+                        <span className='font-semibold text-[color:var(--fg)]'>천장</span>{' '}
+                        {(() => {
+                          const max = selectedPool.pity_threshold ?? 0;
+                          const counter = userStatus?.pityCounter ?? 0;
+                          const remaining = Math.max(max - counter, 0);
+                          if (selectedPool.pity_rarity) {
+                            return `${selectedPool.pity_rarity} 확정 · ${remaining}회 남음`;
+                          }
+                          return userStatus ? `${counter}/${max}` : `${max}회`;
+                        })()}
+                      </span>
+                    )}
+                  </div>
 
-                <div className='space-y-2'>
-                  <div className='flex justify-between items-center p-3 rounded-xl bg-[color:var(--chip)] border border-[color:var(--border)]'>
-                    <span className='font-bold text-[color:var(--accent-pink)]'>
-                      SSS
-                    </span>
-                    <span className='font-mono'>{selectedPool.rate_sss}%</span>
-                  </div>
-                  <div className='flex justify-between items-center p-3 rounded-xl bg-[color:var(--chip)] border border-[color:var(--border)]'>
-                    <span className='font-bold text-purple-400'>SS</span>
-                    <span className='font-mono'>{selectedPool.rate_ss}%</span>
-                  </div>
-                  <div className='flex justify-between items-center p-3 rounded-xl bg-[color:var(--chip)] border border-[color:var(--border)]'>
-                    <span className='font-bold text-blue-400'>S</span>
-                    <span className='font-mono'>{selectedPool.rate_s}%</span>
-                  </div>
-                  <div className='flex justify-between items-center p-3 rounded-xl bg-[color:var(--chip)] border border-[color:var(--border)]'>
-                    <span className='font-bold text-gray-400'>R</span>
-                    <span className='font-mono'>{selectedPool.rate_r}%</span>
+                  <div className='max-h-[45dvh] sm:max-h-[60dvh] overflow-y-auto pr-1 overscroll-contain'>
+                    <div className='text-xs font-semibold muted mb-2'>등급별 확률</div>
+                    <div className='space-y-2'>
+                      {(['SSS', 'SS', 'S', 'R'] as const).map((rarity) => {
+                        const rateByRarity = {
+                          SSS: selectedPool.rate_sss,
+                          SS: selectedPool.rate_ss,
+                          S: selectedPool.rate_s,
+                          R: selectedPool.rate_r,
+                        } as const;
+
+                        return (
+                          <div
+                            key={rarity}
+                            className='rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] p-3'
+                          >
+                            <button
+                              type='button'
+                              onClick={() =>
+                                setOpenRarities((prev) => ({
+                                  ...prev,
+                                  [rarity]: !prev[rarity],
+                                }))
+                              }
+                              className='w-full flex items-center justify-between text-xs font-bold cursor-pointer'
+                            >
+                              <span className='flex items-center gap-2'>
+                                <span
+                                  className={
+                                    rarity === 'SSS'
+                                      ? 'text-amber-400'
+                                      : rarity === 'SS'
+                                        ? 'text-purple-400'
+                                        : rarity === 'S'
+                                          ? 'text-blue-400'
+                                          : 'text-gray-400'
+                                  }
+                                >
+                                  {rarity}
+                                </span>
+                                <span className='muted'>
+                                  ({poolItemsLoading ? '-' : itemsByRarity[rarity].length}개)
+                                </span>
+                              </span>
+                              <span className='flex items-center gap-2'>
+                                <span className='font-mono'>{rateByRarity[rarity]}%</span>
+                                <ChevronDown
+                                  className={`w-4 h-4 transition-transform ${openRarities[rarity] ? 'rotate-180' : ''}`}
+                                />
+                              </span>
+                            </button>
+                            <AnimatePresence initial={false}>
+                              {openRarities[rarity] && (
+                                <m.div
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: 'auto', opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
+                                  transition={{ duration: 0.2 }}
+                                  className='overflow-hidden'
+                                >
+                                  <div className='mt-2 flex gap-2 text-xs text-[color:var(--fg)] overflow-x-auto whitespace-nowrap pb-1'>
+                                    {poolItemsLoading ? (
+                                      <div className='w-full space-y-2'>
+                                        {[1, 2, 3].map((i) => (
+                                          <Skeleton key={i} className='h-4 w-full' />
+                                        ))}
+                                      </div>
+                                    ) : itemsByRarity[rarity].length === 0 ? (
+                                      <span className='muted'>없음</span>
+                                    ) : (
+                                      itemsByRarity[rarity].map((item) => (
+                                        <span
+                                          key={item.itemId}
+                                          className='rounded-full bg-black/10 px-3 py-1.5'
+                                        >
+                                          {item.name}
+                                          {!item.discordRoleId &&
+                                            item.rewardPoints > 0 &&
+                                            ` (+${item.rewardPoints}p)`}
+                                          {!item.discordRoleId &&
+                                            item.rewardPoints === 0 &&
+                                            ' (꽝)'}
+                                        </span>
+                                      ))
+                                    )}
+                                  </div>
+                                </m.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <p className='mt-4 text-xs text-center text-[color:var(--muted)]'>
+                      * 각 등급 내 아이템은 동일한 확률로 등장합니다.
+                      <br />* 천장 도달 시 확률과 무관하게 지정된 등급이 등장합니다.
+                    </p>
                   </div>
                 </div>
+              </m.div>
+            </div>
+          )}
+        </AnimatePresence>
 
-                <div className='mt-4 space-y-3'>
-                  <div className='text-xs font-semibold muted'>등급별 등장 아이템</div>
-                  {poolItemsLoading ? (
-                    <div className='space-y-2'>
-                      {[1, 2, 3].map((i) => (
-                        <Skeleton key={i} className='h-4 w-full' />
+        {/* History Modal */}
+        <AnimatePresence>
+          {showHistoryModal && (
+            <div className='absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm'>
+              <m.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className='relative max-w-xl w-full bg-[color:var(--card)] border border-[color:var(--border)] rounded-3xl shadow-2xl'
+              >
+                <button
+                  onClick={() => {
+                    setShowHistoryModal(false);
+                    setHistoryFocusPullId(null);
+                  }}
+                  className='absolute top-4 right-4 p-2 rounded-full hover:bg-[color:var(--chip)] transition-colors cursor-pointer'
+                >
+                  <X className='w-5 h-5 text-[color:var(--muted)]' />
+                </button>
+
+                <div className='p-6 flex flex-col'>
+                  <h2 className='text-xl font-bold mb-4 font-bangul text-center flex-shrink-0'>
+                    뽑기 내역
+                  </h2>
+
+                  <div className='flex flex-wrap items-center justify-between gap-2 mb-4 flex-shrink-0'>
+                    <div className='flex items-center gap-2'>
+                      <div className='w-[180px]'>
+                        <CustomSelect
+                          value={historyPoolId}
+                          onChange={setHistoryPoolId}
+                          options={[
+                            { value: '', label: '모든 풀' },
+                            ...pools.map((p) => ({ value: p.pool_id, label: p.name })),
+                          ]}
+                        />
+                      </div>
+
+                      <button
+                        type='button'
+                        onClick={() => {
+                          setHistoryPoolId(selectedPoolId);
+                        }}
+                        className='rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-xs font-semibold text-[color:var(--fg)] hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer'
+                        disabled={!selectedPoolId}
+                        title='현재 풀로 필터'
+                      >
+                        현재 풀
+                      </button>
+                    </div>
+
+                    <div className='flex items-center gap-1.5'>
+                      {(['SSS', 'SS', 'S', 'R'] as const).map((rarity) => (
+                        <button
+                          key={rarity}
+                          type='button'
+                          onClick={() =>
+                            setHistoryRarities((prev) => ({
+                              ...prev,
+                              [rarity]: !prev[rarity],
+                            }))
+                          }
+                          className={`rounded-full px-3 py-1 text-[11px] font-bold border cursor-pointer transition-colors ${
+                            historyRarities[rarity]
+                              ? 'border-[color:var(--border)] bg-[color:var(--fg)]/10 text-[color:var(--fg)]'
+                              : 'border-[color:var(--border)] bg-transparent text-[color:var(--muted)]'
+                          }`}
+                        >
+                          {rarity}
+                        </button>
                       ))}
                     </div>
-                  ) : (
-                    (['SSS', 'SS', 'S', 'R'] as const).map((rarity) => (
-                      <div key={rarity} className='rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] p-3'>
-                        <div className='text-xs font-bold mb-2 flex items-center gap-2'>
-                          <span
-                            className={
-                              rarity === 'SSS'
-                                ? 'text-amber-400'
-                                : rarity === 'SS'
-                                  ? 'text-purple-400'
-                                  : rarity === 'S'
-                                    ? 'text-blue-400'
-                                    : 'text-gray-400'
-                            }
-                          >
-                            {rarity}
-                          </span>
-                          <span className='muted'>({itemsByRarity[rarity].length}개)</span>
-                        </div>
-                        <div className='flex flex-wrap gap-2 text-xs text-[color:var(--fg)]'>
-                          {itemsByRarity[rarity].length === 0 ? (
-                            <span className='muted'>없음</span>
-                          ) : (
-                            itemsByRarity[rarity].map((item) => (
-                              <span key={item.itemId} className='rounded-full bg-black/10 px-2 py-1'>
-                                {item.name}
-                                {!item.discordRoleId && item.rewardPoints > 0 && ` (+${item.rewardPoints}p)`}
-                                {!item.discordRoleId && item.rewardPoints === 0 && ' (꽝)'}
-                              </span>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
 
-                <p className='mt-4 text-xs text-center text-[color:var(--muted)]'>
-                  * 각 등급 내 아이템은 동일한 확률로 등장합니다.
-                  <br />* 천장 도달 시 확률과 무관하게 지정된 등급이 등장합니다.
-                </p>
+                    <div className='w-full'>
+                      <div className='relative'>
+                        <Search className='absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[color:var(--muted)]' />
+                        <input
+                          className='w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] pl-9 pr-9 py-2 text-sm text-[color:var(--fg)]'
+                          placeholder='아이템 검색…'
+                          value={historyQueryInput}
+                          onChange={(e) => setHistoryQueryInput(e.target.value)}
+                        />
+                        {historyQueryInput && (
+                          <button
+                            type='button'
+                            className='absolute right-2 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer'
+                            title='검색 지우기'
+                            onClick={() => setHistoryQueryInput('')}
+                          >
+                            <X className='h-4 w-4 text-[color:var(--muted)]' />
+                          </button>
+                        )}
+                      </div>
+                      <div className='mt-1 text-[10px] muted'>
+                        * 현재 불러온 내역 기준으로 CSV를 다운로드합니다.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className='max-h-[35dvh] sm:max-h-[50dvh] overflow-y-auto space-y-2 pr-1 overscroll-contain'>
+                  {historyEntries.length === 0 && historyLoading ? (
+                    <div className='space-y-2'>
+                      {[1, 2, 3, 4].map((i) => (
+                        <Skeleton key={i} className='h-14 w-full' />
+                      ))}
+                    </div>
+                  ) : historyEntries.length === 0 ? (
+                    <div className='text-sm muted text-center py-10'>
+                      내역이 없습니다.
+                    </div>
+                  ) : (
+                    historyGroups.map((group) => {
+                      if (group.isTenPull) {
+                        const newest = new Date(group.entries[0].createdAt);
+                        const oldest = new Date(group.entries[group.entries.length - 1].createdAt);
+                        const poolName = group.entries[0].pool.name ?? '알 수 없는 풀';
+                        const totalSpent = group.entries.reduce((sum, e) => sum + (e.spentPoints ?? 0), 0);
+                        const pityCount = group.entries.reduce(
+                          (sum, e) => sum + (e.result?.isPity ? 1 : 0),
+                          0,
+                        );
+                        const counts = group.entries.reduce(
+                          (acc, e) => {
+                            const r = (e.result?.rarity ?? 'R') as 'SSS' | 'SS' | 'S' | 'R';
+                            acc[r] += 1;
+                            return acc;
+                          },
+                          { SSS: 0, SS: 0, S: 0, R: 0 } as Record<'SSS' | 'SS' | 'S' | 'R', number>,
+                        );
+
+                        const isOpen = Boolean(openHistoryGroups[group.key]);
+
+                        return (
+                          <div
+                            key={group.key}
+                            className='rounded-2xl border border-[color:var(--border)] p-3 bg-[color:var(--chip)]/50'
+                          >
+                            <div className='flex items-start justify-between gap-3'>
+                              <button
+                                type='button'
+                                className='min-w-0 flex-1 text-left cursor-pointer'
+                                onClick={() =>
+                                  setOpenHistoryGroups((prev) => ({
+                                    ...prev,
+                                    [group.key]: !prev[group.key],
+                                  }))
+                                }
+                              >
+                                <div className='flex items-center gap-2 flex-wrap'>
+                                  <span className='px-2 py-0.5 rounded-full border border-[color:var(--border)] bg-[color:var(--bg)]/40 text-[10px] font-bold text-[color:var(--fg)]'>
+                                    10연
+                                  </span>
+                                  <div className='text-sm font-bold text-[color:var(--fg)] break-keep'>
+                                    {poolName}
+                                  </div>
+                                  {pityCount > 0 && (
+                                    <span className='px-2 py-0.5 rounded-full border border-pink-500/30 bg-pink-500/10 text-[10px] font-bold text-[color:var(--accent-pink)]'>
+                                      천장 {pityCount}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className='mt-1 text-[11px] muted'>
+                                  {newest.toLocaleString()}
+                                  <span className='mx-1'>•</span>
+                                  {oldest.toLocaleTimeString()}
+                                  <span className='mx-1'>•</span>
+                                  {totalSpent > 0 ? `${totalSpent}P` : '무료 포함'}
+                                  <span className='mx-1'>•</span>
+                                  SSS {counts.SSS} / SS {counts.SS} / S {counts.S} / R {counts.R}
+                                </div>
+                              </button>
+
+                              <div className='flex items-center gap-2'>
+                                <button
+                                  type='button'
+                                  className='flex h-9 w-9 items-center justify-center rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer'
+                                  title='공유 링크 복사'
+                                  onClick={async () => {
+                                    try {
+                                  const url = new URL('/draw', window.location.origin);
+                                  url.searchParams.set('history', '1');
+                                  url.searchParams.set('focusPull', group.key);
+                                  await navigator.clipboard.writeText(url.toString());
+                                  toast.success('링크를 복사했습니다.');
+                                } catch {
+                                  toast.error('링크 복사에 실패했습니다.');
+                                }
+                              }}
+                                >
+                                  <Copy className='h-4 w-4' />
+                                </button>
+                                <button
+                                  type='button'
+                                  className='flex h-9 w-9 items-center justify-center rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer'
+                                  title={isOpen ? '접기' : '펼치기'}
+                                  onClick={() =>
+                                    setOpenHistoryGroups((prev) => ({
+                                      ...prev,
+                                      [group.key]: !prev[group.key],
+                                    }))
+                                  }
+                                >
+                                  <ChevronDown
+                                    className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                                  />
+                                </button>
+                              </div>
+                            </div>
+
+                            <AnimatePresence initial={false}>
+                              {isOpen && (
+                                <m.div
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: 'auto', opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
+                                  transition={{ duration: 0.2 }}
+                                  className='overflow-hidden'
+                                >
+                                  <div className='mt-3 grid grid-cols-2 sm:grid-cols-5 gap-2'>
+                                    {group.entries.map((entry) => {
+                                      const rarity = (entry.result?.rarity ?? 'R') as 'SSS' | 'SS' | 'S' | 'R';
+                                      const isFocus = historyFocusPullId === entry.pullId;
+                                      const rarityClass =
+                                        rarity === 'SSS'
+                                          ? 'text-amber-400 border-amber-500/30 bg-amber-500/10'
+                                          : rarity === 'SS'
+                                            ? 'text-purple-400 border-purple-500/30 bg-purple-500/10'
+                                            : rarity === 'S'
+                                              ? 'text-blue-400 border-blue-500/30 bg-blue-500/10'
+                                              : 'text-gray-400 border-gray-500/30 bg-gray-500/10';
+
+                                      return (
+                                        <div
+                                          key={entry.pullId}
+                                          id={`pull-${entry.pullId}`}
+                                          className={`rounded-xl border p-2 bg-[color:var(--bg)]/40 ${
+                                            isFocus
+                                              ? 'border-[color:var(--accent-pink)] shadow-[0_0_0_1px_rgba(255,95,162,0.35)]'
+                                              : 'border-[color:var(--border)]'
+                                          }`}
+                                        >
+                                          <div className='flex items-center justify-between gap-2'>
+                                            <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${rarityClass}`}>
+                                              {rarity}
+                                            </span>
+                                            <button
+                                              type='button'
+                                              className='flex h-6 w-6 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer'
+                                              title='공유 링크 복사'
+                                              onClick={async () => {
+                                                try {
+                                                  const url = new URL('/draw', window.location.origin);
+                                                  url.searchParams.set('history', '1');
+                                                  url.searchParams.set('focusPull', entry.pullId);
+                                                  await navigator.clipboard.writeText(url.toString());
+                                                  toast.success('링크를 복사했습니다.');
+                                                } catch {
+                                                  toast.error('링크 복사에 실패했습니다.');
+                                                }
+                                              }}
+                                            >
+                                              <Copy className='h-3 w-3 text-[color:var(--muted)]' />
+                                            </button>
+                                          </div>
+                                          <div className='mt-1 text-xs font-semibold text-[color:var(--fg)] truncate'>
+                                            {entry.result?.name ?? '알 수 없음'}
+                                          </div>
+                                          <div className='mt-1 flex items-center gap-1 flex-wrap'>
+                                            {entry.result?.isPity && (
+                                              <span className='px-1.5 py-0.5 rounded-full border border-pink-500/30 bg-pink-500/10 text-[10px] font-bold text-[color:var(--accent-pink)]'>
+                                                천장
+                                              </span>
+                                            )}
+                                            {entry.isFree && (
+                                              <span className='px-1.5 py-0.5 rounded-full border border-[color:var(--border)] bg-[color:var(--bg)]/40 text-[10px] font-bold text-[color:var(--muted)]'>
+                                                무료
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </m.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        );
+                      }
+
+                      const entry = group.entries[0];
+                      const rarity = entry.result?.rarity ?? 'R';
+                      const isFocus = historyFocusPullId === entry.pullId;
+                      const rarityClass =
+                        rarity === 'SSS'
+                          ? 'text-amber-400 border-amber-500/30 bg-amber-500/10'
+                          : rarity === 'SS'
+                            ? 'text-purple-400 border-purple-500/30 bg-purple-500/10'
+                            : rarity === 'S'
+                              ? 'text-blue-400 border-blue-500/30 bg-blue-500/10'
+                              : 'text-gray-400 border-gray-500/30 bg-gray-500/10';
+                      const created = new Date(entry.createdAt);
+
+                      return (
+                        <div
+                          key={entry.pullId}
+                          id={`pull-${entry.pullId}`}
+                          className={`rounded-2xl border p-3 bg-[color:var(--chip)]/50 ${
+                            isFocus
+                              ? 'border-[color:var(--accent-pink)] shadow-[0_0_0_1px_rgba(255,95,162,0.35)]'
+                              : 'border-[color:var(--border)]'
+                          }`}
+                        >
+                          <div className='flex items-start justify-between gap-3'>
+                            <div className='min-w-0'>
+                              <div className='flex items-center gap-2 flex-wrap'>
+                                <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${rarityClass}`}>
+                                  {rarity}
+                                </span>
+                                <div className='text-sm font-bold text-[color:var(--fg)] break-keep'>
+                                  {entry.result?.name ?? '알 수 없음'}
+                                  {!entry.result?.discordRoleId &&
+                                    entry.result?.rewardPoints &&
+                                    entry.result.rewardPoints > 0 &&
+                                    ` (+${entry.result.rewardPoints}p)`}
+                                  {!entry.result?.discordRoleId &&
+                                    entry.result?.rewardPoints === 0 &&
+                                    ' (꽝)'}
+                                </div>
+                                {entry.result?.isPity && (
+                                  <span className='px-2 py-0.5 rounded-full border border-pink-500/30 bg-pink-500/10 text-[10px] font-bold text-[color:var(--accent-pink)]'>
+                                    천장
+                                  </span>
+                                )}
+                                {entry.isFree && (
+                                  <span className='px-2 py-0.5 rounded-full border border-[color:var(--border)] bg-[color:var(--bg)]/40 text-[10px] font-bold text-[color:var(--muted)]'>
+                                    무료
+                                  </span>
+                                )}
+                              </div>
+                              <div className='mt-1 text-[11px] muted'>
+                                {entry.pool.name ?? '알 수 없는 풀'}
+                                <span className='mx-1'>•</span>
+                                {created.toLocaleString()}
+                                {!entry.isFree && entry.spentPoints > 0 && (
+                                  <>
+                                    <span className='mx-1'>•</span>
+                                    {entry.spentPoints}P
+                                  </>
+                                )}
+                              </div>
+                            </div>
+
+                            <button
+                              type='button'
+                              className='flex h-9 w-9 items-center justify-center rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] text-[color:var(--muted)] hover:text-[color:var(--fg)] hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer'
+                              title='공유 링크 복사'
+                              onClick={async () => {
+                                try {
+                                  const url = new URL('/draw', window.location.origin);
+                                  url.searchParams.set('history', '1');
+                                  url.searchParams.set('focusPull', entry.pullId);
+                                  await navigator.clipboard.writeText(url.toString());
+                                  toast.success('링크를 복사했습니다.');
+                                } catch {
+                                  toast.error('링크 복사에 실패했습니다.');
+                                }
+                              }}
+                            >
+                              <Copy className='h-4 w-4' />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                  </div>
+
+                  <div className='mt-4 flex items-center justify-between gap-3 flex-shrink-0'>
+                    <div className='flex items-center gap-2'>
+                      <button
+                        type='button'
+                        onClick={() => void fetchHistory({ reset: true })}
+                        className='rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-4 py-2 text-xs font-semibold text-[color:var(--fg)] hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer'
+                        disabled={historyLoading}
+                      >
+                        새로고침
+                      </button>
+                      <button
+                        type='button'
+                        onClick={downloadHistoryCsv}
+                        className='flex items-center gap-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-4 py-2 text-xs font-semibold text-[color:var(--fg)] hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
+                        disabled={historyLoading || historyEntries.length === 0}
+                        title='CSV 다운로드'
+                      >
+                        <Download className='h-4 w-4' />
+                        CSV
+                      </button>
+                    </div>
+                    <button
+                      type='button'
+                      onClick={() => void fetchHistory()}
+                      className='rounded-xl bg-[color:var(--accent-pink)] text-white px-4 py-2 text-xs font-bold hover:brightness-110 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
+                      disabled={historyLoading || !historyHasMore}
+                    >
+                      {historyLoading ? '불러오는 중…' : historyHasMore ? '더 불러오기' : '끝'}
+                    </button>
+                  </div>
+                </div>
               </m.div>
             </div>
           )}
