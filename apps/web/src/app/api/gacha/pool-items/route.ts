@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { auth } from '../../../../../auth';
 import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
-import { fetchGuildMember } from '@/lib/server/discord';
+import { fetchGuildMember, fetchRoleIconMap } from '@/lib/server/discord';
 
 export const runtime = 'nodejs';
 
@@ -26,7 +26,7 @@ export async function GET(req: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-  const items = (data ?? [])
+  const rawItems = (data ?? [])
     .map((row) => {
       const item = Array.isArray(row.items) ? row.items[0] : row.items;
       if (!item) return null;
@@ -38,7 +38,20 @@ export async function GET(req: Request) {
         rewardPoints: item.reward_points ?? 0
       };
     })
-    .filter(Boolean);
+    .filter(Boolean) as Array<{
+      itemId: string;
+      name: string;
+      rarity: 'R' | 'S' | 'SS' | 'SSS';
+      discordRoleId: string | null;
+      rewardPoints: number;
+    }>;
+
+  const roleIds = [...new Set(rawItems.map((i) => i.discordRoleId).filter(Boolean))] as string[];
+  const roleIconMap = await fetchRoleIconMap(roleIds);
+  const items = rawItems.map((item) => ({
+    ...item,
+    roleIconUrl: item.discordRoleId ? roleIconMap.get(item.discordRoleId) ?? null : null
+  }));
 
   return NextResponse.json({ items });
 }
