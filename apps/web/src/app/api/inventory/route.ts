@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { auth } from '../../../../auth';
-import { fetchGuildMember } from '@/lib/server/discord';
+import { fetchGuildMember, fetchRoleIconMap } from '@/lib/server/discord';
 import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
 
 export const runtime = 'nodejs';
@@ -33,18 +33,43 @@ export async function GET() {
 
   if (invErr) return NextResponse.json({ error: invErr.message }, { status: 400 });
 
+  const roleIds = new Set<string>();
+  const eqItem = eq?.items ? (eq.items as unknown as { discord_role_id?: string | null }) : null;
+  if (eqItem) {
+    const roleId = eqItem.discord_role_id;
+    if (roleId) roleIds.add(roleId);
+  }
+  for (const row of inv ?? []) {
+    const rowItem = row.items as unknown as { discord_role_id?: string | null };
+    const roleId = rowItem?.discord_role_id;
+    if (roleId) roleIds.add(roleId);
+  }
+  const roleIconMap = await fetchRoleIconMap([...roleIds]);
+
   return NextResponse.json({
     balance: bal?.balance ?? 0,
     equipped: eq
       ? {
           itemId: eq.item_id as string | null,
-          item: eq.items as unknown
+          item: {
+            ...(eq.items as unknown as { name: string; rarity: string; discord_role_id: string | null }),
+            roleIconUrl: ((): string | null => {
+              const roleId = eqItem?.discord_role_id ?? null;
+              return roleId ? roleIconMap.get(roleId) ?? null : null;
+            })()
+          }
         }
       : null,
     inventory: (inv ?? []).map((row) => ({
       itemId: row.item_id as string,
       qty: row.qty as number,
-      item: row.items as unknown
+      item: {
+        ...(row.items as unknown as { name: string; rarity: string; discord_role_id: string | null }),
+        roleIconUrl: ((): string | null => {
+          const roleId = (row.items as unknown as { discord_role_id?: string | null })?.discord_role_id;
+          return roleId ? roleIconMap.get(roleId) ?? null : null;
+        })()
+      }
     }))
   });
 }

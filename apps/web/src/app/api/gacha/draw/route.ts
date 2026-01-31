@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { auth } from '../../../../../auth';
 import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
-import { fetchGuildMember } from '@/lib/server/discord';
+import { fetchGuildMember, fetchRoleIconMap } from '@/lib/server/discord';
 
 export const runtime = 'nodejs';
 
@@ -76,5 +76,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'No result' }, { status: 500 });
   }
 
-  return NextResponse.json({ results });
+  const roleIds = [...new Set(results.map((r) => r.discordRoleId).filter(Boolean))] as string[];
+  const roleIconMap = await fetchRoleIconMap(roleIds);
+  const resultsWithIcons = results.map((r) => ({
+    ...r,
+    roleIconUrl: r.discordRoleId ? roleIconMap.get(r.discordRoleId) ?? null : null
+  }));
+
+  return NextResponse.json({ results: resultsWithIcons });
 }

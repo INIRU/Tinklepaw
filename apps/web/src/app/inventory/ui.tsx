@@ -13,6 +13,7 @@ type InventoryItem = {
     name: string;
     rarity: 'R' | 'S' | 'SS' | 'SSS';
     discord_role_id: string | null;
+    roleIconUrl?: string | null;
   };
 };
 
@@ -22,6 +23,7 @@ type EquippedItem = {
     name: string;
     rarity: 'R' | 'S' | 'SS' | 'SSS';
     discord_role_id: string | null;
+    roleIconUrl?: string | null;
   } | null;
 };
 
@@ -51,6 +53,36 @@ const RARITY_GLOW = {
   SS: 'shadow-[0_0_20px_rgba(192,132,252,0.4)]',
   SSS: 'shadow-[0_0_30px_rgba(251,191,36,0.5)]'
 };
+
+const ItemIcon = ({
+  url,
+  label,
+  frameClass = 'h-16 w-16',
+  imgClass = 'h-12 w-12',
+  emojiClass = 'text-3xl'
+}: {
+  url?: string | null;
+  label: string;
+  frameClass?: string;
+  imgClass?: string;
+  emojiClass?: string;
+}) => (
+  <div
+    className={`flex items-center justify-center rounded-2xl bg-[color:var(--card)]/80 border border-[color:var(--border)] shadow-inner ${frameClass}`}
+  >
+    {url ? (
+      <img
+        src={url}
+        alt={`${label} 아이콘`}
+        className={`object-cover ${imgClass}`}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+      />
+    ) : (
+      <span className={emojiClass} aria-label="아이템 아이콘">📦</span>
+    )}
+  </div>
+);
 
 export default function InventoryClient() {
   const toast = useToast();
@@ -199,12 +231,21 @@ export default function InventoryClient() {
                 >
                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -skew-x-12 translate-x-[-200%] animate-shimmer pointer-events-none" />
                   <div className="relative flex items-center justify-between">
-                    <div>
-                      <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border-2 text-xs font-bold mb-3 ${RARITY_TEXT_COLORS[data.equipped.item.rarity]} bg-[color:var(--chip)]`}>
-                        <Sparkles className="h-3 w-3" />
-                        {data.equipped.item.rarity}
+                    <div className="flex items-center gap-4">
+                      <ItemIcon
+                        url={data.equipped.item.roleIconUrl}
+                        label={data.equipped.item.name}
+                        frameClass="h-20 w-20"
+                        imgClass="h-14 w-14"
+                        emojiClass="text-4xl"
+                      />
+                      <div>
+                        <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border-2 text-xs font-bold mb-3 ${RARITY_TEXT_COLORS[data.equipped.item.rarity]} bg-[color:var(--chip)]`}>
+                          <Sparkles className="h-3 w-3" />
+                          {data.equipped.item.rarity}
+                        </div>
+                        <div className="text-xl font-bold text-[color:var(--fg)]">{data.equipped.item.name}</div>
                       </div>
-                      <div className="text-xl font-bold text-[color:var(--fg)]">{data.equipped.item.name}</div>
                     </div>
                     <button
                       onClick={() => void handleUnequip()}
@@ -285,9 +326,13 @@ export default function InventoryClient() {
                       </button>
                     </div>
                   ) : (
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      <AnimatePresence mode="popLayout">
-                        {filteredItems.map((inv, idx) => {
+                    <div className="relative rounded-[32px] border border-[color:var(--border)] bg-[color:var(--card)]/60 p-3 sm:p-4 shadow-[0_18px_45px_rgba(10,10,18,0.35)] overflow-hidden">
+                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.08),transparent_45%),radial-gradient(circle_at_80%_10%,rgba(255,191,36,0.08),transparent_40%),radial-gradient(circle_at_50%_100%,rgba(147,197,253,0.08),transparent_45%)] pointer-events-none" />
+                      <div className="absolute inset-0 opacity-60 bg-[linear-gradient(0deg,rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] [background-size:28px_28px] pointer-events-none" />
+
+                      <div className="relative grid gap-3 grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7">
+                        <AnimatePresence mode="popLayout">
+                          {filteredItems.map((inv, idx) => {
                           const isEquipped = equippedItemId === inv.itemId;
                           return (
                             <m.div
@@ -303,67 +348,78 @@ export default function InventoryClient() {
                                 stiffness: 300
                               }}
                               className={`
-                                group relative overflow-hidden rounded-3xl border-2 p-6 transition-all cursor-pointer
-                                bg-gradient-to-br ${RARITY_COLORS[inv.item.rarity]}
-                                ${RARITY_GLOW[inv.item.rarity]}
-                                hover:brightness-110 hover:shadow-2xl
-                                ${isEquipped ? 'ring-2 ring-[color:var(--accent-mint)] ring-offset-4 ring-offset-[color:var(--bg)]' : ''}
+                                group flex flex-col items-center gap-2
+                                ${isEquipped ? 'ring-2 ring-[color:var(--accent-mint)] ring-offset-4 ring-offset-[color:var(--card)] rounded-2xl' : ''}
                               `}
                             >
-                              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000 pointer-events-none" />
-                              
-                              <div className="absolute top-3 right-3 z-10">
-                                <m.div 
-                                  className="rounded-full bg-[color:var(--chip)] px-3 py-1.5 text-xs font-bold border-2 border-[color:var(--border)] shadow-lg"
-                                  whileHover={{ scale: 1.1 }}
-                                >
-                                  ×{inv.qty}
-                                </m.div>
-                              </div>
-
-                              <div className="relative mb-3">
-                                <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border-2 text-xs font-bold ${RARITY_TEXT_COLORS[inv.item.rarity]} bg-[color:var(--chip)]`}>
-                                  <Sparkles className="h-3 w-3" />
-                                  {inv.item.rarity}
-                                </div>
-                              </div>
-
-                              <div className="relative mb-5">
-                                <div className="text-lg font-bold text-[color:var(--fg)]">{inv.item.name}</div>
-                              </div>
-
                               <button
+                                type="button"
                                 onClick={() => void (isEquipped ? handleUnequip() : handleEquip(inv.itemId))}
                                 disabled={equipLoading}
                                 className={`
-                                  relative w-full rounded-xl px-4 py-3 text-sm font-semibold transition-all
-                                  disabled:opacity-50 cursor-pointer overflow-hidden
-                                  hover:scale-[1.02] active:scale-[0.98]
-                                  ${
-                                    isEquipped
-                                      ? 'bg-[color:var(--accent-mint)] text-white hover:bg-[color:var(--accent-mint)] border-2 border-[color:var(--accent-mint)]'
-                                      : 'btn-bangul'
-                                  }
+                                  relative w-full aspect-square rounded-2xl border-2 p-2 transition-all
+                                  bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.16),transparent_45%)]
+                                  bg-gradient-to-br ${RARITY_COLORS[inv.item.rarity]}
+                                  ${RARITY_GLOW[inv.item.rarity]}
+                                  shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08),0_10px_20px_rgba(0,0,0,0.25)]
+                                  hover:brightness-110 hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.2),0_12px_28px_rgba(0,0,0,0.35)]
+                                  ${isEquipped ? 'border-[color:var(--accent-mint)]' : 'border-[color:var(--border)]'}
+                                  disabled:opacity-60 cursor-pointer
                                 `}
+                                aria-label={isEquipped ? '장착 해제' : '장착하기'}
                               >
-                                {equipLoading ? (
-                                  '처리 중...'
-                                ) : isEquipped ? (
-                                  <span className="flex items-center justify-center gap-2">
-                                    <CheckCircle2 className="h-4 w-4" />
-                                    장착 중
-                                  </span>
-                                ) : (
-                                  <span className="flex items-center justify-center gap-2">
-                                    <Circle className="h-4 w-4" />
-                                    장착하기
-                                  </span>
+                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000 pointer-events-none" />
+
+                                <div className="absolute top-2 right-2 z-10">
+                                  <m.div 
+                                    className="rounded-full bg-[color:var(--chip)] px-2 py-0.5 text-[10px] font-bold border border-[color:var(--border)] shadow"
+                                    whileHover={{ scale: 1.1 }}
+                                  >
+                                    ×{inv.qty}
+                                  </m.div>
+                                </div>
+
+                                {isEquipped && (
+                                  <div className="absolute bottom-2 left-2 z-10 rounded-full bg-[color:var(--accent-mint)]/80 px-2 py-0.5 text-[10px] font-bold text-white shadow">
+                                    장착
+                                  </div>
                                 )}
+
+                                <div className="absolute top-2 left-2 z-10">
+                                  <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold ${RARITY_TEXT_COLORS[inv.item.rarity]} bg-[color:var(--chip)]`}>
+                                    <Sparkles className="h-3 w-3" />
+                                    {inv.item.rarity}
+                                  </div>
+                                </div>
+
+                                <div className="relative flex h-full w-full items-center justify-center">
+                                  <ItemIcon
+                                    url={inv.item.roleIconUrl}
+                                    label={inv.item.name}
+                                    frameClass="h-16 w-16 bg-[color:var(--bg)]/35 border border-[color:var(--border)] shadow-[inset_0_0_12px_rgba(0,0,0,0.25)]"
+                                    imgClass="h-12 w-12"
+                                    emojiClass="text-3xl"
+                                  />
+                                </div>
+
+                                <div
+                                  className="absolute bottom-2 left-1/2 -translate-x-1/2 px-2.5 py-1 text-[10px] font-semibold text-[color:var(--fg)] bg-[color:var(--chip)]/80 backdrop-blur-sm border border-[color:var(--border)] rounded-lg shadow-sm truncate max-w-[80%]"
+                                  title={inv.item.name}
+                                >
+                                  {inv.item.name}
+                                </div>
                               </button>
+
+                              <div className="text-center w-full">
+                                <div className="text-[10px] muted">
+                                  {equipLoading ? '처리 중…' : isEquipped ? '장착 중' : '클릭하여 장착'}
+                                </div>
+                              </div>
                             </m.div>
                           );
                         })}
-                      </AnimatePresence>
+                        </AnimatePresence>
+                      </div>
                     </div>
                   )}
                 </>

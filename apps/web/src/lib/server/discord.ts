@@ -15,7 +15,14 @@ type DiscordUser = {
   avatar?: string | null;
 };
 
-type DiscordRole = { id: string; name: string; permissions: string; managed: boolean };
+type DiscordRole = {
+  id: string;
+  name: string;
+  permissions: string;
+  managed: boolean;
+  icon?: string | null;
+  unicode_emoji?: string | null;
+};
 type DiscordGuild = { id: string; owner_id: string };
 
 const cache = {
@@ -146,6 +153,22 @@ async function fetchRolesById(): Promise<Map<string, DiscordRole>> {
   const byId = new Map(roles.map((r) => [r.id, r] as const));
   cache.roles = { at: now, byId };
   return byId;
+}
+
+function roleIconUrl(roleId: string, icon: string, size = 64): string {
+  const ext = icon.startsWith('a_') ? 'gif' : 'png';
+  return `https://cdn.discordapp.com/role-icons/${roleId}/${icon}.${ext}?size=${size}`;
+}
+
+export async function fetchRoleIconMap(roleIds: string[]): Promise<Map<string, string | null>> {
+  if (roleIds.length === 0) return new Map();
+  const rolesById = await fetchRolesById();
+  const map = new Map<string, string | null>();
+  for (const id of roleIds) {
+    const role = rolesById.get(id);
+    map.set(id, role?.icon ? roleIconUrl(id, role.icon) : null);
+  }
+  return map;
 }
 
 export async function isAdmin(params: { userId: string; member: DiscordGuildMember }): Promise<boolean> {
