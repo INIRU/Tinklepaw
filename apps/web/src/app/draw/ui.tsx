@@ -59,6 +59,7 @@ type PoolItem = {
   rarity: 'R' | 'S' | 'SS' | 'SSS';
   discordRoleId: string | null;
   rewardPoints: number;
+  roleIconUrl?: string | null;
 };
 
 const PityGauge = ({
@@ -945,10 +946,16 @@ export default function DrawClient() {
                             <button
                               type='button'
                               onClick={() =>
-                                setOpenRarities((prev) => ({
-                                  ...prev,
-                                  [rarity]: !prev[rarity],
-                                }))
+                                setOpenRarities((prev) => {
+                                  const nextState: Record<'SSS' | 'SS' | 'S' | 'R', boolean> = {
+                                    SSS: false,
+                                    SS: false,
+                                    S: false,
+                                    R: false,
+                                  };
+                                  nextState[rarity] = !prev[rarity];
+                                  return nextState;
+                                })
                               }
                               className='w-full flex items-center justify-between text-xs font-bold cursor-pointer'
                             >
@@ -986,30 +993,59 @@ export default function DrawClient() {
                                   transition={{ duration: 0.2 }}
                                   className='overflow-hidden'
                                 >
-                                  <div className='mt-2 flex gap-2 text-xs text-[color:var(--fg)] overflow-x-auto whitespace-nowrap pb-1'>
+                                  <div className='mt-3 grid gap-2 grid-cols-3 sm:grid-cols-4'>
                                     {poolItemsLoading ? (
-                                      <div className='w-full space-y-2'>
-                                        {[1, 2, 3].map((i) => (
-                                          <Skeleton key={i} className='h-4 w-full' />
-                                        ))}
-                                      </div>
-                                    ) : itemsByRarity[rarity].length === 0 ? (
-                                      <span className='muted'>없음</span>
-                                    ) : (
-                                      itemsByRarity[rarity].map((item) => (
-                                        <span
-                                          key={item.itemId}
-                                          className='rounded-full bg-black/10 px-3 py-1.5'
-                                        >
-                                          {item.name}
-                                          {!item.discordRoleId &&
-                                            item.rewardPoints > 0 &&
-                                            ` (+${item.rewardPoints}p)`}
-                                          {!item.discordRoleId &&
-                                            item.rewardPoints === 0 &&
-                                            ' (꽝)'}
-                                        </span>
+                                      Array.from({ length: 8 }).map((_, i) => (
+                                        <Skeleton key={i} className='aspect-square w-full rounded-xl' />
                                       ))
+                                    ) : itemsByRarity[rarity].length === 0 ? (
+                                      <span className='muted text-xs'>없음</span>
+                                    ) : (
+                                      itemsByRarity[rarity].map((item) => {
+                                        const reward = item.rewardPoints ?? 0;
+                                        const isPoint = !item.discordRoleId && reward > 0;
+                                        const isMiss = !item.discordRoleId && reward === 0;
+                                        const label = isPoint ? `+${reward}P` : isMiss ? '꽝' : item.name;
+                                        const slot = RESULT_SLOT[item.rarity] ?? RESULT_SLOT.R;
+
+                                        return (
+                                          <div key={item.itemId} className='group flex flex-col items-center gap-1'>
+                                            <div
+                                              className={`relative w-full aspect-square rounded-xl border p-2 transition-all ${slot.frame}`}
+                                            >
+                                              <div className='absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000 pointer-events-none' />
+
+                                              <div className='relative flex h-full w-full items-center justify-center'>
+                                                {isPoint ? (
+                                                  <div className='flex flex-col items-center gap-1'>
+                                                    <Coins className='h-6 w-6 text-[color:var(--accent-pink)]' />
+                                                    <span className='text-[9px] font-bold text-[color:var(--fg)]'>
+                                                      +{reward}P
+                                                    </span>
+                                                  </div>
+                                                ) : item.roleIconUrl ? (
+                                                  <img
+                                                    src={item.roleIconUrl}
+                                                    alt={item.name}
+                                                    className='h-8 w-8 object-cover'
+                                                    loading='lazy'
+                                                    referrerPolicy='no-referrer'
+                                                  />
+                                                ) : (
+                                                  <span className='text-2xl' aria-label='아이템 아이콘'>📦</span>
+                                                )}
+                                              </div>
+
+                                              <div
+                                                className='absolute bottom-1 left-1/2 -translate-x-1/2 px-2 py-0.5 text-[9px] font-semibold text-[color:var(--fg)] bg-[color:var(--chip)]/80 backdrop-blur-sm border border-[color:var(--border)] rounded-md truncate max-w-[85%]'
+                                                title={label}
+                                              >
+                                                {label}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        );
+                                      })
                                     )}
                                   </div>
                                 </m.div>
