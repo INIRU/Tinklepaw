@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '@/components/toast/ToastProvider';
 import { GachaScene } from './GachaScene';
 import { AnimatePresence, m } from 'framer-motion';
-import { X, Info, Coins, AlertCircle, ChevronDown, History, Copy, Download, Search } from 'lucide-react';
+import { X, Info, Coins, AlertCircle, ChevronDown, History, Copy, Download, Search, Sparkles } from 'lucide-react';
 import Image from 'next/image';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useSearchParams } from 'next/navigation';
@@ -13,9 +13,10 @@ import { CustomSelect } from '@/components/ui/CustomSelect';
 type DrawResult = {
   itemId: string;
   name: string;
-  rarity: string;
+  rarity: 'R' | 'S' | 'SS' | 'SSS';
   discordRoleId: string | null;
   rewardPoints?: number;
+  roleIconUrl?: string | null;
 };
 
 type Pool = {
@@ -544,21 +545,28 @@ export default function DrawClient() {
     setBusy(false);
   }, []);
 
-  // Rarity Colors for Result Modal
-  const getRarityColor = (rarity: string) => {
-    switch (rarity) {
-      case 'R':
-        return 'text-gray-400 border-gray-500/30 bg-gray-500/10';
-      case 'S':
-        return 'text-blue-400 border-blue-500/30 bg-blue-500/10';
-      case 'SS':
-        return 'text-purple-400 border-purple-500/30 bg-purple-500/10';
-      case 'SSS':
-        return 'text-amber-400 border-amber-500/30 bg-amber-500/10 shadow-[0_0_30px_-5px_rgba(251,191,36,0.3)]';
-      default:
-        return 'text-gray-400 border-gray-500/30 bg-gray-500/10';
+  const RESULT_SLOT = {
+    R: {
+      frame: 'border-gray-500/40 bg-gray-500/10',
+      text: 'text-gray-300',
+      glow: ''
+    },
+    S: {
+      frame: 'border-blue-500/40 bg-blue-500/10',
+      text: 'text-blue-300',
+      glow: 'shadow-[0_0_18px_rgba(59,130,246,0.2)]'
+    },
+    SS: {
+      frame: 'border-purple-500/40 bg-purple-500/10',
+      text: 'text-purple-300',
+      glow: 'shadow-[0_0_24px_rgba(168,85,247,0.25)]'
+    },
+    SSS: {
+      frame: 'border-amber-400/50 bg-amber-400/10',
+      text: 'text-amber-300',
+      glow: 'shadow-[0_0_30px_rgba(251,191,36,0.35)]'
     }
-  };
+  } as const;
 
   return (
     <main className='flex h-[calc(100vh-64px)] overflow-hidden'>
@@ -803,34 +811,60 @@ export default function DrawClient() {
                   </h2>
 
                   <div
-                    className={`grid gap-4 ${drawResults.length === 1 ? 'place-items-center' : 'grid-cols-2 md:grid-cols-5'}`}
+                    className={`grid gap-4 ${drawResults.length === 1 ? 'place-items-center' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5'}`}
                   >
-                    {drawResults.map((item, idx) => (
-                      <div
-                        key={`${item.itemId}-${idx}`}
-                        className={`
-                          relative group flex flex-col items-center p-4 rounded-xl border transition-all duration-500
-                          ${drawResults.length === 1 ? 'w-full max-w-xs aspect-square justify-center text-lg' : 'w-full'}
-                          ${getRarityColor(item.rarity)}
-                        `}
-                      >
-                        <div
-                          className={`font-bold rounded-full px-2 py-0.5 text-xs mb-2 border bg-white/20`}
-                        >
-                          {item.rarity}
-                        </div>
-                        <div className='font-bold text-center break-keep'>
-                          {item.name}
-                        </div>
-                        {!item.discordRoleId && (
-                          <div className='mt-2 text-xs font-semibold text-[color:var(--muted)]'>
-                            {item.rewardPoints && item.rewardPoints > 0
-                              ? `포인트 +${item.rewardPoints}p`
-                              : '꽝'}
+                    {drawResults.map((item, idx) => {
+                      const rarityStyle = RESULT_SLOT[item.rarity] ?? RESULT_SLOT.R;
+                      const reward = item.rewardPoints ?? 0;
+                      const isPoint = !item.discordRoleId && reward > 0;
+                      const isMiss = !item.discordRoleId && reward === 0;
+                      const label = isPoint ? `+${reward}P` : isMiss ? '꽝' : item.name;
+
+                      return (
+                        <div key={`${item.itemId}-${idx}`} className='group flex flex-col items-center gap-2 w-full'>
+                          <div
+                            className={`relative w-full aspect-square rounded-2xl border-2 p-2 transition-all ${
+                              drawResults.length === 1 ? 'max-w-xs' : ''
+                            } ${rarityStyle.frame} ${rarityStyle.glow} shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08),0_12px_24px_rgba(0,0,0,0.25)]`}
+                          >
+                            <div className='absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000 pointer-events-none' />
+
+                            <div className='absolute top-2 left-2 z-10'>
+                              <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold ${rarityStyle.text} bg-[color:var(--chip)]`}>
+                                <Sparkles className='h-3 w-3' />
+                                {item.rarity}
+                              </div>
+                            </div>
+
+                            <div className='relative flex h-full w-full items-center justify-center'>
+                              {isPoint ? (
+                                <div className='flex flex-col items-center gap-2'>
+                                  <Coins className='h-10 w-10 text-[color:var(--accent-pink)]' />
+                                  <span className='text-xs font-bold text-[color:var(--fg)]'>+{reward}P</span>
+                                </div>
+                              ) : item.roleIconUrl ? (
+                                <img
+                                  src={item.roleIconUrl}
+                                  alt={item.name}
+                                  className='h-14 w-14 object-cover'
+                                  loading='lazy'
+                                  referrerPolicy='no-referrer'
+                                />
+                              ) : (
+                                <span className='text-3xl' aria-label='아이템 아이콘'>📦</span>
+                              )}
+                            </div>
+
+                            <div
+                              className='absolute bottom-2 left-1/2 -translate-x-1/2 px-2.5 py-1 text-[10px] font-semibold text-[color:var(--fg)] bg-[color:var(--chip)]/80 backdrop-blur-sm border border-[color:var(--border)] rounded-lg shadow-sm truncate max-w-[80%]'
+                              title={label}
+                            >
+                              {label}
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    ))}
+                        </div>
+                      );
+                    })}
                   </div>
 
                   <div className='mt-8 flex gap-3 justify-center'>
