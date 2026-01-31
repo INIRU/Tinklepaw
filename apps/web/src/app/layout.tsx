@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import { Geist_Mono, Gowun_Dodum, Jua } from 'next/font/google';
 import './globals.css';
 import ThemeScript from '@/components/theme/ThemeScript';
@@ -33,7 +34,23 @@ export async function generateMetadata(): Promise<Metadata> {
   const iconUrl = cfg.iconImageUrl ?? '/icon.jpg';
   const bannerUrl = cfg.bannerImageUrl ?? '/banner.png';
 
+  const h = await headers();
+  const proto = h.get('x-forwarded-proto') ?? 'http';
+  const host = h.get('x-forwarded-host') ?? h.get('host');
+  const envBase = (
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    process.env.AUTH_URL ??
+    process.env.NEXTAUTH_URL ??
+    ''
+  ).trim();
+  const metadataBase = envBase
+    ? new URL(envBase)
+    : host
+      ? new URL(`${proto}://${host}`)
+      : new URL('http://localhost:3000');
+
   return {
+    metadataBase,
     title: '동글동글 방울냥 서버',
     description: '동글동글 방울냥 서버 페이지',
     icons: {
@@ -85,9 +102,11 @@ export default async function RootLayout({
         <MotionProvider>
           <ToastProvider>
             <div className="min-h-screen flex flex-col bg-bangul text-[color:var(--fg)]">
-              <div className="flex-1">
+              <div className="flex-1 min-h-0 flex flex-col">
                 <MainNav user={user} iconUrl={cfg.iconImageUrl} showAdmin={showAdmin} />
-                <PageTransition>{children}</PageTransition>
+                <PageTransition className="flex-1 min-h-0">
+                  {children}
+                </PageTransition>
               </div>
               <FooterGate user={user} />
             </div>

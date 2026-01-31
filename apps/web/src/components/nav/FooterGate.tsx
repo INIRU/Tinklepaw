@@ -10,6 +10,11 @@ type FooterGateProps = {
 
 export default function FooterGate({ user }: FooterGateProps) {
   const pathname = usePathname();
-  if (pathname === '/draw' || pathname.startsWith('/draw/')) return null;
+  if (
+    pathname === '/draw' ||
+    pathname.startsWith('/draw/') ||
+    pathname.startsWith('/admin')
+  )
+    return null;
   return <Footer user={user} />;
 }
