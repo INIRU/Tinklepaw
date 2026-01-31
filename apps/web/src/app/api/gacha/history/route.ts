@@ -58,6 +58,7 @@ export async function GET(req: Request) {
       rewardPoints: number;
       qty: number;
       isPity: boolean;
+      isVariant?: boolean;
     } | null;
   }> = [];
 
@@ -69,7 +70,7 @@ export async function GET(req: Request) {
     const { data, error } = await supabase
       .from('gacha_pulls')
       .select(
-        'pull_id, created_at, pool_id, is_free, spent_points, gacha_pools(name, kind), gacha_pull_results(qty, is_pity, item_id, items(name, rarity, discord_role_id, reward_points))',
+        'pull_id, created_at, pool_id, is_free, spent_points, gacha_pools(name, kind), gacha_pull_results(qty, is_pity, is_variant, item_id, items(name, rarity, discord_role_id, reward_points))',
       )
       .eq('discord_user_id', userId)
       .order('created_at', { ascending: false })
@@ -90,6 +91,7 @@ export async function GET(req: Request) {
         | Array<{
             qty: number;
             is_pity: boolean;
+            is_variant?: boolean;
             item_id: string;
             items:
               | {
@@ -137,10 +139,11 @@ export async function GET(req: Request) {
               discordRoleId: item?.discord_role_id ?? null,
               rewardPoints: item?.reward_points ?? 0,
               qty: r0.qty,
-              isPity: r0.is_pity,
-            }
-          : null,
-      });
+          isPity: r0.is_pity,
+          isVariant: Boolean(r0.is_variant),
+        }
+      : null,
+  });
 
       if (entries.length >= limit) break;
     }

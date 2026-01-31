@@ -53,6 +53,7 @@ export async function POST(req: Request) {
         out_discord_role_id?: string | null;
         reward_points?: number;
         out_reward_points?: number;
+        out_is_variant?: boolean;
       };
       
       const row = (Array.isArray(data) ? data[0] : data) as unknown as GachaDrawResult | null;
@@ -62,7 +63,8 @@ export async function POST(req: Request) {
           name: row.out_name,
           rarity: row.out_rarity,
           discordRoleId: row.out_discord_role_id,
-          rewardPoints: row.out_reward_points ?? row.reward_points ?? 0
+          rewardPoints: row.out_reward_points ?? row.reward_points ?? 0,
+          isVariant: Boolean(row.out_is_variant)
         });
       }
     }

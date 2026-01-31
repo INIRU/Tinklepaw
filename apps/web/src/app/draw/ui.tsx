@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '@/components/toast/ToastProvider';
 import { GachaScene } from './GachaScene';
-import { AnimatePresence, m } from 'framer-motion';
+import { AnimatePresence, m, PanInfo } from 'framer-motion';
 import { X, Info, Coins, AlertCircle, ChevronDown, History, Copy, Download, Search, Sparkles } from 'lucide-react';
 import Image from 'next/image';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -17,6 +17,7 @@ type DrawResult = {
   discordRoleId: string | null;
   rewardPoints?: number;
   roleIconUrl?: string | null;
+  isVariant?: boolean;
 };
 
 type Pool = {
@@ -52,6 +53,7 @@ type HistoryEntry = {
     rewardPoints: number;
     qty: number;
     isPity: boolean;
+    isVariant?: boolean;
   } | null;
 };
 
@@ -141,6 +143,7 @@ export default function DrawClient() {
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawResults, setDrawResults] = useState<DrawResult[]>([]);
   const [showResultModal, setShowResultModal] = useState(false);
+  const [revealedResultKeys, setRevealedResultKeys] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -148,13 +151,36 @@ export default function DrawClient() {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    if (!showResultModal) return;
+    const next: Record<string, boolean> = {};
+    drawResults.forEach((r, idx) => {
+      next[`${r.itemId}-${idx}`] = false;
+    });
+    setRevealedResultKeys(next);
+  }, [drawResults, showResultModal]);
+
   // Computed
-  const highestRarityItem = useMemo(() => {
+  // Avoid leaking "변동" upgrades in the initial capsule/scene.
+  // If SSS is present only via variant, show the best non-variant rarity in the scene,
+  // and reveal the actual upgraded SSS in the result modal.
+  const sceneRarity = useMemo<DrawResult['rarity'] | null>(() => {
     if (drawResults.length === 0) return null;
-    const order: Record<string, number> = { SSS: 4, SS: 3, S: 2, R: 1 };
-    return drawResults.reduce((prev, curr) =>
-      (order[curr.rarity] || 0) > (order[prev.rarity] || 0) ? curr : prev,
+    const order: Record<DrawResult['rarity'], number> = { R: 1, S: 2, SS: 3, SSS: 4 };
+
+    const hasNaturalSSS = drawResults.some(
+      (r) => r.rarity === 'SSS' && !r.isVariant,
     );
+    if (hasNaturalSSS) return 'SSS';
+
+    const withoutVariantSSS = drawResults.filter(
+      (r) => !(r.rarity === 'SSS' && r.isVariant),
+    );
+    if (withoutVariantSSS.length === 0) return 'SS';
+
+    return withoutVariantSSS.reduce((prev, curr) =>
+      order[curr.rarity] > order[prev.rarity] ? curr : prev,
+    ).rarity;
   }, [drawResults]);
 
   useEffect(() => {
@@ -701,7 +727,7 @@ export default function DrawClient() {
         <div className='absolute inset-0 z-0'>
           <GachaScene
             isDrawing={isDrawing}
-            rarity={highestRarityItem?.rarity}
+            rarity={sceneRarity ?? undefined}
             onAnimationComplete={onAnimationComplete}
           />
         </div>
@@ -888,7 +914,7 @@ export default function DrawClient() {
               >
                 <button
                   onClick={() => setShowResultModal(false)}
-                  className='absolute top-4 right-4 p-2 rounded-full hover:bg-[color:var(--chip)] transition-colors cursor-pointer'
+                  className='absolute top-4 right-4 z-20 p-2 rounded-full hover:bg-[color:var(--chip)] transition-colors cursor-pointer'
                 >
                   <X className='w-5 h-5 text-[color:var(--muted)]' />
                 </button>
@@ -902,30 +928,57 @@ export default function DrawClient() {
                     className={`grid gap-4 ${drawResults.length === 1 ? 'place-items-center' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5'}`}
                   >
                     {drawResults.map((item, idx) => {
+                      const resultKey = `${item.itemId}-${idx}`;
+                      const isRevealed = Boolean(revealedResultKeys[resultKey]);
                       const rarityStyle = RESULT_SLOT[item.rarity] ?? RESULT_SLOT.R;
                       const reward = item.rewardPoints ?? 0;
                       const isPoint = !item.discordRoleId && reward > 0;
                       const isMiss = !item.discordRoleId && reward === 0;
                       const label = isPoint ? `+${reward}P` : isMiss ? '꽝' : item.name;
+                      const isVariant = Boolean(item.isVariant) && isRevealed;
+                      const frameClass = isRevealed
+                        ? rarityStyle.frame
+                        : 'border-[color:var(--border)] bg-[color:var(--chip)]/60';
 
                       return (
                         <div key={`${item.itemId}-${idx}`} className='group flex flex-col items-center gap-2 w-full'>
                           <div
                             className={`relative w-full aspect-square rounded-2xl border-2 p-2 transition-all ${
                               drawResults.length === 1 ? 'max-w-xs' : ''
-                            } ${rarityStyle.frame} ${rarityStyle.glow} shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08),0_12px_24px_rgba(0,0,0,0.25)]`}
+                            } ${frameClass} ${
+                              isRevealed
+                                ? isVariant
+                                  ? 'ring-2 ring-amber-300/70 shadow-[0_0_35px_rgba(251,191,36,0.35)]'
+                                  : rarityStyle.glow
+                                : ''
+                            } shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08),0_12px_24px_rgba(0,0,0,0.25)]`}
                           >
                             <div className='absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000 pointer-events-none' />
 
-                            <div className='absolute top-2 left-2 z-10'>
-                              <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold ${rarityStyle.text} bg-[color:var(--chip)]`}>
-                                <Sparkles className='h-3 w-3' />
-                                {item.rarity}
+                            {isRevealed && (
+                              <div className='absolute top-2 left-2 z-10'>
+                                <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-bold ${rarityStyle.text} bg-[color:var(--chip)]`}>
+                                  <Sparkles className='h-3 w-3' />
+                                  {item.rarity}
+                                </div>
                               </div>
-                            </div>
+                            )}
+
+                            {isVariant && (
+                              <div className='absolute top-2 right-2 z-10'>
+                                <div className='inline-flex items-center rounded-full border border-amber-300/40 bg-amber-300/15 px-2 py-0.5 text-[10px] font-bold text-amber-200'>
+                                  변동
+                                </div>
+                              </div>
+                            )}
 
                             <div className='relative flex h-full w-full items-center justify-center'>
-                              {isPoint ? (
+                              {!isRevealed ? (
+                                <div className='flex flex-col items-center gap-2'>
+                                  <span className='text-4xl text-[color:var(--muted)]'>?</span>
+                                  <span className='text-[10px] font-semibold text-[color:var(--muted)]'>드래그</span>
+                                </div>
+                              ) : isPoint ? (
                                 <div className='flex flex-col items-center gap-2'>
                                   <Coins className='h-10 w-10 text-[color:var(--accent-pink)]' />
                                   <span className='text-xs font-bold text-[color:var(--fg)]'>+{reward}P</span>
@@ -945,17 +998,82 @@ export default function DrawClient() {
 
                             <div
                               className='absolute bottom-2 left-1/2 -translate-x-1/2 px-2.5 py-1 text-[10px] font-semibold text-[color:var(--fg)] bg-[color:var(--chip)]/80 backdrop-blur-sm border border-[color:var(--border)] rounded-lg shadow-sm truncate max-w-[80%]'
-                              title={label}
+                              title={isRevealed ? label : '???'}
                             >
-                              {label}
+                              {isRevealed ? label : '???'}
                             </div>
+
+                            <AnimatePresence initial={false}>
+                              {!isRevealed && (
+                                <m.div
+                                  key={`cover-${resultKey}`}
+                                  className='absolute inset-0 z-10 pointer-events-auto rounded-2xl overflow-hidden touch-none select-none'
+                                  initial={{ opacity: 1, y: 0 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  exit={{ opacity: 0, y: -40, transition: { duration: 0.2 } }}
+                                  drag='y'
+                                  dragConstraints={{ top: -140, bottom: 0 }}
+                                  dragElastic={0.2}
+                                  dragMomentum={false}
+                                  dragSnapToOrigin
+                                  onDragEnd={(_, info: PanInfo) => {
+                                    if (info.offset.y < -80 || info.velocity.y < -450) {
+                                      setRevealedResultKeys((prev) => ({
+                                        ...prev,
+                                        [resultKey]: true,
+                                      }));
+                                    }
+                                  }}
+                                  onClick={() =>
+                                    setRevealedResultKeys((prev) => ({
+                                      ...prev,
+                                      [resultKey]: true,
+                                    }))
+                                  }
+                                  role='button'
+                                  aria-label='결과 공개'
+                                  title='위로 드래그하거나 클릭해서 공개'
+                                >
+                                  <div className='relative h-full w-full bg-[color:var(--card)]/92 backdrop-blur-xl border border-[color:var(--border)]'>
+                                    <div className='absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.08),transparent_45%),radial-gradient(circle_at_80%_10%,rgba(255,191,36,0.06),transparent_40%),radial-gradient(circle_at_50%_100%,rgba(147,197,253,0.06),transparent_45%)]' />
+                                    <div className='absolute inset-0 opacity-60 bg-[linear-gradient(0deg,rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] [background-size:22px_22px]' />
+
+                                    <div className='absolute inset-0 flex flex-col items-center justify-center text-center px-4'>
+                                      <div className='text-[10px] font-bold text-[color:var(--fg)]'>
+                                        드래그
+                                      </div>
+                                      <div className='mt-1 text-[10px] text-[color:var(--muted)]'>
+                                        up
+                                      </div>
+                                      <div className='mt-3 h-1.5 w-12 rounded-full bg-[color:var(--border)]/80' />
+                                    </div>
+                                  </div>
+                                </m.div>
+                              )}
+                            </AnimatePresence>
                           </div>
                         </div>
                       );
                     })}
                   </div>
 
-                  <div className='mt-8 flex gap-3 justify-center'>
+                  <div className='mt-8 flex flex-wrap gap-3 justify-center'>
+                    {Object.keys(revealedResultKeys).length > 0 &&
+                      Object.values(revealedResultKeys).some((v) => !v) && (
+                        <button
+                          type='button'
+                          onClick={() =>
+                            setRevealedResultKeys((prev) => {
+                              const next: Record<string, boolean> = {};
+                              for (const k of Object.keys(prev)) next[k] = true;
+                              return next;
+                            })
+                          }
+                          className='px-6 py-3 rounded-xl border border-[color:var(--border)] hover:bg-[color:var(--chip)] transition text-sm font-semibold cursor-pointer'
+                        >
+                          모두 열기
+                        </button>
+                      )}
                     <button
                       onClick={() => setShowResultModal(false)}
                       className='px-6 py-3 rounded-xl border border-[color:var(--border)] hover:bg-[color:var(--chip)] transition text-sm font-medium cursor-pointer'
@@ -1427,6 +1545,11 @@ export default function DrawClient() {
                                                 천장
                                               </span>
                                             )}
+                                            {entry.result?.isVariant && (
+                                              <span className='px-1.5 py-0.5 rounded-full border border-amber-300/40 bg-amber-300/15 text-[10px] font-bold text-amber-200'>
+                                                변동
+                                              </span>
+                                            )}
                                             {entry.isFree && (
                                               <span className='px-1.5 py-0.5 rounded-full border border-[color:var(--border)] bg-[color:var(--bg)]/40 text-[10px] font-bold text-[color:var(--muted)]'>
                                                 무료
@@ -1469,31 +1592,36 @@ export default function DrawClient() {
                         >
                           <div className='flex items-start justify-between gap-3'>
                             <div className='min-w-0'>
-                              <div className='flex items-center gap-2 flex-wrap'>
-                                <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${rarityClass}`}>
-                                  {rarity}
-                                </span>
-                                <div className='text-sm font-bold text-[color:var(--fg)] break-keep'>
-                                  {entry.result?.name ?? '알 수 없음'}
-                                  {!entry.result?.discordRoleId &&
-                                    entry.result?.rewardPoints &&
-                                    entry.result.rewardPoints > 0 &&
-                                    ` (+${entry.result.rewardPoints}p)`}
-                                  {!entry.result?.discordRoleId &&
-                                    entry.result?.rewardPoints === 0 &&
-                                    ' (꽝)'}
+                                <div className='flex items-center gap-2 flex-wrap'>
+                                  <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${rarityClass}`}>
+                                    {rarity}
+                                  </span>
+                                  <div className='text-sm font-bold text-[color:var(--fg)] break-keep'>
+                                    {entry.result?.name ?? '알 수 없음'}
+                                    {!entry.result?.discordRoleId &&
+                                      entry.result?.rewardPoints &&
+                                      entry.result.rewardPoints > 0 &&
+                                      ` (+${entry.result.rewardPoints}p)`}
+                                    {!entry.result?.discordRoleId &&
+                                      entry.result?.rewardPoints === 0 &&
+                                      ' (꽝)'}
+                                  </div>
+                                  {entry.result?.isPity && (
+                                    <span className='px-2 py-0.5 rounded-full border border-pink-500/30 bg-pink-500/10 text-[10px] font-bold text-[color:var(--accent-pink)]'>
+                                      천장
+                                    </span>
+                                  )}
+                                  {entry.result?.isVariant && (
+                                    <span className='px-2 py-0.5 rounded-full border border-amber-300/40 bg-amber-300/15 text-[10px] font-bold text-amber-200'>
+                                      변동
+                                    </span>
+                                  )}
+                                  {entry.isFree && (
+                                    <span className='px-2 py-0.5 rounded-full border border-[color:var(--border)] bg-[color:var(--bg)]/40 text-[10px] font-bold text-[color:var(--muted)]'>
+                                      무료
+                                    </span>
+                                  )}
                                 </div>
-                                {entry.result?.isPity && (
-                                  <span className='px-2 py-0.5 rounded-full border border-pink-500/30 bg-pink-500/10 text-[10px] font-bold text-[color:var(--accent-pink)]'>
-                                    천장
-                                  </span>
-                                )}
-                                {entry.isFree && (
-                                  <span className='px-2 py-0.5 rounded-full border border-[color:var(--border)] bg-[color:var(--bg)]/40 text-[10px] font-bold text-[color:var(--muted)]'>
-                                    무료
-                                  </span>
-                                )}
-                              </div>
                               <div className='mt-1 text-[11px] muted'>
                                 {entry.pool.name ?? '알 수 없는 풀'}
                                 <span className='mx-1'>•</span>

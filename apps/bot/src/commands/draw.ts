@@ -25,6 +25,7 @@ type GachaDrawResult = {
   out_refund_points: number;
   out_reward_points?: number;
   reward_points?: number;
+  out_is_variant?: boolean;
   out_new_balance: number;
 };
 
@@ -329,6 +330,7 @@ export async function triggerGachaUI(
           refund_points?: number;
           discord_role_id?: string | null;
           reward_points?: number;
+          is_variant?: boolean;
         }> = [];
         const errors: string[] = [];
 
@@ -381,6 +383,7 @@ export async function triggerGachaUI(
               discord_role_id: row.out_discord_role_id,
               refund_points: row.out_refund_points,
               reward_points: row.out_reward_points ?? row.reward_points ?? 0,
+              is_variant: Boolean(row.out_is_variant),
             });
           }
         }
@@ -416,6 +419,7 @@ export async function triggerGachaUI(
                 const displayName = item.discord_role_id
                   ? `<@&${item.discord_role_id}>`
                   : `**${item.name}**`;
+                const variantText = item.is_variant ? ' ✨변동' : '';
                 const rewardText =
                   !item.discord_role_id && (item.reward_points ?? 0) > 0
                     ? ` (포인트 +${item.reward_points}p)`
@@ -423,7 +427,7 @@ export async function triggerGachaUI(
                       ? ' (꽝)'
                       : '';
                 const refundText = item.refund_points ? ` (중복 +${item.refund_points}p)` : '';
-                return `${displayName}${rewardText}${refundText}`;
+                return `${displayName}${variantText}${rewardText}${refundText}`;
               })
               .join(', ');
             resultLines.push(`**${rarity}**: ${itemNames}`);
