@@ -618,6 +618,25 @@ export default function DrawClient() {
     if (days <= 0) return 'D-Day';
     return `D-${days}`;
   };
+
+  const formatPct2 = (v: number) => {
+    if (!Number.isFinite(v)) return '0.00';
+    return v.toFixed(2);
+  };
+
+  const variantStats = useMemo(() => {
+    if (!selectedPool) return null;
+    const r = Math.max(0, Math.min(100, selectedPool.rate_sss ?? 0)) / 100;
+    const v = r / 10; // 1/10 of SSS rate (current policy)
+    const effectiveSSS = r + (1 - r) * v;
+    const variantMark = (1 - r) * v;
+    return {
+      baseSSSRate: r,
+      variantRollRate: v,
+      effectiveSSSRate: effectiveSSS,
+      variantMarkRate: variantMark
+    };
+  }, [selectedPool]);
   const formatRemaining = (targetMs: number) => {
     const diff = targetMs - nowMs;
     if (diff <= 0) return '종료됨';
@@ -1040,6 +1059,31 @@ export default function DrawClient() {
                   </div>
 
                   <div className='max-h-[45dvh] sm:max-h-[60dvh] overflow-y-auto pr-1 overscroll-contain'>
+                    {variantStats && (
+                      <div className='mb-3 rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] p-3'>
+                        <div className='text-xs font-bold text-[color:var(--fg)] mb-1'>변동</div>
+                        <div className='text-[11px] text-[color:var(--muted)] leading-relaxed'>
+                          변동은 SSS가 아닌 결과가 <span className='font-semibold text-[color:var(--fg)]'>SSS로 업그레이드</span>되는 추가 판정입니다.
+                        </div>
+                        <div className='mt-2 grid grid-cols-2 gap-2 text-xs'>
+                          <div className='rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)]/40 px-3 py-2'>
+                            <div className='muted text-[10px]'>변동 판정</div>
+                            <div className='font-mono font-bold'>
+                              {formatPct2(variantStats.variantRollRate * 100)}%
+                            </div>
+                          </div>
+                          <div className='rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)]/40 px-3 py-2'>
+                            <div className='muted text-[10px]'>SSS 체감</div>
+                            <div className='font-mono font-bold text-amber-300'>
+                              {formatPct2(variantStats.effectiveSSSRate * 100)}%
+                            </div>
+                          </div>
+                        </div>
+                        <div className='mt-2 text-[10px] muted'>
+                          * 변동 표시는 (기본 SSS 제외) 업그레이드가 발생했을 때만 뜹니다: 약 {formatPct2(variantStats.variantMarkRate * 100)}%
+                        </div>
+                      </div>
+                    )}
                     <div className='text-xs font-semibold muted mb-2'>등급별 확률</div>
                     <div className='space-y-2'>
                       {(['SSS', 'SS', 'S', 'R'] as const).map((rarity) => {
