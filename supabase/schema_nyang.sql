@@ -191,6 +191,7 @@ create table if not exists nyang.gacha_pull_results (
   item_id uuid not null references nyang.items(item_id) on delete cascade,
   qty integer not null default 1,
   is_pity boolean not null default false,
+  is_variant boolean not null default false,
   primary key (pull_id, item_id)
 );
 
@@ -377,6 +378,20 @@ begin
 end;
 $$;
 
+create or replace function nyang.secure_random_float()
+returns double precision
+language sql
+set search_path = nyang, public, extensions
+as $$
+  select (
+    (get_byte(b, 0)::bigint << 24) +
+    (get_byte(b, 1)::bigint << 16) +
+    (get_byte(b, 2)::bigint << 8) +
+    get_byte(b, 3)::bigint
+  ) / 4294967296.0
+  from (select extensions.gen_random_bytes(4) as b) s;
+$$;
+
 create or replace function nyang.perform_gacha_draw(
   p_discord_user_id text,
   p_pool_id uuid default null
@@ -389,7 +404,8 @@ returns table (
   out_is_free boolean,
   out_refund_points integer,
   out_reward_points integer,
-  out_new_balance integer
+  out_new_balance integer,
+  out_is_variant boolean
 )
 language plpgsql
 set search_path = nyang, public
@@ -409,20 +425,30 @@ declare
   v_current_qty integer := 0;
   v_force_rarity boolean := false;
   v_rarity nyang.gacha_rarity;
+  v_base_rarity nyang.gacha_rarity;
   v_roll integer;
+  v_variant_prob numeric;
+  v_has_sss boolean := false;
 begin
   perform ensure_user(p_discord_user_id);
 
   if p_pool_id is null then
     select * into v_pool
     from gacha_pools
-    where is_active = true
+    where
+      is_active = true
+      and (start_at is null or start_at <= v_now)
+      and (end_at is null or end_at > v_now)
     order by created_at asc
     limit 1;
   else
     select * into v_pool
     from gacha_pools
-    where pool_id = p_pool_id and is_active = true;
+    where
+      pool_id = p_pool_id
+      and is_active = true
+      and (start_at is null or start_at <= v_now)
+      and (end_at is null or end_at > v_now);
   end if;
 
   if not found then
@@ -469,7 +495,7 @@ begin
   if v_force_rarity then
     v_rarity := v_pool.pity_rarity;
   else
-    v_roll := floor(random() * 100)::integer + 1;
+    v_roll := floor(nyang.secure_random_float() * 100)::integer + 1;
     if v_roll <= v_pool.rate_r then
       v_rarity := 'R';
     elsif v_roll <= v_pool.rate_r + v_pool.rate_s then
@@ -481,6 +507,31 @@ begin
     end if;
   end if;
 
+  v_base_rarity := v_rarity;
+
+  out_is_variant := false;
+  v_variant_prob := greatest(coalesce(v_pool.rate_sss, 0) / 10, 0) / 100;
+
+  if v_rarity <> 'SSS' and v_variant_prob > 0 then
+    select exists (
+      select 1
+      from gacha_pool_items gpi
+      join items i on i.item_id = gpi.item_id
+      where
+        gpi.pool_id = v_pool.pool_id
+        and i.is_active = true
+        and i.is_equippable = true
+        and gpi.weight > 0
+        and i.rarity = 'SSS'
+      limit 1
+    ) into v_has_sss;
+
+    if v_has_sss and nyang.secure_random_float() < v_variant_prob then
+      v_rarity := 'SSS';
+      out_is_variant := true;
+    end if;
+  end if;
+
   with candidates as (
     select
       i.item_id,
@@ -488,6 +539,7 @@ begin
       i.rarity,
       i.discord_role_id,
       i.duplicate_refund_points,
+      i.reward_points,
       gpi.weight
     from gacha_pool_items gpi
     join items i on i.item_id = gpi.item_id
@@ -508,14 +560,57 @@ begin
   choice as (
     select *
     from weighted
-    where cum_weight >= (random() * total_weight)
+    where cum_weight >= (nyang.secure_random_float() * total_weight)
     order by cum_weight asc
     limit 1
   )
   select * into v_item from choice;
 
   if v_item is null then
+    -- If variant was requested but pool has no SSS candidates, fall back to original rarity (non-variant).
+    if out_is_variant then
+      out_is_variant := false;
+      v_rarity := v_base_rarity;
+
+      with candidates as (
+        select
+          i.item_id,
+          i.name,
+          i.rarity,
+          i.discord_role_id,
+          i.duplicate_refund_points,
+          i.reward_points,
+          gpi.weight
+        from gacha_pool_items gpi
+        join items i on i.item_id = gpi.item_id
+        where
+          gpi.pool_id = v_pool.pool_id
+          and i.is_active = true
+          and i.is_equippable = true
+          and gpi.weight > 0
+          and i.rarity = v_rarity
+      ),
+      weighted as (
+        select
+          c.*,
+          sum(c.weight) over () as total_weight,
+          sum(c.weight) over (order by c.item_id) as cum_weight
+        from candidates c
+      ),
+      choice as (
+        select *
+        from weighted
+        where cum_weight >= (nyang.secure_random_float() * total_weight)
+        order by cum_weight asc
+        limit 1
+      )
+      select * into v_item from choice;
+    end if;
+  end if;
+
+  if v_item is null then
     -- fallback: any rarity
+    out_is_variant := false;
     with candidates as (
       select
         i.item_id,
@@ -523,6 +618,7 @@ begin
         i.rarity,
         i.discord_role_id,
         i.duplicate_refund_points,
+        i.reward_points,
         gpi.weight
       from gacha_pool_items gpi
       join items i on i.item_id = gpi.item_id
@@ -542,7 +638,7 @@ begin
     choice as (
       select *
       from weighted
-      where cum_weight >= (random() * total_weight)
+      where cum_weight >= (nyang.secure_random_float() * total_weight)
       order by cum_weight asc
       limit 1
     )
@@ -572,8 +668,8 @@ begin
   values (p_discord_user_id, v_pool.pool_id, out_is_free, v_spend)
   returning pull_id into v_pull_id;
 
-  insert into gacha_pull_results(pull_id, item_id, qty, is_pity)
-  values (v_pull_id, v_item.item_id, 1, v_force_rarity)
+  insert into gacha_pull_results(pull_id, item_id, qty, is_pity, is_variant)
+  values (v_pull_id, v_item.item_id, 1, v_force_rarity, out_is_variant)
   on conflict (pull_id, item_id) do update set qty = gacha_pull_results.qty + 1;
 
   if v_item.discord_role_id is not null then
