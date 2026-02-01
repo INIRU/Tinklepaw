@@ -35,7 +35,7 @@ export async function GET(req: Request) {
     discord_user_id: string;
     created_at: string | null;
     last_seen_at: string | null;
-    username: string;
+    username: string | null;
     avatar_url: string | null;
   }>;
   for (let i = 0; i < rows.length; i += batchSize) {
@@ -44,20 +44,21 @@ export async function GET(req: Request) {
       batch.map(async (row) => {
         try {
           const profile = await fetchMemberUserSummary(row.discord_user_id);
-          if (!profile?.name) return null;
           return {
             ...row,
-            username: profile.name,
-            avatar_url: profile.avatarUrl ?? null
+            username: profile?.name ?? null,
+            avatar_url: profile?.avatarUrl ?? null
           };
         } catch {
-          return null;
+          return {
+            ...row,
+            username: null,
+            avatar_url: null
+          };
         }
       })
     );
-    for (const row of results) {
-      if (row) enriched.push(row);
-    }
+    enriched.push(...results);
   }
 
   return NextResponse.json({ users: enriched });

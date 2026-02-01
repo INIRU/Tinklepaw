@@ -1,9 +1,9 @@
 'use client';
 
 import Image from 'next/image';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '@/components/toast/ToastProvider';
-import { ChevronDown, RefreshCw } from 'lucide-react';
+import { ChevronDown, RefreshCw, Search } from 'lucide-react';
 
 type Item = { item_id: string; name: string; rarity: string; discord_role_id: string | null };
 type InventoryRow = { item_id: string; qty: number; items: Item | null };
@@ -16,6 +16,14 @@ type UserSummary = {
   last_seen_at: string | null;
 };
 
+type MemberHit = {
+  id: string;
+  username: string;
+  globalName: string | null;
+  nick: string | null;
+  avatarUrl: string | null;
+};
+
 export default function UsersAdminClient() {
   const toast = useToast();
   const [users, setUsers] = useState<UserSummary[]>([]);
@@ -23,6 +31,10 @@ export default function UsersAdminClient() {
   const [listError, setListError] = useState<string | null>(null);
   const [activeUserId, setActiveUserId] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
+  const [userHits, setUserHits] = useState<MemberHit[]>([]);
+  const [userSearching, setUserSearching] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<MemberHit | null>(null);
+  const userSearchAbortRef = useRef<AbortController | null>(null);
 
   const [balance, setBalance] = useState<number | null>(null);
   const [equippedItemId, setEquippedItemId] = useState<string | null>(null);
@@ -223,18 +235,33 @@ export default function UsersAdminClient() {
     [lookup, toast]
   );
 
+  const displayDiscordName = useCallback(
+    (user: MemberHit) => user.nick ?? user.globalName ?? user.username,
+    []
+  );
+
+  const displayName = useCallback(
+    (user: UserSummary) => user.username ?? '알 수 없는 사용자',
+    []
+  );
+
   const invMap = useMemo(() => new Map(inv.map((r) => [r.item_id, r.qty])), [inv]);
   const roleItems = useMemo(() => items.filter((item) => item.discord_role_id), [items]);
-  const filteredUsers = useMemo(() => {
-    const q = searchText.trim().toLowerCase();
-    return users
-      .filter((user) => Boolean(user.username))
-      .filter((user) => {
-        if (!q) return true;
-        const name = user.username?.toLowerCase() ?? '';
-        return name.includes(q) || user.discord_user_id.includes(q);
-      });
-  }, [users, searchText]);
+  const listUsers = useMemo(() => {
+    const known = users.filter((user) => Boolean(user.username));
+    if (!selectedUser) return known;
+    if (known.some((user) => user.discord_user_id === selectedUser.id)) return known;
+    return [
+      {
+        discord_user_id: selectedUser.id,
+        username: displayDiscordName(selectedUser),
+        avatar_url: selectedUser.avatarUrl ?? null,
+        created_at: null,
+        last_seen_at: null
+      },
+      ...known
+    ];
+  }, [displayDiscordName, selectedUser, users]);
 
   const formatDate = useCallback((value: string | null) => {
     if (!value) return '기록 없음';
@@ -242,12 +269,52 @@ export default function UsersAdminClient() {
     if (Number.isNaN(d.getTime())) return value;
     return d.toLocaleString('ko-KR', { hour12: false });
   }, []);
-
-  const displayName = useCallback((user: UserSummary) => user.username ?? '알 수 없는 사용자', []);
   const avatarUrl = useCallback(
     (user: UserSummary) => user.avatar_url ?? 'https://cdn.discordapp.com/embed/avatars/0.png',
     []
   );
+
+  useEffect(() => {
+    const q = searchText.trim();
+    if (q.length < 2) {
+      setUserHits([]);
+      setUserSearching(false);
+      userSearchAbortRef.current?.abort();
+      userSearchAbortRef.current = null;
+      return;
+    }
+
+    setUserSearching(true);
+    const controller = new AbortController();
+    userSearchAbortRef.current?.abort();
+    userSearchAbortRef.current = controller;
+
+    const t = window.setTimeout(() => {
+      fetch(`/api/admin/discord/member-search?q=${encodeURIComponent(q)}&limit=25`, {
+        signal: controller.signal
+      })
+        .then((r) => r.json().then((body) => ({ ok: r.ok, status: r.status, body })))
+        .then(({ ok, status, body }) => {
+          if (!ok) throw new Error((body as { error?: string } | null)?.error ?? `HTTP ${status}`);
+          const members = ((body as { members?: MemberHit[] } | null)?.members ?? []).slice(0, 25);
+          setUserHits(members);
+        })
+        .catch((e) => {
+          if (e instanceof DOMException && e.name === 'AbortError') return;
+          setUserHits([]);
+        })
+        .finally(() => {
+          if (userSearchAbortRef.current === controller) {
+            setUserSearching(false);
+          }
+        });
+    }, 260);
+
+    return () => {
+      window.clearTimeout(t);
+      controller.abort();
+    };
+  }, [searchText]);
 
   return (
     <main className="p-6">
@@ -261,11 +328,7 @@ export default function UsersAdminClient() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold">서버 전체 유저</h2>
-                <p className="mt-1 text-xs muted">
-                  {searchText.trim().length
-                    ? `${filteredUsers.length}명 / ${users.length}명`
-                    : `총 ${users.length}명`}
-                </p>
+                <p className="mt-1 text-xs muted">총 {listUsers.length}명</p>
               </div>
               <button
                 type="button"
@@ -278,14 +341,79 @@ export default function UsersAdminClient() {
               </button>
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <input
-                className="flex-1 min-w-[160px] rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)] placeholder:text-[color:var(--muted-2)]"
-                placeholder="유저 이름 또는 ID 검색…"
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                aria-label="유저 검색"
-              />
+            <div className="relative mt-4">
+              <div className="relative">
+                <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                  <Search className="h-4 w-4 text-[color:var(--muted-2)]" />
+                </div>
+                <input
+                  className="w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] py-2 pl-10 pr-3 text-sm text-[color:var(--fg)] placeholder:text-[color:var(--muted-2)]"
+                  placeholder="Discord 유저 이름으로 검색…"
+                  value={searchText}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setSearchText(value);
+                    if (!value) {
+                      setSelectedUser(null);
+                      setUserHits([]);
+                    } else if (selectedUser) {
+                      setSelectedUser(null);
+                    }
+                  }}
+                  aria-label="유저 검색"
+                />
+                {selectedUser ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedUser(null);
+                      setSearchText('');
+                      setUserHits([]);
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 hover:bg-[color:var(--chip)]"
+                  >
+                    <span className="sr-only">검색 초기화</span>
+                    <ChevronDown className="h-4 w-4 rotate-90 text-[color:var(--muted-2)]" />
+                  </button>
+                ) : null}
+              </div>
+
+              {userHits.length > 0 && !selectedUser ? (
+                <div className="absolute z-10 mt-2 w-full overflow-hidden rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] shadow-lg">
+                  {userHits.map((user) => (
+                    <button
+                      key={user.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedUser(user);
+                        setSearchText(displayDiscordName(user));
+                        setUserHits([]);
+                        setActiveUserId(user.id);
+                      }}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-[color:var(--chip)]"
+                    >
+                      <div className="h-8 w-8 overflow-hidden rounded-full border border-[color:var(--border)] bg-[color:var(--chip)]">
+                        {user.avatarUrl ? (
+                          <Image src={user.avatarUrl} alt="" width={32} height={32} className="h-8 w-8 object-cover" />
+                        ) : null}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold text-[color:var(--fg)]">
+                          {displayDiscordName(user)}
+                        </div>
+                        <div className="truncate text-[11px] muted-2">@{user.username}</div>
+                      </div>
+                      <div className="text-[11px] muted-2">{user.id}</div>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
+              {userSearching && !selectedUser ? (
+                <div className="absolute z-10 mt-2 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-4 py-3 text-center text-xs muted">
+                  검색 중…
+                </div>
+              ) : null}
             </div>
 
             {listError ? (
@@ -295,13 +423,13 @@ export default function UsersAdminClient() {
             ) : null}
 
             <div className="mt-4 max-h-[560px] overflow-auto rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)]">
-              {listBusy && filteredUsers.length === 0 ? (
+              {listBusy && listUsers.length === 0 ? (
                 <div className="p-4 text-sm muted">유저 목록을 불러오는 중입니다.</div>
-              ) : filteredUsers.length === 0 ? (
+              ) : listUsers.length === 0 ? (
                 <div className="p-4 text-sm muted">등록된 유저가 없습니다.</div>
               ) : (
                 <div className="grid gap-2 p-2">
-                  {filteredUsers.map((u) => {
+                  {listUsers.map((u) => {
                     const isOpen = activeUserId === u.discord_user_id;
                     return (
                       <div
