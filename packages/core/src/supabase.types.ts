@@ -146,6 +146,8 @@ export type Database = {
       users: {
         Row: {
           discord_user_id: string;
+          username: string | null;
+          avatar_url: string | null;
           created_at: string;
           last_seen_at: string | null;
         };
