@@ -737,7 +737,7 @@ export default function DrawClient() {
           <GachaScene
             isDrawing={isDrawing}
             rarity={sceneRarity ?? undefined}
-            onAnimationComplete={onAnimationComplete}
+            onAnimationCompleteAction={onAnimationComplete}
           />
         </div>
 

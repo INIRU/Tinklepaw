@@ -3,14 +3,14 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { PerspectiveCamera, Sparkles, Stars } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import gsap from 'gsap';
 import * as THREE from 'three';
 
 type GachaSceneProps = {
   isDrawing: boolean;
   rarity?: string | null;
-  onAnimationComplete?: () => void;
+  onAnimationCompleteAction?: () => void;
 };
 
 const COLORS = {
@@ -35,9 +35,13 @@ type DrawMotionState = {
   heartbeat: number;
   fakePause: number;
   ring: number;
+  shell: number;
+  focus: number;
+  drift: number;
   open: number;
   core: number;
   burst: number;
+  flash: number;
 };
 
 const createDrawMotion = (): DrawMotionState => ({
@@ -49,21 +53,27 @@ const createDrawMotion = (): DrawMotionState => ({
   heartbeat: 0,
   fakePause: 0,
   ring: 0,
+  shell: 0,
+  focus: 0,
+  drift: 0,
   open: 0,
   core: 0,
   burst: 0,
+  flash: 0,
 });
 
 function CinematicCapsule({
   isDrawing,
   rarity,
+  cameraRef,
   onComplete,
 }: {
   isDrawing: boolean;
   rarity?: string | null;
+  cameraRef: { current: THREE.PerspectiveCamera | null };
   onComplete?: () => void;
 }) {
-  const { viewport, camera } = useThree();
+  const { viewport } = useThree();
   const isMobile = viewport.width < 3;
   const baseScale = isMobile ? 0.55 : 1;
   const motionScale = isMobile ? 0.8 : 1;
@@ -75,7 +85,10 @@ function CinematicCapsule({
   const bottomRef = useRef<THREE.Mesh>(null);
   const bandRef = useRef<THREE.Mesh>(null);
   const coreRef = useRef<THREE.Mesh>(null);
+  const shellRef = useRef<THREE.Mesh>(null);
   const shockRef = useRef<THREE.Mesh>(null);
+  const shockEchoRef = useRef<THREE.Mesh>(null);
+  const flashRef = useRef<THREE.Mesh>(null);
 
   const motion = useRef<DrawMotionState>(createDrawMotion());
   const timelineRef = useRef<gsap.core.Timeline | null>(null);
@@ -119,70 +132,87 @@ function CinematicCapsule({
     tl.to(motion.current, {
       center: 1,
       spin: 1,
-      ring: 0.35,
-      duration: 0.5 * pacing,
+      ring: 0.45,
+      drift: 0.2,
+      duration: 0.45 * pacing,
       ease: 'power2.out',
     })
       .to(
         motion.current,
         {
           shake: 0.45 * tensionBoost,
-          crack: 0.35,
-          glow: 0.4,
-          heartbeat: 0.35,
-          ring: 0.7,
-          duration: 0.68 * pacing,
+          crack: 0.4,
+          glow: 0.45,
+          heartbeat: 0.4,
+          ring: 0.75,
+          shell: 0.35,
+          focus: 0.28,
+          duration: 0.7 * pacing,
           ease: 'sine.inOut',
         },
         '<',
       )
       .to(motion.current, {
-        shake: 1.05 * tensionBoost,
+        shake: 1.15 * tensionBoost,
         crack: 1,
         glow: 1,
         heartbeat: 1,
         ring: 1,
-        duration: 1.15 * pacing,
+        shell: 0.92,
+        focus: 0.68,
+        duration: 1.2 * pacing,
         ease: 'power2.inOut',
       })
       .to(motion.current, {
         fakePause: 1,
-        shake: 0.12,
-        crack: 0.28,
-        heartbeat: 0.2,
-        duration: 0.18 * pacing,
-        ease: 'power1.out',
+        shake: 0.08,
+        crack: 0.22,
+        heartbeat: 0.14,
+        ring: 0.82,
+        focus: 0.42,
+        duration: 0.14 * pacing,
+        ease: 'power2.out',
       })
       .to(motion.current, {
         fakePause: 0,
-        shake: 1.55 * tensionBoost,
-        crack: 1.25,
-        glow: 1.28,
-        heartbeat: 1.25,
-        duration: 0.46 * pacing,
+        shake: 1.85 * tensionBoost,
+        crack: 1.35,
+        glow: 1.4,
+        heartbeat: 1.45,
+        shell: 1.2,
+        focus: 1,
+        drift: 1,
+        duration: 0.42 * pacing,
         ease: 'power3.in',
       })
       .to(motion.current, {
         open: 1,
         core: 1,
         burst: 1,
+        flash: 1,
         shake: 0.02,
         heartbeat: 0,
-        duration: (isSSS ? 0.95 : 0.82) * pacing,
+        duration: (isSSS ? 0.98 : 0.86) * pacing,
         ease: 'expo.in',
       })
       .to(
         motion.current,
         {
+          flash: 0,
           ring: 0,
-          duration: 0.35 * pacing,
+          shell: 0.12,
+          focus: 0.2,
+          duration: 0.32 * pacing,
           ease: 'sine.out',
         },
-        '-=0.25',
+        '-=0.2',
       )
       .to(motion.current, {
-        burst: 0.2,
-        duration: 0.2,
+        burst: 0.25,
+        shell: 0,
+        focus: 0,
+        drift: 0,
+        duration: 0.25,
         ease: 'power2.out',
       })
       .call(() => {
@@ -208,7 +238,8 @@ function CinematicCapsule({
   }, []);
 
   useFrame((state, delta) => {
-    if (!group.current || !topRef.current || !bottomRef.current || !bandRef.current || !coreRef.current) {
+    const camera = cameraRef.current;
+    if (!group.current || !topRef.current || !bottomRef.current || !bandRef.current || !coreRef.current || !camera) {
       return;
     }
 
@@ -221,6 +252,7 @@ function CinematicCapsule({
     const bottomMat = bottomRef.current.material as THREE.MeshStandardMaterial;
     const bandMat = bandRef.current.material as THREE.MeshStandardMaterial;
     const coreMat = coreRef.current.material as THREE.MeshStandardMaterial;
+    const shellMat = shellRef.current ? (shellRef.current.material as THREE.MeshStandardMaterial) : null;
 
     if (!isDrawing) {
       group.current.position.x = THREE.MathUtils.lerp(group.current.position.x, 0, delta * 6);
@@ -266,6 +298,13 @@ function CinematicCapsule({
       coreMat.emissive.copy(BLACK);
       coreMat.emissiveIntensity = THREE.MathUtils.lerp(coreMat.emissiveIntensity, 0, delta * 6);
 
+      if (shellRef.current && shellMat) {
+        const shellScale = THREE.MathUtils.lerp(shellRef.current.scale.x, 0.001, delta * 5);
+        shellRef.current.scale.setScalar(shellScale);
+        shellMat.opacity = THREE.MathUtils.lerp(shellMat.opacity, 0, delta * 5);
+        shellMat.emissiveIntensity = THREE.MathUtils.lerp(shellMat.emissiveIntensity, 0, delta * 5);
+      }
+
       if (shockRef.current) {
         const shockMat = shockRef.current.material as THREE.MeshBasicMaterial;
         const currentScale = THREE.MathUtils.lerp(shockRef.current.scale.x, 0, delta * 4);
@@ -273,9 +312,30 @@ function CinematicCapsule({
         shockMat.opacity = THREE.MathUtils.lerp(shockMat.opacity, 0, delta * 4);
       }
 
+      if (shockEchoRef.current) {
+        const shockEchoMat = shockEchoRef.current.material as THREE.MeshBasicMaterial;
+        const currentScale = THREE.MathUtils.lerp(shockEchoRef.current.scale.x, 0, delta * 4);
+        shockEchoRef.current.scale.setScalar(currentScale);
+        shockEchoMat.opacity = THREE.MathUtils.lerp(shockEchoMat.opacity, 0, delta * 4);
+      }
+
+      if (flashRef.current) {
+        const flashMat = flashRef.current.material as THREE.MeshBasicMaterial;
+        const flashScale = THREE.MathUtils.lerp(flashRef.current.scale.x, 0, delta * 5);
+        flashRef.current.scale.setScalar(flashScale);
+        flashMat.opacity = THREE.MathUtils.lerp(flashMat.opacity, 0, delta * 5);
+      }
+
       camera.position.x = THREE.MathUtils.lerp(camera.position.x, 0, delta * 5);
       camera.position.y = THREE.MathUtils.lerp(camera.position.y, 0, delta * 5);
       camera.position.z = THREE.MathUtils.lerp(camera.position.z, 5, delta * 4);
+
+      if ((camera as THREE.PerspectiveCamera).isPerspectiveCamera) {
+        const perspectiveCamera = camera as THREE.PerspectiveCamera;
+        perspectiveCamera.fov = THREE.MathUtils.lerp(perspectiveCamera.fov, 50, delta * 4);
+        perspectiveCamera.updateProjectionMatrix();
+      }
+
       camera.lookAt(0, 0, 0);
 
       return;
@@ -288,28 +348,32 @@ function CinematicCapsule({
       (Math.cos(elapsed * 51) + Math.sin(elapsed * 83) * 0.4) * shakeAmount;
     const heartbeatWave = (Math.sin(elapsed * (isSSS ? 18 : 15)) + 1) * 0.5;
     const heartbeatPulse = anim.heartbeat * heartbeatWave;
+    const orbitAmount = anim.drift * (isSSS ? 0.09 : 0.07) * (reduced ? 0.6 : 1);
+    const orbitX = Math.sin(elapsed * (isSSS ? 2.8 : 2.4)) * orbitAmount;
+    const orbitY = Math.cos(elapsed * (isSSS ? 2.4 : 2.1)) * orbitAmount * 0.7;
 
-    group.current.position.x = jitterX;
-    group.current.position.y = jitterY + Math.sin(elapsed * 6) * 0.01 * heartbeatPulse;
+    group.current.position.x = jitterX + orbitX;
+    group.current.position.y = jitterY + orbitY + Math.sin(elapsed * 6) * 0.01 * heartbeatPulse;
     group.current.position.z = THREE.MathUtils.lerp(
       group.current.position.z,
-      -0.15 * anim.center - 0.32 * anim.open,
+      -0.15 * anim.center - 0.32 * anim.open - anim.focus * 0.12 + anim.fakePause * 0.04,
       delta * 6,
     );
 
     group.current.rotation.x = THREE.MathUtils.lerp(
       group.current.rotation.x,
-      0.06 + Math.sin(elapsed * 4) * 0.02 * heartbeatPulse,
+      0.06 + Math.sin(elapsed * 4) * 0.02 * heartbeatPulse + anim.focus * 0.05,
       delta * 7,
     );
-    group.current.rotation.y += delta * (1.2 + anim.spin * (isSSS ? 15 : 11));
+    group.current.rotation.y += delta * (1.2 + anim.spin * (isSSS ? 14.5 : 10.5) - anim.fakePause * 0.6);
     group.current.rotation.z = THREE.MathUtils.lerp(
       group.current.rotation.z,
-      Math.PI / 4 - anim.center * 0.7,
+      Math.PI / 4 - anim.center * 0.7 + Math.sin(elapsed * 7.5) * 0.035 * anim.focus,
       delta * 6,
     );
 
-    const cinematicZoom = 1 + anim.glow * 0.05 + anim.burst * 0.22 - anim.fakePause * 0.03;
+    const cinematicZoom =
+      1 + anim.glow * 0.06 + anim.focus * 0.05 + anim.burst * 0.24 - anim.fakePause * 0.04;
     group.current.scale.setScalar(baseScale * cinematicZoom);
 
     const crackDistance =
@@ -324,7 +388,8 @@ function CinematicCapsule({
       0.08 +
       anim.glow * (isSSS ? 2.7 : 2.2) +
       heartbeatPulse * 0.8 +
-      anim.open * (isSSS ? 2.4 : 1.9);
+      anim.open * (isSSS ? 2.4 : 1.9) +
+      anim.shell * 0.45;
 
     topMat.color.copy(BASE_TOP_COLOR).lerp(targetThreeColor, colorMix);
     topMat.emissive.copy(targetThreeColor);
@@ -334,7 +399,7 @@ function CinematicCapsule({
     bottomMat.emissive.copy(targetThreeColor);
     bottomMat.emissiveIntensity = emissiveStrength;
 
-    const ringScale = Math.max(0.001, 1 - anim.open * 0.96 + heartbeatPulse * 0.05);
+    const ringScale = Math.max(0.001, 1 - anim.open * 0.96 + heartbeatPulse * 0.05 - anim.fakePause * 0.04);
     bandRef.current.scale.setScalar(ringScale);
     bandMat.color.copy(BASE_BAND_COLOR).lerp(targetThreeColor, 0.22 + anim.ring * 0.74);
     bandMat.emissive.copy(targetThreeColor);
@@ -344,12 +409,34 @@ function CinematicCapsule({
       0.08 +
       anim.glow * 0.75 +
       anim.core * (isSSS ? 10.6 : 9.1) +
+      anim.focus * 0.18 +
       anim.burst * (isSSS ? 1.6 : 1.2);
     coreRef.current.scale.setScalar(coreScale);
     coreMat.color.copy(targetThreeColor);
     coreMat.emissive.copy(targetThreeColor);
     coreMat.emissiveIntensity =
       0.3 + anim.glow * 2 + anim.core * (isSSS ? 7 : 5.5) + anim.burst * (isSSS ? 6 : 4.4);
+
+    if (shellRef.current && shellMat) {
+      const shellPulse = (Math.sin(elapsed * 11) + 1) * 0.5;
+      const shellScale =
+        1.04 +
+        anim.shell * (isSSS ? 0.52 : 0.4) +
+        shellPulse * 0.06 * anim.heartbeat +
+        anim.burst * (isSSS ? 1.3 : 0.9);
+      shellRef.current.scale.setScalar(shellScale);
+      shellRef.current.rotation.x += delta * (0.5 + anim.shell * 2.1);
+      shellRef.current.rotation.y += delta * (0.8 + anim.shell * 2.5);
+      shellMat.color.copy(targetThreeColor);
+      shellMat.emissive.copy(targetThreeColor);
+      shellMat.emissiveIntensity =
+        0.18 + anim.shell * (isSSS ? 1.8 : 1.2) + anim.burst * (isSSS ? 1.3 : 1);
+      shellMat.opacity = THREE.MathUtils.clamp(
+        0.03 + anim.shell * (isSSS ? 0.3 : 0.24) + anim.burst * (isSSS ? 0.32 : 0.22),
+        0,
+        0.78,
+      );
+    }
 
     if (shockRef.current) {
       const shockMat = shockRef.current.material as THREE.MeshBasicMaterial;
@@ -363,64 +450,239 @@ function CinematicCapsule({
       shockMat.color.set(isSSS ? COLORS.SSS : targetColor);
     }
 
-    camera.position.x = THREE.MathUtils.lerp(camera.position.x, jitterX * 0.35, delta * 7);
-    camera.position.y = THREE.MathUtils.lerp(camera.position.y, jitterY * 0.3, delta * 7);
+    if (shockEchoRef.current) {
+      const shockEchoMat = shockEchoRef.current.material as THREE.MeshBasicMaterial;
+      const echoBurst = Math.max(anim.burst - 0.12, 0);
+      const shockEchoScale = 1.45 + echoBurst * (isSSS ? 9.5 : 7);
+      shockEchoRef.current.scale.setScalar(shockEchoScale);
+      shockEchoMat.opacity = THREE.MathUtils.clamp(
+        (isSSS ? 0.32 : 0.2) * echoBurst * (1 - anim.open * 0.35),
+        0,
+        0.65,
+      );
+      shockEchoMat.color.set(isSSS ? COLORS.SSS : targetColor);
+    }
+
+    if (flashRef.current) {
+      const flashMat = flashRef.current.material as THREE.MeshBasicMaterial;
+      const flashScale = 0.8 + anim.flash * (isSSS ? 8.5 : 6.5) + anim.burst * 2.2;
+      flashRef.current.scale.setScalar(flashScale);
+      flashMat.opacity = THREE.MathUtils.clamp(
+        anim.flash * (isSSS ? 0.72 : 0.55) + anim.burst * (isSSS ? 0.18 : 0.12),
+        0,
+        0.9,
+      );
+      flashMat.color.set(isSSS ? COLORS.SSS : targetColor);
+    }
+
+    const cameraJolt = anim.focus * (isSSS ? 0.45 : 0.34);
+    camera.position.x = THREE.MathUtils.lerp(
+      camera.position.x,
+      jitterX * 0.35 + orbitX * 0.4 + Math.sin(elapsed * 17) * 0.01 * cameraJolt,
+      delta * 7,
+    );
+    camera.position.y = THREE.MathUtils.lerp(
+      camera.position.y,
+      jitterY * 0.3 + orbitY * 0.35 + Math.cos(elapsed * 15) * 0.012 * cameraJolt,
+      delta * 7,
+    );
     camera.position.z = THREE.MathUtils.lerp(
       camera.position.z,
-      5 - anim.center * 0.3 - anim.open * 1.2,
+      5 - anim.center * 0.35 - anim.open * 1.35 - anim.focus * 0.42 + anim.fakePause * 0.14,
       delta * 6,
     );
+
+    if ((camera as THREE.PerspectiveCamera).isPerspectiveCamera) {
+      const perspectiveCamera = camera as THREE.PerspectiveCamera;
+      const targetFov =
+        50 - anim.focus * (isSSS ? 8.5 : 7) + anim.burst * (isSSS ? 8 : 6.5) + anim.fakePause * 1.4;
+      perspectiveCamera.fov = THREE.MathUtils.lerp(perspectiveCamera.fov, targetFov, delta * 8);
+      perspectiveCamera.updateProjectionMatrix();
+    }
+
     camera.lookAt(0, 0, 0);
   });
 
   return (
-    <group ref={group} rotation={[0, 0, Math.PI / 4]}>
-      {/* Top Half (Darker Plastic) */}
-      <mesh ref={topRef} position={[0, 0, 0]}>
-        <sphereGeometry args={[1.2, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2]} />
-        <meshStandardMaterial color="#888" metalness={0.6} roughness={0.4} />
-      </mesh>
-      
-      {/* Bottom Half (Darker Plastic) */}
-      <mesh ref={bottomRef} rotation={[Math.PI, 0, 0]} position={[0, 0, 0]}>
-        <sphereGeometry args={[1.2, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2]} />
-        <meshStandardMaterial color="#999" metalness={0.6} roughness={0.4} />
-      </mesh>
+    <>
+      <group ref={group} rotation={[0, 0, Math.PI / 4]}>
+        {/* Top Half (Darker Plastic) */}
+        <mesh ref={topRef} position={[0, 0, 0]}>
+          <sphereGeometry args={[1.2, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <meshStandardMaterial color="#888" metalness={0.6} roughness={0.4} />
+        </mesh>
 
-      {/* Band (Mechanical Ring) */}
-      <mesh ref={bandRef} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[1.25, 0.1, 16, 100]} />
-        <meshStandardMaterial color="#444" metalness={0.8} roughness={0.2} />
-      </mesh>
+        {/* Bottom Half (Darker Plastic) */}
+        <mesh ref={bottomRef} rotation={[Math.PI, 0, 0]} position={[0, 0, 0]}>
+          <sphereGeometry args={[1.2, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <meshStandardMaterial color="#999" metalness={0.6} roughness={0.4} />
+        </mesh>
 
-      {/* Inner Core (The Item Light) */}
-      <mesh ref={coreRef} scale={[0, 0, 0]}>
-        <sphereGeometry args={[1, 32, 32]} />
-        <meshStandardMaterial color="#000" emissive="#000" emissiveIntensity={0} />
-      </mesh>
+        {/* Band (Mechanical Ring) */}
+        <mesh ref={bandRef} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[1.25, 0.1, 16, 100]} />
+          <meshStandardMaterial color="#444" metalness={0.8} roughness={0.2} />
+        </mesh>
 
-      {/* SSS Shockwave */}
-      <mesh ref={shockRef} position={[0, 0, 0.25]} scale={[0, 0, 0]}>
-        <ringGeometry args={[1.55, 1.75, 64]} />
+        {/* Inner Core (The Item Light) */}
+        <mesh ref={coreRef} scale={[0, 0, 0]}>
+          <sphereGeometry args={[1, 32, 32]} />
+          <meshStandardMaterial color="#000" emissive="#000" emissiveIntensity={0} />
+        </mesh>
+
+        {/* Energy Shell */}
+        <mesh ref={shellRef} scale={[0.001, 0.001, 0.001]}>
+          <icosahedronGeometry args={[1.32, 2]} />
+          <meshStandardMaterial
+            color="#000"
+            emissive="#000"
+            emissiveIntensity={0}
+            transparent
+            opacity={0}
+            wireframe
+            depthWrite={false}
+          />
+        </mesh>
+
+        {/* Primary Shockwave */}
+        <mesh ref={shockRef} position={[0, 0, 0.25]} scale={[0, 0, 0]}>
+          <ringGeometry args={[1.55, 1.75, 64]} />
+          <meshBasicMaterial
+            color={COLORS.SSS}
+            transparent
+            opacity={0.45}
+            side={THREE.DoubleSide}
+            blending={THREE.AdditiveBlending}
+            toneMapped={false}
+          />
+        </mesh>
+
+        {/* Echo Shockwave */}
+        <mesh ref={shockEchoRef} position={[0, 0, 0.2]} scale={[0, 0, 0]}>
+          <ringGeometry args={[1.9, 2.08, 64]} />
+          <meshBasicMaterial
+            color={COLORS.SSS}
+            transparent
+            opacity={0}
+            side={THREE.DoubleSide}
+            blending={THREE.AdditiveBlending}
+            toneMapped={false}
+          />
+        </mesh>
+      </group>
+
+      {/* Reveal flash */}
+      <mesh ref={flashRef} position={[0, 0, 2.15]} scale={[0, 0, 0]}>
+        <planeGeometry args={[1, 1]} />
         <meshBasicMaterial
           color={COLORS.SSS}
           transparent
-          opacity={0.45}
-          side={THREE.DoubleSide}
+          opacity={0}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
+          depthWrite={false}
         />
       </mesh>
-    </group>
+    </>
   );
 }
 
-export function GachaScene({ isDrawing, rarity, onAnimationComplete }: GachaSceneProps) {
+export function GachaScene({
+  isDrawing,
+  rarity,
+  onAnimationCompleteAction,
+}: GachaSceneProps) {
   const isSSS = rarity === 'SSS';
+  const sceneCameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const sparkleColor = isSSS
+    ? COLORS.SSS
+    : COLORS[(rarity as keyof typeof COLORS) || 'DEFAULT'];
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const sync = () => setPrefersReducedMotion(media.matches);
+
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, []);
+
+  const starsSpeed = prefersReducedMotion
+    ? 0.15
+    : isDrawing
+      ? isSSS
+        ? 2.2
+        : 1.5
+      : isSSS
+        ? 1.0
+        : 0.5;
+  const sparkleCount = prefersReducedMotion ? (isSSS ? 28 : 16) : isSSS ? 90 : 45;
+  const sparkleScale: [number, number, number] = prefersReducedMotion
+    ? isSSS
+      ? [4.2, 4.2, 4.2]
+      : [3.5, 3.5, 3.5]
+    : isSSS
+      ? [6, 6, 6]
+      : [5, 5, 5];
+  const sparkleSpeed = prefersReducedMotion
+    ? 0.16
+    : isDrawing
+      ? isSSS
+        ? 1.6
+        : 1.05
+      : 0.45;
+  const sparkleOpacity = prefersReducedMotion
+    ? isSSS
+      ? 0.24
+      : 0.12
+    : isDrawing
+      ? isSSS
+        ? 0.68
+        : 0.34
+      : isSSS
+        ? 0.52
+        : 0.18;
+  const bloomLuminanceThreshold = prefersReducedMotion
+    ? isSSS
+      ? 0.32
+      : 0.42
+    : isDrawing
+      ? isSSS
+        ? 0.24
+        : 0.32
+      : isSSS
+        ? 0.35
+        : 0.5;
+  const bloomIntensity = prefersReducedMotion
+    ? isSSS
+      ? 1.15
+      : 0.8
+    : isDrawing
+      ? isSSS
+        ? 2.5
+        : 1.55
+      : isSSS
+        ? 1.8
+        : 1.0;
+  const bloomRadius = prefersReducedMotion
+    ? isSSS
+      ? 0.58
+      : 0.42
+    : isDrawing
+      ? isSSS
+        ? 0.86
+        : 0.64
+      : isSSS
+        ? 0.7
+        : 0.5;
+
   return (
     <div className="w-full h-full relative">
       <Canvas dpr={[1, 1.8]}>
-        <PerspectiveCamera makeDefault position={[0, 0, 5]} />
+        <PerspectiveCamera ref={sceneCameraRef} makeDefault position={[0, 0, 5]} />
         
         {/* Cinematic Lighting: Bright & Clear */}
         <ambientLight intensity={1.5} />
@@ -430,28 +692,40 @@ export function GachaScene({ isDrawing, rarity, onAnimationComplete }: GachaScen
         <directionalLight position={[5, 10, 5]} intensity={1.5} />
         
         {/* Background */}
-        <Stars radius={100} depth={50} count={2000} factor={3} saturation={0} fade speed={isSSS ? 1.0 : 0.5} />
+        <Stars
+          radius={100}
+          depth={50}
+          count={2000}
+          factor={3}
+          saturation={0}
+          fade
+          speed={starsSpeed}
+        />
 
-        {isSSS && (
-          <Sparkles
-            count={80}
-            scale={[6, 6, 6]}
-            size={3}
-            speed={0.6}
-            opacity={0.6}
-            color={COLORS.SSS}
-          />
-        )}
+        <Sparkles
+          count={sparkleCount}
+          scale={sparkleScale}
+          size={isSSS ? 3 : 2}
+          speed={sparkleSpeed}
+          opacity={sparkleOpacity}
+          color={sparkleColor}
+        />
         
         <CinematicCapsule 
           isDrawing={isDrawing} 
           rarity={rarity} 
-          onComplete={onAnimationComplete} 
+          cameraRef={sceneCameraRef}
+          onComplete={onAnimationCompleteAction} 
         />
 
         <EffectComposer enableNormalPass={false}>
           {/* Subtle Bloom only for the core light */}
-          <Bloom luminanceThreshold={isSSS ? 0.35 : 0.5} mipmapBlur intensity={isSSS ? 1.8 : 1.0} radius={isSSS ? 0.7 : 0.5} />
+          <Bloom
+            luminanceThreshold={bloomLuminanceThreshold}
+            mipmapBlur
+            intensity={bloomIntensity}
+            radius={bloomRadius}
+          />
         </EffectComposer>
       </Canvas>
     </div>
