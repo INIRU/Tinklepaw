@@ -37,6 +37,31 @@ type MusicLog = {
   created_at: string;
 };
 
+type ControlAction = 'play' | 'pause' | 'stop' | 'skip' | 'previous' | 'add' | 'reorder';
+
+type ControlResult = {
+  ok: boolean;
+  pending?: boolean;
+  error?: string;
+};
+
+const resolveControlErrorMessage = (error: string | undefined, fallback: string) => {
+  if (!error) return fallback;
+
+  switch (error) {
+    case 'BOT_ACK_TIMEOUT':
+      return '봇 응답이 지연되고 있어요. 잠시 후 다시 시도해 주세요.';
+    case 'JOB_NOT_FOUND':
+      return '요청 추적에 실패했습니다. 다시 시도해 주세요.';
+    case 'ACK_LOOKUP_FAILED':
+      return '요청 상태 확인 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+    case 'INVALID_REQUEST':
+      return '요청 형식이 올바르지 않습니다.';
+    default:
+      return error;
+  }
+};
+
 const formatDuration = (ms?: number | null) => {
   if (!ms) return '00:00';
   const totalSeconds = Math.floor(ms / 1000);
@@ -87,6 +112,7 @@ export default function MusicControlClient() {
   const [state, setState] = useState<MusicState | null>(null);
   const [logs, setLogs] = useState<MusicLog[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [pendingAction, setPendingAction] = useState<ControlAction | null>(null);
   const [query, setQuery] = useState('');
   const [feedback, setFeedback] = useState<{ open: boolean; title: string; message: string; kind: 'success' | 'error' }>({
     open: false,
@@ -99,7 +125,9 @@ export default function MusicControlClient() {
 
   const current = state?.current_track;
   const queue: MusicTrack[] = state?.queue ?? [];
+  const isActionPending = pendingAction !== null;
   const canAdd = Boolean(current);
+  const canStop = Boolean(current);
   const canSkip = Boolean(current) && queue.length > 0;
 
   const sensors = useSensors(
@@ -203,62 +231,97 @@ export default function MusicControlClient() {
     }, 1600);
   };
 
-  const sendControl = async (action: 'play' | 'pause' | 'stop' | 'skip' | 'previous' | 'add', payload?: { query?: string }) => {
+  const sendControl = async (
+    action: ControlAction,
+    payload?: { query?: string; order?: string[] },
+  ): Promise<ControlResult> => {
     const res = await fetch('/api/music/control', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, payload })
     });
-    if (!res.ok) {
-      const data = await res.json().catch(() => null);
-      return { ok: false, error: data?.error ?? '요청 실패' };
-    }
-    await Promise.all([fetchLogs(), fetchState()]);
-    window.setTimeout(() => {
-      void fetchState();
-      void fetchLogs();
-    }, 800);
-    return { ok: true };
-  };
 
-  const sendReorder = async (order: string[]) => {
-    const res = await fetch('/api/music/control', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'reorder', payload: { order } })
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => null);
-      return { ok: false, error: data?.error ?? '정렬 실패' };
+    const data = (await res.json().catch(() => null)) as
+      | { ok?: boolean; pending?: boolean; error?: string }
+      | null;
+
+    if (res.status === 202 || data?.pending) {
+      await Promise.all([fetchLogs(), fetchState()]);
+      return {
+        ok: false,
+        pending: true,
+        error: resolveControlErrorMessage(data?.error, '봇 응답이 지연되고 있어요. 잠시 후 로그를 확인해 주세요.'),
+      };
     }
+
+    if (res.ok && data?.ok !== false) {
+      await Promise.all([fetchLogs(), fetchState()]);
+      window.setTimeout(() => {
+        void fetchState();
+        void fetchLogs();
+      }, 800);
+      return { ok: true };
+    }
+
     await Promise.all([fetchLogs(), fetchState()]);
-    window.setTimeout(() => {
-      void fetchState();
-      void fetchLogs();
-    }, 800);
-    return { ok: true };
+    return { ok: false, error: resolveControlErrorMessage(data?.error, '요청 실패') };
   };
 
   const runAction = async (action: 'play' | 'pause' | 'stop' | 'skip' | 'previous', successMessage: string) => {
-    const result = await sendControl(action);
-    if (result.ok) showFeedback('success', '완료', successMessage);
-    else showFeedback('error', '실패', result.error ?? '요청 실패');
+    if (isActionPending) return;
+
+    setPendingAction(action);
+    try {
+      const result = await sendControl(action);
+      if (result.ok) {
+        showFeedback('success', '완료', successMessage);
+        return;
+      }
+
+      if (result.pending) {
+        showFeedback('error', '응답 지연', result.error ?? '봇 응답이 지연되고 있어요.');
+        return;
+      }
+
+      showFeedback('error', '실패', result.error ?? '요청 실패');
+    } finally {
+      setPendingAction(null);
+    }
   };
 
   const submitAdd = async () => {
+    if (isActionPending) return;
+
     const trimmed = query.trim();
     if (!trimmed) return;
     if (!canAdd) {
       showFeedback('error', '추가 불가', '현재 재생 중인 곡이 없어서 노래를 추가할 수 없습니다.');
       return;
     }
-    const result = await sendControl('add', { query: trimmed });
-    if (result.ok) showFeedback('success', '추가 완료', '대기열에 추가했어요.');
-    else showFeedback('error', '추가 실패', result.error ?? '요청 실패');
-    setQuery('');
+
+    setPendingAction('add');
+    try {
+      const result = await sendControl('add', { query: trimmed });
+      if (result.ok) {
+        showFeedback('success', '추가 완료', '대기열에 추가했어요.');
+        setQuery('');
+        return;
+      }
+
+      if (result.pending) {
+        showFeedback('error', '응답 지연', result.error ?? '봇 응답이 지연되고 있어요.');
+        return;
+      }
+
+      showFeedback('error', '추가 실패', result.error ?? '요청 실패');
+    } finally {
+      setPendingAction(null);
+    }
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
+    if (isActionPending) return;
+
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
@@ -270,12 +333,28 @@ export default function MusicControlClient() {
 
     const nextQueue = arrayMove(queue, oldIndex, newIndex) as MusicTrack[];
     setState((prev) => (prev ? { ...prev, queue: nextQueue } : prev));
-    sendReorder(nextQueue.map((track) => track.id))
-      .then((result) => {
-        if (result.ok) showFeedback('success', '정렬 완료', '대기열 순서가 변경되었습니다.');
-        else showFeedback('error', '정렬 실패', result.error ?? '요청 실패');
-      })
-      .catch(() => null);
+
+    void (async () => {
+      setPendingAction('reorder');
+      try {
+        const result = await sendControl('reorder', { order: nextQueue.map((track) => track.id) });
+        if (result.ok) {
+          showFeedback('success', '정렬 완료', '대기열 순서가 변경되었습니다.');
+          return;
+        }
+
+        await fetchState();
+
+        if (result.pending) {
+          showFeedback('error', '응답 지연', result.error ?? '봇 응답이 지연되고 있어요.');
+          return;
+        }
+
+        showFeedback('error', '정렬 실패', result.error ?? '요청 실패');
+      } finally {
+        setPendingAction(null);
+      }
+    })();
   };
 
   const currentDuration = useMemo(() => formatDuration(current?.length), [current?.length]);
@@ -293,7 +372,8 @@ export default function MusicControlClient() {
             <button
               type="button"
               onClick={refreshAll}
-              className="inline-flex items-center gap-2 rounded-full border border-[color:var(--border)] px-4 py-2 text-xs font-semibold hover:bg-[color:var(--chip)]"
+              disabled={isLoading || isActionPending}
+              className="inline-flex items-center gap-2 rounded-full border border-[color:var(--border)] px-4 py-2 text-xs font-semibold hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
               새로고침
@@ -334,14 +414,14 @@ export default function MusicControlClient() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') submitAdd();
                 }}
-                disabled={!canAdd}
+                disabled={!canAdd || isActionPending}
                 placeholder={canAdd ? '노래 제목 또는 URL을 입력하세요' : '재생 중인 곡이 없어서 추가할 수 없어요'}
                 className="flex-1 rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-[color:var(--accent-pink)]/20 disabled:cursor-not-allowed disabled:opacity-60"
               />
               <button
                 type="button"
                 onClick={submitAdd}
-                disabled={!canAdd}
+                disabled={!canAdd || isActionPending}
                 className="rounded-2xl border border-[color:var(--border)] px-4 py-2 text-sm font-semibold hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
               >
                 노래 추가
@@ -352,35 +432,39 @@ export default function MusicControlClient() {
               <button
                 type="button"
                 onClick={() => runAction('previous', '이전 곡으로 이동했어요.')}
-                className="rounded-2xl border border-[color:var(--border)] py-3 hover:bg-[color:var(--chip)]"
+                disabled={!canStop || isActionPending}
+                className="rounded-2xl border border-[color:var(--border)] py-3 hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
               >
                 <SkipBack className="w-5 h-5 mx-auto" />
               </button>
               <button
                 type="button"
                 onClick={() => runAction('play', '재생을 시작했어요.')}
-                className="rounded-2xl border border-[color:var(--border)] py-3 hover:bg-[color:var(--chip)]"
+                disabled={!canStop || isActionPending}
+                className="rounded-2xl border border-[color:var(--border)] py-3 hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
               >
                 <Play className="w-5 h-5 mx-auto" />
               </button>
               <button
                 type="button"
                 onClick={() => runAction('pause', '일시정지했어요.')}
-                className="rounded-2xl border border-[color:var(--border)] py-3 hover:bg-[color:var(--chip)]"
+                disabled={!canStop || isActionPending}
+                className="rounded-2xl border border-[color:var(--border)] py-3 hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
               >
                 <Pause className="w-5 h-5 mx-auto" />
               </button>
               <button
                 type="button"
                 onClick={() => runAction('stop', '재생을 중지했어요.')}
-                className="rounded-2xl border border-red-500/40 text-red-400 py-3 hover:bg-red-500/10"
+                disabled={!canStop || isActionPending}
+                className="rounded-2xl border border-red-500/40 text-red-400 py-3 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
               >
                 <Square className="w-5 h-5 mx-auto" />
               </button>
               <button
                 type="button"
                 onClick={() => runAction('skip', '다음 곡으로 이동했어요.')}
-                disabled={!canSkip}
+                disabled={!canSkip || isActionPending}
                 className="rounded-2xl border border-[color:var(--border)] py-3 hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
               >
                 <SkipForward className="w-5 h-5 mx-auto" />

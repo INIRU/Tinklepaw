@@ -38,6 +38,15 @@ const logAction = async (job: MusicControlJob, status: string, message: string |
   });
 };
 
+const failJob = (message: string): never => {
+  throw new Error(message);
+};
+
+const asPayloadObject = (payload: Json | null): Record<string, Json> | null => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  return payload as Record<string, Json>;
+};
+
 const reorderQueue = (player: KazagumoPlayer, order: string[]) => {
   if (!player || !Array.isArray(order) || order.length === 0) return;
   const current = player.queue.slice(0);
@@ -52,73 +61,88 @@ const handleJob = async (job: MusicControlJob) => {
   const music = getMusic();
   const player = music.players.get(job.guild_id);
   if (!player) {
-    if (job.action === 'stop') {
-      await clearMusicState(job.guild_id).catch(() => {});
-      await logAction(job, 'success', 'No active player for guild (state cleared)');
-      return;
-    }
-
-    await logAction(job, 'failed', 'No active player for guild');
-    return;
+    throw new Error('현재 재생 중인 음악이 없습니다.');
   }
+  const activePlayer = player;
 
   switch (job.action) {
     case 'play':
-      if (player.paused) player.pause(false);
-      else await player.play();
-      await logAction(job, 'success', 'Playback started');
+      if (activePlayer.playing && !activePlayer.paused) {
+        failJob('이미 재생 중입니다.');
+      }
+      if (!activePlayer.paused && !activePlayer.queue.current && activePlayer.queue.size < 1) {
+        failJob('재생할 곡이 없습니다.');
+      }
+      if (activePlayer.paused) {
+        activePlayer.pause(false);
+      } else {
+        await activePlayer.play();
+      }
+      await logAction(job, 'success', '재생을 시작했어요.');
       break;
     case 'pause':
-      player.pause(true);
-      await logAction(job, 'success', 'Playback paused');
+      if (!activePlayer.playing || activePlayer.paused) {
+        failJob('이미 일시정지 상태입니다.');
+      }
+      activePlayer.pause(true);
+      await logAction(job, 'success', '일시정지했어요.');
       break;
     case 'stop':
-      player.destroy();
-      updateMusicSetupMessage(player, null).catch(() => {});
+      if (!activePlayer.queue.current && !activePlayer.playing && !activePlayer.paused && activePlayer.queue.size < 1) {
+        failJob('현재 재생 중인 음악이 없습니다.');
+      }
+      activePlayer.destroy();
+      updateMusicSetupMessage(activePlayer, null).catch(() => {});
       clearMusicState(job.guild_id).catch(() => {});
-      await logAction(job, 'success', 'Playback stopped');
+      await logAction(job, 'success', '재생을 중지했어요.');
       break;
     case 'skip':
-      player.skip();
+      if (!activePlayer.queue.current) {
+        failJob('현재 재생 중인 음악이 없습니다.');
+      }
+      if (activePlayer.queue.size < 1) {
+        failJob('다음 곡이 없습니다.');
+      }
+      activePlayer.skip();
       setTimeout(() => {
-        updateMusicState(player).catch(() => {});
+        updateMusicState(activePlayer).catch(() => {});
       }, 700);
-      await logAction(job, 'success', 'Skipped to next track');
+      await logAction(job, 'success', '다음 곡으로 이동했어요.');
       break;
     case 'previous': {
-      const previous = player.getPrevious(true);
+      const previous = activePlayer.getPrevious(true);
       if (!previous) {
-        await logAction(job, 'failed', 'No previous track');
-        break;
+        failJob('이전 곡이 없습니다.');
       }
-      await player.play(previous);
+      await activePlayer.play(previous);
       setTimeout(() => {
-        updateMusicState(player).catch(() => {});
+        updateMusicState(activePlayer).catch(() => {});
       }, 700);
-      await logAction(job, 'success', 'Moved to previous track');
+      await logAction(job, 'success', '이전 곡으로 이동했어요.');
       break;
     }
     case 'reorder': {
-      const payload = job.payload && typeof job.payload === 'object' && !Array.isArray(job.payload) ? (job.payload as { order?: Json }) : null;
+      const payload = asPayloadObject(job.payload) as { order?: Json } | null;
       const orderRaw = payload?.order;
       const order = Array.isArray(orderRaw) ? orderRaw.filter((id): id is string => typeof id === 'string') : [];
-      reorderQueue(player, order);
-      await updateMusicSetupMessage(player, player.queue.current ?? null).catch(() => {});
-      await updateMusicState(player).catch(() => {});
-      await logAction(job, 'success', 'Queue reordered');
+      if (order.length < 1) {
+        failJob('정렬할 대기열이 없습니다.');
+      }
+      reorderQueue(activePlayer, order);
+      await updateMusicSetupMessage(activePlayer, activePlayer.queue.current ?? null).catch(() => {});
+      await updateMusicState(activePlayer).catch(() => {});
+      await logAction(job, 'success', '대기열 순서를 변경했어요.');
       break;
     }
     case 'add': {
-      const payload = job.payload && typeof job.payload === 'object' && !Array.isArray(job.payload) ? (job.payload as { query?: Json }) : null;
+      const payload = asPayloadObject(job.payload) as { query?: Json } | null;
       const query = typeof payload?.query === 'string' ? normalizeQuery(payload?.query) : '';
       if (!query) {
-        await logAction(job, 'failed', 'Missing query');
-        break;
+        failJob('추가할 검색어를 입력해 주세요.');
       }
 
       if (isSpotifyUrl(query)) {
-        await logAction(job, 'failed', 'Spotify URL은 아직 지원하지 않아요. YouTube 또는 SoundCloud URL을 사용해 주세요.');
-        break;
+        failJob('Spotify URL은 아직 지원하지 않아요. YouTube 또는 SoundCloud URL을 사용해 주세요.');
       }
 
       const searchResult = await music.search(query, {
@@ -126,29 +150,28 @@ const handleJob = async (job: MusicControlJob) => {
       });
 
       if (!searchResult.tracks.length) {
-        await logAction(job, 'failed', 'No search results');
-        break;
+        failJob('검색 결과가 없습니다.');
       }
 
       if (searchResult.type === 'PLAYLIST') {
-        player.queue.add(searchResult.tracks);
-        await logAction(job, 'success', `Added playlist (${searchResult.tracks.length} tracks)`);
+        activePlayer.queue.add(searchResult.tracks);
+        await logAction(job, 'success', `플레이리스트 ${searchResult.tracks.length}곡을 추가했어요.`);
       } else {
         const track = searchResult.tracks[0];
-        player.queue.add(track);
-        await logAction(job, 'success', `Added track: ${track.title}`);
+        activePlayer.queue.add(track);
+        await logAction(job, 'success', `${track.title}을(를) 대기열에 추가했어요.`);
       }
 
-      if (!player.playing && !player.paused) {
-        await player.play();
+      if (!activePlayer.playing && !activePlayer.paused) {
+        await activePlayer.play();
       }
 
-      await updateMusicSetupMessage(player, player.queue.current ?? null).catch(() => {});
-      await updateMusicState(player).catch(() => {});
+      await updateMusicSetupMessage(activePlayer, activePlayer.queue.current ?? null).catch(() => {});
+      await updateMusicState(activePlayer).catch(() => {});
       break;
     }
     default:
-      await logAction(job, 'failed', `Unknown action: ${job.action}`);
+      failJob(`지원하지 않는 명령입니다: ${job.action}`);
   }
 };
 
@@ -156,6 +179,15 @@ export function startMusicControlWorker() {
   let isRunning = false;
   let pendingRerun = false;
   const ctx = getBotContext();
+
+  const cleanupCompletedJobs = async () => {
+    const expiresAt = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    await ctx.supabase
+      .from('music_control_jobs')
+      .delete()
+      .in('status', ['succeeded', 'failed'])
+      .lt('updated_at', expiresAt);
+  };
 
   const tick = async () => {
     if (isRunning) {
@@ -212,7 +244,6 @@ export function startMusicControlWorker() {
             .eq('job_id', job.job_id);
           await logAction(job, 'failed', errorMessage);
         } finally {
-          await ctx.supabase.from('music_control_jobs').delete().eq('job_id', job.job_id);
           console.log('[MusicWorker] job end', {
             jobId: job.job_id,
             guildId: job.guild_id,
@@ -223,6 +254,10 @@ export function startMusicControlWorker() {
         }
       }
     } finally {
+      await cleanupCompletedJobs().catch((error) => {
+        console.error('[MusicWorker] cleanup failed', error);
+      });
+
       isRunning = false;
 
       if (pendingRerun) {
