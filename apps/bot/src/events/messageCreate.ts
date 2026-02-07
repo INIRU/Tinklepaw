@@ -15,6 +15,15 @@ import { generateInventoryEmbed } from '../services/inventory.js';
 import { getChannelMentions } from '../services/channelCache.js';
 import type { Json } from '@nyaru/core';
 
+const MUSIC_REPLY_TTL_MS = 15000;
+const MUSIC_REQUEST_DELETE_DELAY_MS = 3000;
+
+const scheduleDelete = (message: Message, delayMs: number) => {
+  setTimeout(() => {
+    void message.delete().catch(() => {});
+  }, delayMs);
+};
+
 function isMentionOrReplyToBot(message: Message, botUserId: string): boolean {
   const content = message.content.trimStart();
   if (content.startsWith(`<@${botUserId}>`) || content.startsWith(`<@!${botUserId}>`)) return true;
@@ -72,6 +81,13 @@ export function registerMessageCreate(client: Client) {
       const query = normalizeMusicQuery(message.content);
       if (!query) return;
 
+      scheduleDelete(message, MUSIC_REQUEST_DELETE_DELAY_MS);
+
+      const replyMusic = async (content: string) => {
+        const response = await message.reply(content);
+        scheduleDelete(response, MUSIC_REPLY_TTL_MS);
+      };
+
       const logMusicAction = async (
         status: 'requested' | 'success' | 'failed',
         actionMessage: string,
@@ -98,7 +114,7 @@ export function registerMessageCreate(client: Client) {
           source: 'discord_message',
           query
         });
-        await message.reply('🎧 먼저 음성 채널에 들어와줘.');
+        await replyMusic('🎧 먼저 음성 채널에 들어와줘.');
         return;
       }
 
@@ -107,7 +123,7 @@ export function registerMessageCreate(client: Client) {
           source: 'discord_message',
           query
         });
-        await message.reply('🚫 Spotify URL은 아직 지원하지 않아. YouTube나 SoundCloud 링크를 써줘.');
+        await replyMusic('🚫 Spotify URL은 아직 지원하지 않아. YouTube나 SoundCloud 링크를 써줘.');
         return;
       }
 
@@ -119,7 +135,7 @@ export function registerMessageCreate(client: Client) {
           query,
           node_summary: nodeStatus.summary
         });
-        await message.reply(`🚫 Lavalink 연결 상태를 확인해줘.\n${nodeStatus.summary}`);
+        await replyMusic(`🚫 Lavalink 연결 상태를 확인해줘.\n${nodeStatus.summary}`);
         return;
       }
 
@@ -137,7 +153,7 @@ export function registerMessageCreate(client: Client) {
           user_voice_id: voiceId,
           player_voice_id: player.voiceId
         });
-        await message.reply('🚫 현재 음악이 재생 중인 음성 채널에서만 추가할 수 있어.');
+        await replyMusic('🚫 현재 음악이 재생 중인 음성 채널에서만 추가할 수 있어.');
         return;
       }
 
@@ -156,7 +172,7 @@ export function registerMessageCreate(client: Client) {
           fallback_used: searchResult.fallbackUsed,
           fallback_query: searchResult.fallbackQuery
         });
-        await message.reply('🔎 검색 결과가 없어. URL이면 자동 보정 검색도 시도했지만 실패했어.');
+        await replyMusic('🔎 검색 결과가 없어. URL이면 자동 보정 검색도 시도했지만 실패했어.');
         return;
       }
 
@@ -173,7 +189,7 @@ export function registerMessageCreate(client: Client) {
           fallback_query: searchResult.fallbackQuery,
           count: searchResult.result.tracks.length
         });
-        await message.reply(`📚 **${searchResult.result.playlistName ?? '플레이리스트'}** ${searchResult.result.tracks.length}곡을 추가했어.${fallbackSuffix}`);
+        await replyMusic(`📚 **${searchResult.result.playlistName ?? '플레이리스트'}** ${searchResult.result.tracks.length}곡을 추가했어.${fallbackSuffix}`);
       } else {
         const track = searchResult.result.tracks[0];
         player.queue.add(track);
@@ -184,7 +200,7 @@ export function registerMessageCreate(client: Client) {
           fallback_used: searchResult.fallbackUsed,
           fallback_query: searchResult.fallbackQuery
         });
-        await message.reply(`➕ **${track.title}** 을(를) 대기열에 추가했어.${fallbackSuffix}`);
+        await replyMusic(`➕ **${track.title}** 을(를) 대기열에 추가했어.${fallbackSuffix}`);
       }
 
       if (!player.playing && !player.paused) {

@@ -100,15 +100,22 @@ const drawCircleImage = (ctx: CanvasRenderingContext2D, image: Image, x: number,
 const drawChip = (ctx: CanvasRenderingContext2D, x: number, y: number, text: string, tone: 'green' | 'slate') => {
   ctx.font = `600 10px ${numberFontFamily}`;
   const textWidth = ctx.measureText(text).width;
-  const width = textWidth + 16;
-  const bg = tone === 'green' ? 'rgba(29,185,84,0.2)' : 'rgba(148,163,184,0.2)';
-  const fg = tone === 'green' ? '#6ee7b7' : '#cbd5e1';
+  const width = textWidth + 18;
+  const height = 18;
+  const radius = 9;
+  const bg = tone === 'green' ? 'rgba(29,185,84,0.24)' : 'rgba(100,116,139,0.28)';
+  const border = tone === 'green' ? 'rgba(110,231,183,0.45)' : 'rgba(203,213,225,0.28)';
+  const fg = tone === 'green' ? '#a7f3d0' : '#e2e8f0';
   ctx.fillStyle = bg;
-  drawRoundedRect(ctx, x, y, width, 20, 10);
+  drawRoundedRect(ctx, x, y, width, height, radius);
   ctx.fill();
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 1;
+  drawRoundedRect(ctx, x, y, width, height, radius);
+  ctx.stroke();
   ctx.fillStyle = fg;
   ctx.textAlign = 'left';
-  ctx.fillText(text, x + 8, y + 13);
+  ctx.fillText(text, x + 9, y + 12);
   return width;
 };
 
@@ -222,7 +229,7 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
   const titleStartY = artY + artSize + 36;
   const titleLineHeight = 22;
   const maxTitleLines = 3;
-  const barY = leftPanelY + leftPanelHeight - 34;
+  const barY = leftPanelY + leftPanelHeight - 26;
   const maxTextBottom = barY - 12;
   const artistGap = 10;
   const artistLineHeight = 14;
@@ -250,7 +257,7 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
   ctx.font = `12px ${fontFamily}`;
   ctx.fillText(artistText, textCenterX, artistY);
 
-  const chipY = artistY + 10;
+  const chipY = Math.min(artistY + 12, barY - 30);
   const chipStartX = leftPanelX + 18;
   const autoplayLabel = params.autoplayEnabled === false ? 'AUTO OFF' : 'AUTO ON';
   const filterLabel = params.filterLabel ?? '필터 해제';
