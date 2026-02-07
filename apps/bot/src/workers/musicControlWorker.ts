@@ -3,20 +3,8 @@ import type { KazagumoPlayer } from 'kazagumo';
 
 import { getBotContext } from '../context.js';
 import { getAppConfig } from '../services/config.js';
+import { isSpotifyQuery, searchTracksWithFallback } from '../services/musicSearch.js';
 import { clearMusicState, getMusic, updateMusicSetupMessage, updateMusicState } from '../services/music.js';
-
-const normalizeQuery = (raw: string) => {
-  const trimmed = raw.trim().replace(/^<(.+)>$/, '$1').trim();
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  if (/^spotify:/i.test(trimmed)) {
-    const parts = trimmed.split(':');
-    if (parts.length >= 3) return `https://open.spotify.com/${parts[1]}/${parts[2]}`;
-  }
-  if (/^[\w.-]+\.[a-z]{2,}(\/|$)/i.test(trimmed)) return `https://${trimmed}`;
-  return trimmed;
-};
-
-const isSpotifyUrl = (value: string) => /spotify\.com/i.test(value) || /^spotify:/i.test(value);
 
 type MusicControlJob = {
   job_id: string;
@@ -42,6 +30,20 @@ const failJob = (message: string): never => {
   throw new Error(message);
 };
 
+const ensureInteger = (value: number | null, message: string): number => {
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    throw new Error(message);
+  }
+  return value;
+};
+
+const ensurePresent = <T>(value: T | null, message: string): T => {
+  if (value === null) {
+    throw new Error(message);
+  }
+  return value;
+};
+
 const asPayloadObject = (payload: Json | null): Record<string, Json> | null => {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
   return payload as Record<string, Json>;
@@ -55,6 +57,15 @@ const reorderQueue = (player: KazagumoPlayer, order: string[]) => {
   const remaining = current.filter((track) => !order.includes(track.track));
   player.queue.clear();
   player.queue.add([...next, ...remaining]);
+};
+
+const removeQueueTrack = (player: KazagumoPlayer, index: number) => {
+  const queue = player.queue.slice(0);
+  if (index < 0 || index >= queue.length) return null;
+  const [removed] = queue.splice(index, 1);
+  player.queue.clear();
+  player.queue.add(queue);
+  return removed ?? null;
 };
 
 const handleJob = async (job: MusicControlJob) => {
@@ -134,32 +145,70 @@ const handleJob = async (job: MusicControlJob) => {
       await logAction(job, 'success', '대기열 순서를 변경했어요.');
       break;
     }
+    case 'remove': {
+      const payload = asPayloadObject(job.payload) as { trackId?: Json; index?: Json } | null;
+      const trackId = typeof payload?.trackId === 'string' ? payload.trackId : null;
+      const index = typeof payload?.index === 'number' ? payload.index : null;
+      const queue = activePlayer.queue.slice(0);
+
+      if (queue.length < 1) {
+        failJob('삭제할 대기열이 없습니다.');
+      }
+
+      const queueIndexFromId = trackId ? queue.findIndex((track) => track.track === trackId) : -1;
+      const targetIndexRaw = queueIndexFromId >= 0 ? queueIndexFromId : index;
+      const targetIndex = ensureInteger(targetIndexRaw, '삭제할 곡 정보를 찾지 못했습니다.');
+
+      const removed = ensurePresent(removeQueueTrack(activePlayer, targetIndex), '삭제할 곡 정보를 찾지 못했습니다.');
+      const removedTitle = removed.title;
+
+      await updateMusicSetupMessage(activePlayer, activePlayer.queue.current ?? null).catch(() => {});
+      await updateMusicState(activePlayer).catch(() => {});
+      await logAction(job, 'success', `${removedTitle}을(를) 대기열에서 삭제했어요.`);
+      break;
+    }
+    case 'clear': {
+      if (activePlayer.queue.size < 1) {
+        failJob('비울 대기열이 없습니다.');
+      }
+
+      activePlayer.queue.clear();
+      await updateMusicSetupMessage(activePlayer, activePlayer.queue.current ?? null).catch(() => {});
+      await updateMusicState(activePlayer).catch(() => {});
+      await logAction(job, 'success', '대기열을 비웠어요.');
+      break;
+    }
     case 'add': {
       const payload = asPayloadObject(job.payload) as { query?: Json } | null;
-      const query = typeof payload?.query === 'string' ? normalizeQuery(payload?.query) : '';
+      const query = typeof payload?.query === 'string' ? payload.query : '';
       if (!query) {
         failJob('추가할 검색어를 입력해 주세요.');
       }
 
-      if (isSpotifyUrl(query)) {
+      if (isSpotifyQuery(query)) {
         failJob('Spotify URL은 아직 지원하지 않아요. YouTube 또는 SoundCloud URL을 사용해 주세요.');
       }
 
-      const searchResult = await music.search(query, {
-        requester: { id: job.requested_by ?? 'web', username: 'web' }
+      const searchResult = await searchTracksWithFallback(music, query, {
+        id: job.requested_by ?? 'web',
+        username: 'web'
       });
 
-      if (!searchResult.tracks.length) {
-        failJob('검색 결과가 없습니다.');
+      if (!searchResult.result.tracks.length) {
+        failJob('검색 결과가 없습니다. URL이면 자동 보정 검색도 시도했지만 실패했어요.');
       }
 
-      if (searchResult.type === 'PLAYLIST') {
-        activePlayer.queue.add(searchResult.tracks);
-        await logAction(job, 'success', `플레이리스트 ${searchResult.tracks.length}곡을 추가했어요.`);
+      const fallbackNote = searchResult.fallbackUsed && searchResult.fallbackQuery
+        ? ` (URL 자동 보정: ${searchResult.fallbackQuery})`
+        : '';
+
+      if (searchResult.result.type === 'PLAYLIST') {
+        activePlayer.queue.add(searchResult.result.tracks);
+        await logAction(job, 'success', `플레이리스트 ${searchResult.result.tracks.length}곡을 추가했어요.${fallbackNote}`);
       } else {
-        const track = searchResult.tracks[0];
+        const track = searchResult.result.tracks[0];
         activePlayer.queue.add(track);
-        await logAction(job, 'success', `${track.title}을(를) 대기열에 추가했어요.`);
+        await logAction(job, 'success', `${track.title}을(를) 대기열에 추가했어요.${fallbackNote}`);
       }
 
       if (!activePlayer.playing && !activePlayer.paused) {

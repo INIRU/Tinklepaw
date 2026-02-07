@@ -54,11 +54,24 @@ async function syncHeartbeat() {
 }
 
 const STATUS_SAMPLE_INTERVAL_MS = 10 * 60 * 1000;
+const MONITOR_ALERT_STREAK = 3;
+const MONITOR_ALERT_COOLDOWN_MS = 15 * 60 * 1000;
+const MONITOR_LOG_INTERVAL_MS = 2 * 60 * 1000;
 
 type StatusSample = {
   service: 'bot' | 'lavalink';
   status: 'operational' | 'degraded' | 'down' | 'unknown';
 };
+
+type ServiceHealth = StatusSample & {
+  message: string;
+  latencyMs: number | null;
+};
+
+const serviceFailureStreak = new Map<StatusSample['service'], number>();
+const serviceLastAlertAt = new Map<StatusSample['service'], number>();
+const serviceLastMonitorLogAt = new Map<StatusSample['service'], number>();
+const serviceLastObservedStatus = new Map<StatusSample['service'], StatusSample['status']>();
 
 async function recordStatusSample(sample: StatusSample) {
   const ctx = getBotContext();
@@ -94,25 +107,106 @@ async function recordStatusSample(sample: StatusSample) {
   }
 }
 
-async function syncStatusSamples() {
-  const samples: StatusSample[] = [{ service: 'bot', status: 'operational' }];
+const trackFailure = (service: StatusSample['service'], status: StatusSample['status']) => {
+  const isFailure = status === 'down' || status === 'degraded' || status === 'unknown';
+  if (!isFailure) {
+    serviceFailureStreak.set(service, 0);
+    return 0;
+  }
+
+  const next = (serviceFailureStreak.get(service) ?? 0) + 1;
+  serviceFailureStreak.set(service, next);
+  return next;
+};
+
+const logMonitoringEvent = async (client: Client, health: ServiceHealth, streak: number) => {
+  const ctx = getBotContext();
+  const now = Date.now();
+  const key = health.service;
+  const previousStatus = serviceLastObservedStatus.get(key);
+  const lastLogAt = serviceLastMonitorLogAt.get(key) ?? 0;
+  const shouldLogTransition = previousStatus !== health.status;
+  const shouldLogInterval = health.status !== 'operational' && now - lastLogAt >= MONITOR_LOG_INTERVAL_MS;
+
+  if (!shouldLogTransition && !shouldLogInterval) {
+    return;
+  }
+
+  await ctx.supabase.from('music_control_logs').insert({
+    guild_id: ctx.env.NYARU_GUILD_ID,
+    action: 'monitor',
+    status: health.status,
+    message: `${health.service} 상태: ${health.status} (${health.message})`,
+    payload: {
+      service: health.service,
+      status: health.status,
+      latency_ms: health.latencyMs,
+      streak
+    },
+    requested_by: null
+  });
+
+  serviceLastMonitorLogAt.set(key, now);
+  serviceLastObservedStatus.set(key, health.status);
+
+  const shouldAlert = streak >= MONITOR_ALERT_STREAK && health.status !== 'operational';
+  if (!shouldAlert) {
+    return;
+  }
+
+  const lastAlertAt = serviceLastAlertAt.get(key) ?? 0;
+  if (now - lastAlertAt < MONITOR_ALERT_COOLDOWN_MS) {
+    return;
+  }
+
+  const config = await getAppConfig().catch(() => null);
+  const channelId = config?.error_log_channel_id;
+  if (!channelId) {
+    return;
+  }
+
+  const channel = await client.channels.fetch(channelId).catch(() => null);
+  if (!channel || !channel.isTextBased() || !("send" in channel)) {
+    return;
+  }
+
+  await channel.send(
+    [
+      '⚠️ **Nyaru 모니터링 경고**',
+      `서비스: ${health.service}`,
+      `상태: ${health.status}`,
+      `연속 실패: ${streak}회`,
+      `세부: ${health.message}${health.latencyMs !== null ? ` (latency: ${health.latencyMs}ms)` : ''}`
+    ].join('\n')
+  );
+  serviceLastAlertAt.set(key, now);
+};
+
+async function syncStatusSamples(client: Client) {
+  const samples: ServiceHealth[] = [{ service: 'bot', status: 'operational', message: 'running', latencyMs: null }];
 
   try {
     const music = getMusic();
     const nodeStatus = getNodeStatus(music);
     if (nodeStatus.ready) {
-      samples.push({ service: 'lavalink', status: 'operational' });
+      samples.push({ service: 'lavalink', status: 'operational', message: nodeStatus.summary, latencyMs: null });
     } else if (nodeStatus.summary.includes('연결된 Lavalink 노드가 없습니다')) {
-      samples.push({ service: 'lavalink', status: 'down' });
+      samples.push({ service: 'lavalink', status: 'down', message: nodeStatus.summary, latencyMs: null });
     } else {
-      samples.push({ service: 'lavalink', status: 'degraded' });
+      samples.push({ service: 'lavalink', status: 'degraded', message: nodeStatus.summary, latencyMs: null });
     }
   } catch (error) {
     console.warn('[StatusSamples] Failed to read Lavalink status:', error);
-    samples.push({ service: 'lavalink', status: 'unknown' });
+    samples.push({ service: 'lavalink', status: 'unknown', message: 'status read failed', latencyMs: null });
   }
 
-  await Promise.all(samples.map(recordStatusSample));
+  await Promise.all(samples.map(async (sample) => {
+    await recordStatusSample({ service: sample.service, status: sample.status });
+    const streak = trackFailure(sample.service, sample.status);
+    await logMonitoringEvent(client, sample, streak).catch((error) => {
+      console.warn('[StatusSamples] Failed to write monitoring event:', error);
+    });
+  }));
 }
 
 export function startRoleSyncWorker(client: Client) {
@@ -126,7 +220,7 @@ export function startRoleSyncWorker(client: Client) {
       const ctx = getBotContext();
       
       await syncHeartbeat();
-      await syncStatusSamples();
+      await syncStatusSamples(client);
 
       const { data: jobs, error } = await ctx.supabase
         .from('role_sync_jobs')

@@ -6,13 +6,48 @@ import { getServerEnv } from '@/lib/server/env';
 
 export const runtime = 'nodejs';
 
-const CONTROL_ACTIONS = new Set(['play', 'pause', 'stop', 'skip', 'previous', 'reorder', 'add'] as const);
+const CONTROL_ACTIONS = new Set([
+  'play',
+  'pause',
+  'stop',
+  'skip',
+  'previous',
+  'reorder',
+  'add',
+  'remove',
+  'clear'
+] as const);
 const JOB_ACK_TIMEOUT_MS = 12000;
 const JOB_POLL_INTERVAL_MS = 180;
 
 type ControlPayload = {
-  action: 'play' | 'pause' | 'stop' | 'skip' | 'previous' | 'reorder' | 'add';
-  payload?: { order?: string[]; query?: string };
+  action: 'play' | 'pause' | 'stop' | 'skip' | 'previous' | 'reorder' | 'add' | 'remove' | 'clear';
+  payload?: { order?: string[]; query?: string; trackId?: string; index?: number };
+};
+
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
+
+const validatePayload = (action: ControlPayload['action'], payload: unknown): string | null => {
+  if (!isObject(payload)) {
+    return ['add', 'reorder', 'remove'].includes(action) ? 'INVALID_PAYLOAD' : null;
+  }
+
+  if (action === 'add') {
+    return typeof payload.query === 'string' && payload.query.trim().length > 0 ? null : 'INVALID_QUERY';
+  }
+
+  if (action === 'reorder') {
+    if (!Array.isArray(payload.order) || payload.order.length === 0) return 'INVALID_ORDER';
+    return payload.order.every((item) => typeof item === 'string' && item.length > 0) ? null : 'INVALID_ORDER';
+  }
+
+  if (action === 'remove') {
+    if (typeof payload.trackId === 'string' && payload.trackId.length > 0) return null;
+    if (typeof payload.index === 'number' && Number.isInteger(payload.index)) return null;
+    return 'INVALID_REMOVE_TARGET';
+  }
+
+  return null;
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -66,6 +101,10 @@ export async function POST(request: Request) {
   }
 
   const payload = body.payload ?? {};
+  const payloadError = validatePayload(body.action, payload);
+  if (payloadError) {
+    return NextResponse.json({ error: payloadError }, { status: 400 });
+  }
   const requestedBy = ctx.session.user.id;
 
   const { data: job, error } = await supabase

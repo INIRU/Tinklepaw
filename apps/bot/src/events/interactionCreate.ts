@@ -6,6 +6,7 @@ import { commands } from '../commands/index.js';
 import { handleError } from '../errorHandler.js';
 import { getBotContext } from '../context.js';
 import { getAppConfig } from '../services/config.js';
+import { isSpotifyQuery, normalizeMusicQuery, searchTracksWithFallback } from '../services/musicSearch.js';
 import { clearMusicState, formatDuration, getMusic, getNodeStatus, updateMusicSetupMessage, updateMusicState } from '../services/music.js';
 
 import type { SlashCommand } from '../commands/types.js';
@@ -20,19 +21,6 @@ const formatQueueLine = (track: { title: string; uri?: string | null; length?: n
   const link = track.uri ? `[${track.title}](${track.uri})` : track.title;
   return `\`${index + 1}.\` ${link} \`${duration}\``;
 };
-
-const normalizeQuery = (raw: string) => {
-  const trimmed = raw.trim().replace(/^<(.+)>$/, '$1').trim();
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  if (/^spotify:/i.test(trimmed)) {
-    const parts = trimmed.split(':');
-    if (parts.length >= 3) return `https://open.spotify.com/${parts[1]}/${parts[2]}`;
-  }
-  if (/^[\w.-]+\.[a-z]{2,}(\/|$)/i.test(trimmed)) return `https://${trimmed}`;
-  return trimmed;
-};
-
-const isSpotifyUrl = (value: string) => /spotify\.com/i.test(value) || /^spotify:/i.test(value);
 
 const scheduleMusicStateUpdate = (player: KazagumoPlayer, delayMs = 700) => {
   setTimeout(() => {
@@ -219,7 +207,7 @@ export function registerInteractionCreate(client: Client) {
         return;
       }
 
-      const query = normalizeQuery(interaction.fields.getTextInputValue('music_query'));
+      const query = normalizeMusicQuery(interaction.fields.getTextInputValue('music_query'));
       if (!query) {
         await interaction.reply({ embeds: [buildMusicStatusEmbed('🔎 검색어 필요', '검색어 또는 URL을 입력해 주세요.')], ephemeral: true });
         return;
@@ -256,38 +244,50 @@ export function registerInteractionCreate(client: Client) {
         volume: 60
       });
 
-      if (isSpotifyUrl(query)) {
+      if (isSpotifyQuery(query)) {
         await interaction.editReply({
           embeds: [buildMusicStatusEmbed('🚫 Spotify 미지원', 'Spotify URL은 아직 지원하지 않아요. YouTube 또는 SoundCloud URL을 사용해 주세요.')]
         });
         return;
       }
 
-      const searchResult = await music.search(query, { requester: interaction.user });
-      if (!searchResult.tracks.length) {
-        await interaction.editReply({ embeds: [buildMusicStatusEmbed('🔎 검색 실패', '검색 결과가 없습니다. 다른 검색어를 시도해 보세요.')] });
+      const searchResult = await searchTracksWithFallback(music, query, {
+        id: interaction.user.id,
+        username: interaction.user.username
+      });
+      if (!searchResult.result.tracks.length) {
+        await interaction.editReply({
+          embeds: [buildMusicStatusEmbed('🔎 검색 실패', '검색 결과가 없습니다. URL 자동 보정 검색도 시도했지만 실패했습니다.')] 
+        });
         return;
       }
 
-      if (searchResult.type === 'PLAYLIST') {
-        player.queue.add(searchResult.tracks);
-        updateMusicSetupMessage(player, player.queue.current ?? searchResult.tracks[0]).catch(() => {});
+      const fallbackLine =
+        searchResult.fallbackUsed && searchResult.fallbackQuery
+          ? `\n\n자동 보정 검색: \`${searchResult.fallbackQuery}\``
+          : '';
+
+      if (searchResult.result.type === 'PLAYLIST') {
+        player.queue.add(searchResult.result.tracks);
+        updateMusicSetupMessage(player, player.queue.current ?? searchResult.result.tracks[0]).catch(() => {});
         await interaction.editReply({
           embeds: [
             new EmbedBuilder()
               .setTitle('📚 플레이리스트 추가됨')
-              .setDescription(`**${searchResult.playlistName ?? '플레이리스트'}** (${searchResult.tracks.length}곡)`)
+              .setDescription(
+                `**${searchResult.result.playlistName ?? '플레이리스트'}** (${searchResult.result.tracks.length}곡)${fallbackLine}`
+              )
               .setColor(musicUiColor)
           ]
         });
       } else {
-        const track = searchResult.tracks[0];
+        const track = searchResult.result.tracks[0];
         player.queue.add(track);
         updateMusicSetupMessage(player, player.queue.current ?? track).catch(() => {});
         const position = Math.max(player.queue.slice(0).length, 1);
         const duration = track.length ? formatDuration(track.length) : 'LIVE';
         const title = track.uri ? `[${track.title}](${track.uri})` : track.title;
-        const description = `${title} • ${duration}`;
+        const description = `${title} • ${duration}${fallbackLine}`;
         const titleText = `<a:JIN_1_1:1459073997567295520> 대기열 ${position}번에 추가되었어요.`;
         const botUser = interaction.client.user;
         const embed = new EmbedBuilder()

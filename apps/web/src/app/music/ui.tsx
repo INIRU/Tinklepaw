@@ -3,7 +3,7 @@
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Pause, Play, RefreshCw, SkipBack, SkipForward, Square, ListMusic, GripVertical } from 'lucide-react';
+import { Pause, Play, RefreshCw, SkipBack, SkipForward, Square, ListMusic, GripVertical, Trash2, Activity, AlertTriangle } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 
@@ -37,7 +37,31 @@ type MusicLog = {
   created_at: string;
 };
 
-type ControlAction = 'play' | 'pause' | 'stop' | 'skip' | 'previous' | 'add' | 'reorder';
+type MonitorStatus = 'operational' | 'degraded' | 'down' | 'unknown';
+
+type MonitorSample = {
+  service: 'bot' | 'lavalink';
+  status: MonitorStatus;
+  created_at: string;
+};
+
+type MonitorIncident = {
+  log_id: string;
+  status: string;
+  message: string | null;
+  payload: Record<string, unknown> | null;
+  created_at: string;
+};
+
+type MonitorResponse = {
+  services: {
+    bot: MonitorSample[];
+    lavalink: MonitorSample[];
+  };
+  incidents: MonitorIncident[];
+};
+
+type ControlAction = 'play' | 'pause' | 'stop' | 'skip' | 'previous' | 'add' | 'reorder' | 'remove' | 'clear';
 
 type ControlResult = {
   ok: boolean;
@@ -75,7 +99,76 @@ const truncateText = (value: string, maxLength: number) => {
   return `${value.slice(0, maxLength - 1)}…`;
 };
 
-const QueueRow = ({ track }: { track: MusicTrack }) => {
+const normalizeStatus = (value: string): MonitorStatus => {
+  if (value === 'operational' || value === 'degraded' || value === 'down') return value;
+  return 'unknown';
+};
+
+const STATUS_LABEL: Record<MonitorStatus, string> = {
+  operational: '정상',
+  degraded: '지연',
+  down: '다운',
+  unknown: '알 수 없음'
+};
+
+const STATUS_BADGE: Record<MonitorStatus, string> = {
+  operational: 'bg-emerald-500/15 text-emerald-300 border-emerald-400/40',
+  degraded: 'bg-amber-500/15 text-amber-300 border-amber-400/40',
+  down: 'bg-rose-500/15 text-rose-300 border-rose-400/40',
+  unknown: 'bg-zinc-500/15 text-zinc-300 border-zinc-400/40'
+};
+
+const STATUS_DOT: Record<MonitorStatus, string> = {
+  operational: 'bg-emerald-400',
+  degraded: 'bg-amber-400',
+  down: 'bg-rose-400',
+  unknown: 'bg-zinc-400'
+};
+
+const statusLabel = (value: string) => STATUS_LABEL[normalizeStatus(value)];
+
+const ServiceStatusCard = ({ title, samples }: { title: string; samples: MonitorSample[] }) => {
+  const latest = samples.at(-1);
+  const status = normalizeStatus(latest?.status ?? 'unknown');
+  const bars = samples.slice(-24);
+
+  return (
+    <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/60 p-4 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-[0.12em] muted">Service</p>
+          <h3 className="text-sm font-semibold">{title}</h3>
+        </div>
+        <span className={`inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-semibold ${STATUS_BADGE[status]}`}>
+          {STATUS_LABEL[status]}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-1.5">
+        {bars.length === 0 ? (
+          <div className="text-xs muted">샘플 없음</div>
+        ) : (
+          bars.map((sample, index) => {
+            const sampleStatus = normalizeStatus(sample.status);
+            return (
+              <span
+                key={`${sample.created_at}-${index}`}
+                title={`${new Date(sample.created_at).toLocaleString()} · ${STATUS_LABEL[sampleStatus]}`}
+                className={`h-2.5 flex-1 rounded-full ${STATUS_DOT[sampleStatus]}`}
+              />
+            );
+          })
+        )}
+      </div>
+
+      <p className="text-xs muted">
+        최신 갱신: {latest ? new Date(latest.created_at).toLocaleString() : '기록 없음'}
+      </p>
+    </div>
+  );
+};
+
+const QueueRow = ({ track, disabled, onRemove }: { track: MusicTrack; disabled: boolean; onRemove: (track: MusicTrack) => void }) => {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: track.id });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -104,6 +197,14 @@ const QueueRow = ({ track }: { track: MusicTrack }) => {
         <div className="text-xs muted truncate">{truncateText(track.author, 34)}</div>
       </div>
       <div className="text-xs muted">{formatDuration(track.length)}</div>
+      <button
+        type="button"
+        onClick={() => onRemove(track)}
+        disabled={disabled}
+        className="rounded-lg border border-rose-500/30 px-2 py-1 text-rose-300 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <Trash2 className="w-3.5 h-3.5" />
+      </button>
     </div>
   );
 };
@@ -111,6 +212,7 @@ const QueueRow = ({ track }: { track: MusicTrack }) => {
 export default function MusicControlClient() {
   const [state, setState] = useState<MusicState | null>(null);
   const [logs, setLogs] = useState<MusicLog[]>([]);
+  const [monitor, setMonitor] = useState<MonitorResponse>({ services: { bot: [], lavalink: [] }, incidents: [] });
   const [isLoading, setIsLoading] = useState(false);
   const [pendingAction, setPendingAction] = useState<ControlAction | null>(null);
   const [query, setQuery] = useState('');
@@ -129,6 +231,7 @@ export default function MusicControlClient() {
   const canAdd = Boolean(current);
   const canStop = Boolean(current);
   const canSkip = Boolean(current) && queue.length > 0;
+  const canClearQueue = queue.length > 0;
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -162,6 +265,34 @@ export default function MusicControlClient() {
     }
   }, []);
 
+  const fetchMonitor = useCallback(async () => {
+    try {
+      const res = await fetch('/api/music/monitor', { cache: 'no-store' });
+      if (!res.ok) return false;
+      const json = (await res.json().catch(() => null)) as
+        | {
+            services?: {
+              bot?: MonitorSample[];
+              lavalink?: MonitorSample[];
+            };
+            incidents?: MonitorIncident[];
+          }
+        | null;
+
+      setMonitor({
+        services: {
+          bot: (json?.services?.bot ?? []).map((sample) => ({ ...sample, status: normalizeStatus(sample.status) })),
+          lavalink: (json?.services?.lavalink ?? []).map((sample) => ({ ...sample, status: normalizeStatus(sample.status) }))
+        },
+        incidents: json?.incidents ?? []
+      });
+      return true;
+    } catch (error) {
+      console.error('[Music] Failed to fetch monitor data:', error);
+      return false;
+    }
+  }, []);
+
   const scheduleStateRefresh = useCallback(() => {
     if (stateRefreshTimer.current) window.clearTimeout(stateRefreshTimer.current);
     stateRefreshTimer.current = window.setTimeout(() => {
@@ -171,9 +302,9 @@ export default function MusicControlClient() {
 
   const refreshAll = useCallback(async () => {
     setIsLoading(true);
-    await Promise.all([fetchState(), fetchLogs()]);
+    await Promise.all([fetchState(), fetchLogs(), fetchMonitor()]);
     setIsLoading(false);
-  }, [fetchLogs, fetchState]);
+  }, [fetchLogs, fetchMonitor, fetchState]);
 
   useEffect(() => {
     const initialLoad = window.setTimeout(() => {
@@ -199,6 +330,7 @@ export default function MusicControlClient() {
 
     const stateInterval = window.setInterval(fetchState, 15000);
     const logsInterval = window.setInterval(fetchLogs, 30000);
+    const monitorInterval = window.setInterval(fetchMonitor, 20000);
 
     return () => {
       window.clearTimeout(initialLoad);
@@ -206,9 +338,10 @@ export default function MusicControlClient() {
       supabaseBrowser.removeChannel(logsChannel);
       window.clearInterval(stateInterval);
       window.clearInterval(logsInterval);
+      window.clearInterval(monitorInterval);
       if (stateRefreshTimer.current) window.clearTimeout(stateRefreshTimer.current);
     };
-  }, [fetchLogs, fetchState, refreshAll, scheduleStateRefresh]);
+  }, [fetchLogs, fetchMonitor, fetchState, refreshAll, scheduleStateRefresh]);
 
   useEffect(() => () => {
     if (feedbackTimer.current) window.clearTimeout(feedbackTimer.current);
@@ -233,7 +366,7 @@ export default function MusicControlClient() {
 
   const sendControl = async (
     action: ControlAction,
-    payload?: { query?: string; order?: string[] },
+    payload?: { query?: string; order?: string[]; trackId?: string; index?: number },
   ): Promise<ControlResult> => {
     const res = await fetch('/api/music/control', {
       method: 'POST',
@@ -246,7 +379,7 @@ export default function MusicControlClient() {
       | null;
 
     if (res.status === 202 || data?.pending) {
-      await Promise.all([fetchLogs(), fetchState()]);
+      await Promise.all([fetchLogs(), fetchState(), fetchMonitor()]);
       return {
         ok: false,
         pending: true,
@@ -255,15 +388,16 @@ export default function MusicControlClient() {
     }
 
     if (res.ok && data?.ok !== false) {
-      await Promise.all([fetchLogs(), fetchState()]);
+      await Promise.all([fetchLogs(), fetchState(), fetchMonitor()]);
       window.setTimeout(() => {
         void fetchState();
         void fetchLogs();
+        void fetchMonitor();
       }, 800);
       return { ok: true };
     }
 
-    await Promise.all([fetchLogs(), fetchState()]);
+    await Promise.all([fetchLogs(), fetchState(), fetchMonitor()]);
     return { ok: false, error: resolveControlErrorMessage(data?.error, '요청 실패') };
   };
 
@@ -319,6 +453,60 @@ export default function MusicControlClient() {
     }
   };
 
+  const removeFromQueue = async (track: MusicTrack) => {
+    if (isActionPending) return;
+
+    setPendingAction('remove');
+    const fallbackQueue = queue;
+    setState((prev) => (prev ? { ...prev, queue: prev.queue.filter((item) => item.id !== track.id) } : prev));
+
+    try {
+      const result = await sendControl('remove', { trackId: track.id });
+      if (result.ok) {
+        showFeedback('success', '삭제 완료', `${truncateText(track.title, 26)}을(를) 대기열에서 삭제했어요.`);
+        return;
+      }
+
+      setState((prev) => (prev ? { ...prev, queue: fallbackQueue } : prev));
+
+      if (result.pending) {
+        showFeedback('error', '응답 지연', result.error ?? '봇 응답이 지연되고 있어요.');
+        return;
+      }
+
+      showFeedback('error', '삭제 실패', result.error ?? '요청 실패');
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
+  const clearQueue = async () => {
+    if (isActionPending || !canClearQueue) return;
+
+    setPendingAction('clear');
+    const fallbackQueue = queue;
+    setState((prev) => (prev ? { ...prev, queue: [] } : prev));
+
+    try {
+      const result = await sendControl('clear');
+      if (result.ok) {
+        showFeedback('success', '정리 완료', '대기열을 비웠어요.');
+        return;
+      }
+
+      setState((prev) => (prev ? { ...prev, queue: fallbackQueue } : prev));
+
+      if (result.pending) {
+        showFeedback('error', '응답 지연', result.error ?? '봇 응답이 지연되고 있어요.');
+        return;
+      }
+
+      showFeedback('error', '정리 실패', result.error ?? '요청 실패');
+    } finally {
+      setPendingAction(null);
+    }
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     if (isActionPending) return;
 
@@ -358,6 +546,12 @@ export default function MusicControlClient() {
   };
 
   const currentDuration = useMemo(() => formatDuration(current?.length), [current?.length]);
+  const latestBotStatus = monitor.services.bot.at(-1);
+  const latestLavalinkStatus = monitor.services.lavalink.at(-1);
+  const activeIncidents = monitor.incidents.filter((incident) => {
+    const status = normalizeStatus(incident.status);
+    return status === 'degraded' || status === 'down' || status === 'unknown';
+  });
 
   return (
     <div className="min-h-screen bg-[color:var(--bg)] text-[color:var(--fg)] relative">
@@ -473,9 +667,19 @@ export default function MusicControlClient() {
           </div>
 
           <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <ListMusic className="w-4 h-4" />
-              <h2 className="text-sm font-semibold">대기열 (드래그로 순서 변경)</h2>
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-2">
+                <ListMusic className="w-4 h-4" />
+                <h2 className="text-sm font-semibold">대기열 (드래그로 순서 변경)</h2>
+              </div>
+              <button
+                type="button"
+                onClick={clearQueue}
+                disabled={!canClearQueue || isActionPending}
+                className="rounded-xl border border-rose-500/40 px-3 py-1.5 text-xs font-semibold text-rose-300 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                대기열 비우기
+              </button>
             </div>
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={queue.map((track) => track.id)} strategy={verticalListSortingStrategy}>
@@ -485,11 +689,72 @@ export default function MusicControlClient() {
                       대기열이 비어있습니다.
                     </div>
                   ) : (
-                    queue.map((track) => <QueueRow key={track.id} track={track} />)
+                    queue.map((track) => (
+                      <QueueRow key={track.id} track={track} disabled={isActionPending} onRemove={removeFromQueue} />
+                    ))
                   )}
                 </div>
               </SortableContext>
             </DndContext>
+          </div>
+
+          <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4" />
+                <h2 className="text-sm font-semibold">연결 모니터링</h2>
+              </div>
+              <span className="text-xs muted">최근 이벤트 {activeIncidents.length}건</span>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <ServiceStatusCard title="Discord Bot" samples={monitor.services.bot} />
+              <ServiceStatusCard title="Lavalink" samples={monitor.services.lavalink} />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/60 p-3">
+                <div className="text-xs uppercase tracking-[0.12em] muted mb-1">Bot Status</div>
+                <div className="text-sm font-semibold">{statusLabel(latestBotStatus?.status ?? 'unknown')}</div>
+                <div className="text-xs muted mt-1">{latestBotStatus ? new Date(latestBotStatus.created_at).toLocaleString() : '기록 없음'}</div>
+              </div>
+              <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/60 p-3">
+                <div className="text-xs uppercase tracking-[0.12em] muted mb-1">Lavalink Status</div>
+                <div className="text-sm font-semibold">{statusLabel(latestLavalinkStatus?.status ?? 'unknown')}</div>
+                <div className="text-xs muted mt-1">
+                  {latestLavalinkStatus ? new Date(latestLavalinkStatus.created_at).toLocaleString() : '기록 없음'}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-xs uppercase tracking-[0.12em] muted">최근 모니터링 이벤트</div>
+              {monitor.incidents.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-[color:var(--border)] p-4 text-xs muted text-center">
+                  모니터링 이벤트가 없습니다.
+                </div>
+              ) : (
+                monitor.incidents.slice(0, 6).map((incident) => {
+                  const status = normalizeStatus(incident.status);
+                  const payload = incident.payload ?? {};
+                  const streak = typeof payload.streak === 'number' ? `${payload.streak}회` : '-';
+                  const latency = typeof payload.latency_ms === 'number' ? `${payload.latency_ms}ms` : '-';
+                  return (
+                    <div key={incident.log_id} className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/50 p-3">
+                      <div className="flex items-center justify-between gap-3 mb-1">
+                        <div className={`inline-flex items-center gap-1 text-[11px] font-semibold ${status === 'operational' ? 'text-emerald-300' : 'text-amber-300'}`}>
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          {STATUS_LABEL[status]}
+                        </div>
+                        <div className="text-[11px] muted">{new Date(incident.created_at).toLocaleString()}</div>
+                      </div>
+                      <div className="text-xs">{incident.message ?? 'monitor event'}</div>
+                      <div className="text-[11px] muted mt-1">연속 실패: {streak} · 지연: {latency}</div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         </section>
 
