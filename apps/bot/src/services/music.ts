@@ -159,7 +159,11 @@ export const initMusic = (client: Client, env: Env): Kazagumo => {
       }
     },
     new Connectors.DiscordJS(client),
-    nodes
+    nodes,
+    {
+      reconnectTries: Number.MAX_SAFE_INTEGER,
+      reconnectInterval: 5
+    }
   );
 
   musicInstance.shoukaku.on('ready', (name) => {

@@ -7,7 +7,7 @@ import { getServerEnv } from '@/lib/server/env';
 export const runtime = 'nodejs';
 
 const CONTROL_ACTIONS = new Set(['play', 'pause', 'stop', 'skip', 'previous', 'reorder', 'add'] as const);
-const JOB_ACK_TIMEOUT_MS = 4500;
+const JOB_ACK_TIMEOUT_MS = 12000;
 const JOB_POLL_INTERVAL_MS = 180;
 
 type ControlPayload = {
