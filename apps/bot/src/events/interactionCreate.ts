@@ -12,6 +12,9 @@ import { clearMusicState, formatDuration, getMusic, getNodeStatus, updateMusicSe
 import type { SlashCommand } from '../commands/types.js';
 
 const commandMap: Map<string, SlashCommand> = new Map(commands.map((c) => [c.name, c] as const));
+const musicCommandActionMap: Partial<Record<string, string>> = {
+  setup: 'setup',
+};
 const musicUiColor = 0x3b82f6;
 const buildMusicStatusEmbed = (title: string, description: string) =>
   new EmbedBuilder().setTitle(title).setDescription(description).setColor(musicUiColor);
@@ -34,15 +37,84 @@ const getVoiceChannelId = (interaction: Interaction): string | null => {
   return channel?.id ?? null;
 };
 
+type MusicControlLogStatus = 'requested' | 'success' | 'failed';
+
+const logMusicControlInteraction = async (params: {
+  guildId: string | null;
+  action: string;
+  status: MusicControlLogStatus;
+  message: string;
+  requestedBy: string | null;
+  payload?: Record<string, string | number | boolean | null> | null;
+}) => {
+  if (!params.guildId) return;
+
+  const ctx = getBotContext();
+  const { error } = await ctx.supabase.from('music_control_logs').insert({
+    guild_id: params.guildId,
+    action: params.action,
+    status: params.status,
+    message: params.message,
+    payload: params.payload ?? null,
+    requested_by: params.requestedBy,
+  });
+
+  if (error) {
+    console.warn('[MusicLog] Failed to write interaction control log:', error);
+  }
+};
+
 export function registerInteractionCreate(client: Client) {
   client.on('interactionCreate', async (interaction: Interaction) => {
     if (interaction.isChatInputCommand()) {
       const cmd = commandMap.get(interaction.commandName);
       if (!cmd) return;
+      const mappedMusicAction = musicCommandActionMap[interaction.commandName];
 
       try {
+        if (mappedMusicAction) {
+          await logMusicControlInteraction({
+            guildId: interaction.guildId,
+            action: mappedMusicAction,
+            status: 'requested',
+            message: `Discord command ${interaction.commandName} requested.`,
+            requestedBy: interaction.user.id,
+            payload: {
+              source: 'discord_command',
+              command: interaction.commandName,
+            },
+          });
+        }
+
         await cmd.execute(interaction);
+
+        if (mappedMusicAction) {
+          await logMusicControlInteraction({
+            guildId: interaction.guildId,
+            action: mappedMusicAction,
+            status: 'success',
+            message: `Discord command ${interaction.commandName} completed.`,
+            requestedBy: interaction.user.id,
+            payload: {
+              source: 'discord_command',
+              command: interaction.commandName,
+            },
+          });
+        }
       } catch (e) {
+        if (mappedMusicAction) {
+          await logMusicControlInteraction({
+            guildId: interaction.guildId,
+            action: mappedMusicAction,
+            status: 'failed',
+            message: e instanceof Error ? e.message : `Discord command ${interaction.commandName} failed.`,
+            requestedBy: interaction.user.id,
+            payload: {
+              source: 'discord_command',
+              command: interaction.commandName,
+            },
+          });
+        }
         await handleError(e, interaction, interaction.commandName);
       }
     } else if (interaction.isStringSelectMenu()) {
@@ -235,6 +307,17 @@ export function registerInteractionCreate(client: Client) {
       }
 
       await interaction.deferReply({ ephemeral: true });
+      await logMusicControlInteraction({
+        guildId: interaction.guildId,
+        action: 'add',
+        status: 'requested',
+        message: 'Discord modal music add requested.',
+        requestedBy: interaction.user.id,
+        payload: {
+          source: 'discord_modal',
+          query,
+        },
+      });
 
       const textId = (config?.music_command_channel_id ?? interaction.channelId) ?? undefined;
       const player = await music.createPlayer({
@@ -245,6 +328,17 @@ export function registerInteractionCreate(client: Client) {
       });
 
       if (isSpotifyQuery(query)) {
+        await logMusicControlInteraction({
+          guildId: interaction.guildId,
+          action: 'add',
+          status: 'failed',
+          message: 'Spotify URL is not supported.',
+          requestedBy: interaction.user.id,
+          payload: {
+            source: 'discord_modal',
+            query,
+          },
+        });
         await interaction.editReply({
           embeds: [buildMusicStatusEmbed('🚫 Spotify 미지원', 'Spotify URL은 아직 지원하지 않아요. YouTube 또는 SoundCloud URL을 사용해 주세요.')]
         });
@@ -256,6 +350,19 @@ export function registerInteractionCreate(client: Client) {
         username: interaction.user.username
       });
       if (!searchResult.result.tracks.length) {
+        await logMusicControlInteraction({
+          guildId: interaction.guildId,
+          action: 'add',
+          status: 'failed',
+          message: 'No tracks found for modal add query.',
+          requestedBy: interaction.user.id,
+          payload: {
+            source: 'discord_modal',
+            query,
+            fallback_used: searchResult.fallbackUsed,
+            fallback_query: searchResult.fallbackQuery ?? null,
+          },
+        });
         await interaction.editReply({
           embeds: [buildMusicStatusEmbed('🔎 검색 실패', '검색 결과가 없습니다. URL 자동 보정 검색도 시도했지만 실패했습니다.')] 
         });
@@ -270,6 +377,19 @@ export function registerInteractionCreate(client: Client) {
       if (searchResult.result.type === 'PLAYLIST') {
         player.queue.add(searchResult.result.tracks);
         updateMusicSetupMessage(player, player.queue.current ?? searchResult.result.tracks[0]).catch(() => {});
+        await logMusicControlInteraction({
+          guildId: interaction.guildId,
+          action: 'add',
+          status: 'success',
+          message: `Playlist added via Discord modal (${searchResult.result.tracks.length} tracks).`,
+          requestedBy: interaction.user.id,
+          payload: {
+            source: 'discord_modal',
+            query,
+            fallback_used: searchResult.fallbackUsed,
+            fallback_query: searchResult.fallbackQuery ?? null,
+          },
+        });
         await interaction.editReply({
           embeds: [
             new EmbedBuilder()
@@ -284,6 +404,20 @@ export function registerInteractionCreate(client: Client) {
         const track = searchResult.result.tracks[0];
         player.queue.add(track);
         updateMusicSetupMessage(player, player.queue.current ?? track).catch(() => {});
+        await logMusicControlInteraction({
+          guildId: interaction.guildId,
+          action: 'add',
+          status: 'success',
+          message: `${track.title} added via Discord modal.`,
+          requestedBy: interaction.user.id,
+          payload: {
+            source: 'discord_modal',
+            query,
+            track_id: track.track,
+            fallback_used: searchResult.fallbackUsed,
+            fallback_query: searchResult.fallbackQuery ?? null,
+          },
+        });
         const position = Math.max(player.queue.slice(0).length, 1);
         const duration = track.length ? formatDuration(track.length) : 'LIVE';
         const title = track.uri ? `[${track.title}](${track.uri})` : track.title;
@@ -536,6 +670,60 @@ export function registerInteractionCreate(client: Client) {
       }
 
       if (['music_prev', 'music_play', 'music_pause', 'music_stop', 'music_next'].includes(interaction.customId)) {
+        const actionMap = {
+          music_prev: 'previous',
+          music_play: 'play',
+          music_pause: 'pause',
+          music_stop: 'stop',
+          music_next: 'skip',
+        } as const;
+        const action = actionMap[interaction.customId as keyof typeof actionMap];
+        const basePayload = {
+          source: 'discord_button',
+          custom_id: interaction.customId,
+        };
+
+        const failWithLog = async (
+          title: string,
+          description: string,
+          payload: Record<string, string | number | boolean | null> = {},
+        ) => {
+          await logMusicControlInteraction({
+            guildId: interaction.guildId,
+            action,
+            status: 'failed',
+            message: description,
+            requestedBy: interaction.user.id,
+            payload: { ...basePayload, ...payload },
+          });
+          await interaction.reply({ embeds: [buildMusicStatusEmbed(title, description)], ephemeral: true });
+        };
+
+        const successWithLog = async (
+          title: string,
+          description: string,
+          payload: Record<string, string | number | boolean | null> = {},
+        ) => {
+          await logMusicControlInteraction({
+            guildId: interaction.guildId,
+            action,
+            status: 'success',
+            message: description,
+            requestedBy: interaction.user.id,
+            payload: { ...basePayload, ...payload },
+          });
+          await interaction.reply({ embeds: [buildMusicStatusEmbed(title, description)], ephemeral: true });
+        };
+
+        await logMusicControlInteraction({
+          guildId: interaction.guildId,
+          action,
+          status: 'requested',
+          message: 'Discord music button control requested.',
+          requestedBy: interaction.user.id,
+          payload: basePayload,
+        });
+
         if (!interaction.guildId) {
           await interaction.reply({ embeds: [buildMusicStatusEmbed('🚫 서버 전용', '서버에서만 사용할 수 있어요.')], ephemeral: true });
           return;
@@ -544,37 +732,43 @@ export function registerInteractionCreate(client: Client) {
         const music = getMusic();
         const player = music.players.get(interaction.guildId);
         if (!player) {
-          await interaction.reply({ embeds: [buildMusicStatusEmbed('🎵 재생 없음', '현재 재생 중인 음악이 없습니다.')], ephemeral: true });
+          await failWithLog('🎵 재생 없음', '현재 재생 중인 음악이 없습니다.');
           return;
         }
 
         const voiceId = getVoiceChannelId(interaction);
         if (!voiceId) {
-          await interaction.reply({ embeds: [buildMusicStatusEmbed('🎧 음성 채널 필요', '먼저 음성 채널에 들어가주세요.')], ephemeral: true });
+          await failWithLog('🎧 음성 채널 필요', '먼저 음성 채널에 들어가주세요.');
           return;
         }
 
         if (player.voiceId && player.voiceId !== voiceId) {
-          await interaction.reply({ embeds: [buildMusicStatusEmbed('🚫 다른 음성 채널', '현재 재생 중인 채널에서만 조작할 수 있어요.')], ephemeral: true });
+          await failWithLog('🚫 다른 음성 채널', '현재 재생 중인 채널에서만 조작할 수 있어요.', {
+            user_voice_id: voiceId,
+            player_voice_id: player.voiceId,
+          });
           return;
         }
 
         if (interaction.customId === 'music_prev') {
           const previous = player.getPrevious(true);
           if (!previous) {
-            await interaction.reply({ embeds: [buildMusicStatusEmbed('⏮️ 이전 곡 없음', '이전 곡이 없습니다.')], ephemeral: true });
+            await failWithLog('⏮️ 이전 곡 없음', '이전 곡이 없습니다.');
             return;
           }
           await player.play(previous);
           updateMusicSetupMessage(player, previous).catch(() => {});
           scheduleMusicStateUpdate(player);
-          await interaction.reply({ embeds: [buildMusicStatusEmbed('⏮️ 이전 곡', '이전 곡으로 이동했어요.')], ephemeral: true });
+          await successWithLog('⏮️ 이전 곡', '이전 곡으로 이동했어요.', {
+            track_id: previous.track,
+            track_title: previous.title,
+          });
           return;
         }
 
         if (interaction.customId === 'music_play') {
           if (player.playing && !player.paused) {
-            await interaction.reply({ embeds: [buildMusicStatusEmbed('▶️ 재생 중', '이미 재생 중입니다.')], ephemeral: true });
+            await failWithLog('▶️ 재생 중', '이미 재생 중입니다.');
             return;
           }
           if (player.paused) {
@@ -583,18 +777,18 @@ export function registerInteractionCreate(client: Client) {
             await player.play();
           }
           scheduleMusicStateUpdate(player);
-          await interaction.reply({ embeds: [buildMusicStatusEmbed('▶️ 재생', '재생을 시작했어요.')], ephemeral: true });
+          await successWithLog('▶️ 재생', '재생을 시작했어요.');
           return;
         }
 
         if (interaction.customId === 'music_pause') {
           if (!player.playing || player.paused) {
-            await interaction.reply({ embeds: [buildMusicStatusEmbed('⏸️ 일시정지', '이미 일시정지 상태입니다.')], ephemeral: true });
+            await failWithLog('⏸️ 일시정지', '이미 일시정지 상태입니다.');
             return;
           }
           player.pause(true);
           scheduleMusicStateUpdate(player);
-          await interaction.reply({ embeds: [buildMusicStatusEmbed('⏸️ 일시정지', '재생을 일시정지했어요.')], ephemeral: true });
+          await successWithLog('⏸️ 일시정지', '재생을 일시정지했어요.');
           return;
         }
 
@@ -602,14 +796,14 @@ export function registerInteractionCreate(client: Client) {
           player.destroy();
           updateMusicSetupMessage(player, null).catch(() => {});
           clearMusicState(player.guildId).catch(() => {});
-          await interaction.reply({ embeds: [buildMusicStatusEmbed('⏹️ 정지', '재생을 중지했어요.')], ephemeral: true });
+          await successWithLog('⏹️ 정지', '재생을 중지했어요.');
           return;
         }
 
         if (interaction.customId === 'music_next') {
           player.skip();
           scheduleMusicStateUpdate(player);
-          await interaction.reply({ embeds: [buildMusicStatusEmbed('⏭️ 다음 곡', '다음 곡으로 이동했어요.')], ephemeral: true });
+          await successWithLog('⏭️ 다음 곡', '다음 곡으로 이동했어요.');
           return;
         }
       }
