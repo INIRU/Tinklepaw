@@ -24,7 +24,6 @@ type TopUser = {
   avatarUrl: string | null;
   chatMessages: number;
   voiceHours: number;
-  joins: number;
   score: number;
 };
 
@@ -279,7 +278,7 @@ export default function AdminAnalyticsClient() {
 
             <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6">
               <h2 className="text-lg font-semibold">활동 상위 유저</h2>
-              <p className="mt-1 text-sm muted">채팅 수 + 통화 분 + 입장 가중치로 계산한 활동 점수 기준입니다.</p>
+              <p className="mt-1 text-sm muted">채팅 수 + 통화 분으로 계산한 활동 점수 기준입니다.</p>
 
               <div className="mt-4 overflow-x-auto">
                 <table className="min-w-full text-sm">
@@ -289,14 +288,13 @@ export default function AdminAnalyticsClient() {
                       <th className="py-2 pr-3">유저</th>
                       <th className="py-2 pr-3">채팅</th>
                       <th className="py-2 pr-3">통화 시간</th>
-                      <th className="py-2 pr-3">입장</th>
                       <th className="py-2">점수</th>
                     </tr>
                   </thead>
                   <tbody>
                     {selected.topUsers.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-6 text-center muted">집계된 활동 유저가 없습니다.</td>
+                        <td colSpan={5} className="py-6 text-center muted">집계된 활동 유저가 없습니다.</td>
                       </tr>
                     ) : (
                       selected.topUsers.map((user, index) => (
@@ -314,7 +312,6 @@ export default function AdminAnalyticsClient() {
                           </td>
                           <td className="py-3 pr-3">{user.chatMessages.toLocaleString()}</td>
                           <td className="py-3 pr-3">{user.voiceHours.toFixed(1)}h</td>
-                          <td className="py-3 pr-3">{user.joins.toLocaleString()}</td>
                           <td className="py-3 font-semibold">{user.score.toLocaleString()}</td>
                         </tr>
                       ))

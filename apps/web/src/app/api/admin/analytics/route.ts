@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { isResponse, requireAdminApi } from '@/lib/server/guards-api';
+import { fetchMemberUserSummary } from '@/lib/server/discord';
 import { getServerEnv } from '@/lib/server/env';
 import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
 
@@ -32,7 +33,13 @@ type TopUser = {
   avatarUrl: string | null;
   chatMessages: number;
   voiceHours: number;
-  joins: number;
+  score: number;
+};
+
+type TopUserAggregate = {
+  userId: string;
+  chatMessages: number;
+  voiceHours: number;
   score: number;
 };
 
@@ -146,13 +153,12 @@ const aggregatePeriod = (
   period: Period,
   events: ActivityEventRow[],
   now: Date,
-  usersById: Map<string, { username: string; avatarUrl: string | null }>,
 ) => {
   const { starts, points } = buildBuckets(period, now);
   const pointByKey = new Map(points.map((point) => [point.key, point]));
   const periodStartMs = starts[0]?.getTime() ?? 0;
 
-  const userStats = new Map<string, { chatMessages: number; voiceSeconds: number; joins: number; leaves: number }>();
+  const userStats = new Map<string, { chatMessages: number; voiceSeconds: number }>();
 
   for (const event of events) {
     const createdAt = new Date(event.created_at);
@@ -174,11 +180,9 @@ const aggregatePeriod = (
     }
 
     if (event.user_id && createdAt.getTime() >= periodStartMs) {
-      const stats = userStats.get(event.user_id) ?? { chatMessages: 0, voiceSeconds: 0, joins: 0, leaves: 0 };
+      const stats = userStats.get(event.user_id) ?? { chatMessages: 0, voiceSeconds: 0 };
       if (event.event_type === 'chat_message') stats.chatMessages += value;
       if (event.event_type === 'voice_seconds') stats.voiceSeconds += value;
-      if (event.event_type === 'member_join') stats.joins += value;
-      if (event.event_type === 'member_leave') stats.leaves += value;
       userStats.set(event.user_id, stats);
     }
   }
@@ -196,17 +200,13 @@ const aggregatePeriod = (
     };
   });
 
-  const topUsers: TopUser[] = Array.from(userStats.entries())
+  const topUsers: TopUserAggregate[] = Array.from(userStats.entries())
     .map(([userId, stats]) => {
-      const score = stats.chatMessages + Math.round(stats.voiceSeconds / 60) + stats.joins * 2;
-      const profile = usersById.get(userId);
+      const score = stats.chatMessages + Math.round(stats.voiceSeconds / 60);
       return {
         userId,
-        username: profile?.username ?? userId,
-        avatarUrl: profile?.avatarUrl ?? null,
         chatMessages: stats.chatMessages,
         voiceHours: Number((stats.voiceSeconds / 3600).toFixed(2)),
-        joins: stats.joins,
         score,
       };
     })
@@ -217,6 +217,41 @@ const aggregatePeriod = (
     points: normalizedPoints,
     topUsers,
   };
+};
+
+const resolveTopUsers = async (
+  topUsers: TopUserAggregate[],
+  usersById: Map<string, { username: string; avatarUrl: string | null }>
+): Promise<TopUser[]> => {
+  const unresolvedIds = topUsers
+    .map((user) => user.userId)
+    .filter((userId) => !usersById.has(userId));
+
+  if (unresolvedIds.length > 0) {
+    await Promise.all(
+      unresolvedIds.map(async (userId) => {
+        const summary = await fetchMemberUserSummary(userId).catch(() => null);
+        if (summary) {
+          usersById.set(userId, {
+            username: summary.name,
+            avatarUrl: summary.avatarUrl,
+          });
+        }
+      })
+    );
+  }
+
+  return topUsers.map((user) => {
+    const profile = usersById.get(user.userId);
+    return {
+      userId: user.userId,
+      username: profile?.username ?? '알 수 없는 사용자',
+      avatarUrl: profile?.avatarUrl ?? null,
+      chatMessages: user.chatMessages,
+      voiceHours: user.voiceHours,
+      score: user.score,
+    };
+  });
 };
 
 export async function GET() {
@@ -253,16 +288,51 @@ export async function GET() {
     }
   }
 
-  const day = aggregatePeriod('day', events, now, usersById);
-  const week = aggregatePeriod('week', events, now, usersById);
-  const month = aggregatePeriod('month', events, now, usersById);
+  const dayBase = aggregatePeriod('day', events, now);
+  const weekBase = aggregatePeriod('week', events, now);
+  const monthBase = aggregatePeriod('month', events, now);
+
+  const topUserIds = Array.from(new Set([
+    ...dayBase.topUsers.map((user) => user.userId),
+    ...weekBase.topUsers.map((user) => user.userId),
+    ...monthBase.topUsers.map((user) => user.userId),
+  ]));
+
+  if (topUserIds.length > 0) {
+    await Promise.all(
+      topUserIds.map(async (userId) => {
+        const summary = await fetchMemberUserSummary(userId).catch(() => null);
+        if (summary) {
+          usersById.set(userId, {
+            username: summary.name,
+            avatarUrl: summary.avatarUrl,
+          });
+        }
+      })
+    );
+  }
+
+  const [dayTopUsers, weekTopUsers, monthTopUsers] = await Promise.all([
+    resolveTopUsers(dayBase.topUsers, usersById),
+    resolveTopUsers(weekBase.topUsers, usersById),
+    resolveTopUsers(monthBase.topUsers, usersById),
+  ]);
 
   return NextResponse.json({
     generatedAt: now.toISOString(),
     periods: {
-      day,
-      week,
-      month,
+      day: {
+        points: dayBase.points,
+        topUsers: dayTopUsers,
+      },
+      week: {
+        points: weekBase.points,
+        topUsers: weekTopUsers,
+      },
+      month: {
+        points: monthBase.points,
+        topUsers: monthTopUsers,
+      },
     },
   });
 }
