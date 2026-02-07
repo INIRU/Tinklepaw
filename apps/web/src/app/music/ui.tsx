@@ -17,6 +17,13 @@ type MusicTrack = {
   length: number;
   thumbnail?: string | null;
   uri?: string | null;
+  requester?: {
+    id?: string | null;
+    username?: string | null;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+    source?: string | null;
+  } | null;
 };
 
 type MusicState = {
@@ -98,6 +105,9 @@ const truncateText = (value: string, maxLength: number) => {
   if (value.length <= maxLength) return value;
   return `${value.slice(0, maxLength - 1)}…`;
 };
+
+const requesterName = (track: MusicTrack) =>
+  track.requester?.displayName ?? track.requester?.username ?? (track.requester?.id ? `User ${track.requester.id.slice(0, 6)}` : '알 수 없음');
 
 const normalizeStatus = (value: string): MonitorStatus => {
   if (value === 'operational' || value === 'degraded' || value === 'down') return value;
@@ -195,6 +205,21 @@ const QueueRow = ({ track, disabled, onRemove }: { track: MusicTrack; disabled: 
       <div className="flex-1 min-w-0">
         <div className="text-sm font-semibold truncate">{truncateText(track.title, 44)}</div>
         <div className="text-xs muted truncate">{truncateText(track.author, 34)}</div>
+        <div className="mt-1 inline-flex items-center gap-1.5 text-[11px] muted">
+          <span className="w-4 h-4 rounded-full overflow-hidden bg-black/30 shrink-0">
+            {track.requester?.avatarUrl && (
+              <Image
+                src={track.requester.avatarUrl}
+                alt=""
+                width={16}
+                height={16}
+                className="w-full h-full object-cover"
+                unoptimized
+              />
+            )}
+          </span>
+          <span className="truncate">요청: {truncateText(requesterName(track), 24)}</span>
+        </div>
       </div>
       <div className="text-xs muted">{formatDuration(track.length)}</div>
       <button
@@ -596,6 +621,23 @@ export default function MusicControlClient() {
                   {current?.title ? truncateText(current.title, 46) : '재생 중인 곡이 없습니다.'}
                 </div>
                 <div className="text-xs muted truncate">{current?.author ? truncateText(current.author, 34) : '-'}</div>
+                {current && (
+                  <div className="mt-1 inline-flex items-center gap-2 text-[11px] muted">
+                    <span className="w-4 h-4 rounded-full overflow-hidden bg-black/30 shrink-0">
+                      {current.requester?.avatarUrl && (
+                        <Image
+                          src={current.requester.avatarUrl}
+                          alt=""
+                          width={16}
+                          height={16}
+                          className="w-full h-full object-cover"
+                          unoptimized
+                        />
+                      )}
+                    </span>
+                    <span className="truncate">요청자: {truncateText(requesterName(current), 26)}</span>
+                  </div>
+                )}
                 <div className="text-xs muted mt-1">{currentDuration}</div>
               </div>
             </div>

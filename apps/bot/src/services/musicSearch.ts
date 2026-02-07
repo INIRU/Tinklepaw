@@ -5,6 +5,9 @@ type SearchResult = Awaited<ReturnType<Kazagumo['search']>>;
 type SearchRequester = {
   id: string;
   username: string;
+  displayName?: string;
+  avatarUrl?: string;
+  source?: string;
 };
 
 type OEmbedPayload = {

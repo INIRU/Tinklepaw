@@ -32,6 +32,21 @@ export const buildMusicSetupRows = () => [
       .setStyle(ButtonStyle.Primary)
       .setEmoji('🔍'),
     new ButtonBuilder()
+      .setCustomId('music_filter_open')
+      .setLabel('필터')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji('🎛️'),
+    new ButtonBuilder()
+      .setCustomId('music_autoplay_toggle')
+      .setLabel('자동재생')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji('♾️'),
+    new ButtonBuilder()
+      .setCustomId('music_queue_show')
+      .setLabel('대기열')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji('📜'),
+    new ButtonBuilder()
       .setLabel('대시보드')
       .setStyle(ButtonStyle.Link)
       .setURL('https://tinklepaw.vercel.app/music')

@@ -7,9 +7,13 @@ import { setGame } from '../games/state.js';
 import { inferIntentFromGemini } from '../services/gemini.js';
 import { triggerGachaUI } from '../commands/draw.js';
 import { handleError } from '../errorHandler.js';
+import { getAppConfig } from '../services/config.js';
+import { getMusic, getNodeStatus, updateMusicSetupMessage, updateMusicState } from '../services/music.js';
+import { isSpotifyQuery, normalizeMusicQuery, searchTracksWithFallback } from '../services/musicSearch.js';
 
 import { generateInventoryEmbed } from '../services/inventory.js';
 import { getChannelMentions } from '../services/channelCache.js';
+import type { Json } from '@nyaru/core';
 
 function isMentionOrReplyToBot(message: Message, botUserId: string): boolean {
   const content = message.content.trimStart();
@@ -27,6 +31,7 @@ export function registerMessageCreate(client: Client) {
     if (!message.guildId || message.guildId !== ctx.env.NYARU_GUILD_ID) return;
     if (message.author.bot) return;
     if (!message.content) return;
+    const guildId = message.guildId;
 
     if (await handleRpsMessage(message)) return;
     if (await handleWordChainMessage(message)) return;
@@ -60,6 +65,135 @@ export function registerMessageCreate(client: Client) {
       }
     } catch (e) {
       console.error('[Points] Failed to grant chat points:', e);
+    }
+
+    const musicConfig = await getAppConfig().catch(() => null);
+    if (musicConfig?.music_command_channel_id && message.channelId === musicConfig.music_command_channel_id) {
+      const query = normalizeMusicQuery(message.content);
+      if (!query) return;
+
+      const logMusicAction = async (
+        status: 'requested' | 'success' | 'failed',
+        actionMessage: string,
+        payload: Json = {}
+      ) => {
+        await ctx.supabase.from('music_control_logs').insert({
+          guild_id: guildId,
+          action: 'add',
+          status,
+          message: actionMessage,
+          payload,
+          requested_by: message.author.id
+        });
+      };
+
+      await logMusicAction('requested', 'Discord music channel message add requested.', {
+        source: 'discord_message',
+        query
+      });
+
+      const voiceId = message.member?.voice?.channelId;
+      if (!voiceId) {
+        await logMusicAction('failed', 'Music add failed: user not in voice channel.', {
+          source: 'discord_message',
+          query
+        });
+        await message.reply('🎧 먼저 음성 채널에 들어와줘.');
+        return;
+      }
+
+      if (isSpotifyQuery(query)) {
+        await logMusicAction('failed', 'Music add failed: Spotify URL unsupported.', {
+          source: 'discord_message',
+          query
+        });
+        await message.reply('🚫 Spotify URL은 아직 지원하지 않아. YouTube나 SoundCloud 링크를 써줘.');
+        return;
+      }
+
+      const music = getMusic();
+      const nodeStatus = getNodeStatus(music);
+      if (!nodeStatus.ready) {
+        await logMusicAction('failed', 'Music add failed: Lavalink not ready.', {
+          source: 'discord_message',
+          query,
+          node_summary: nodeStatus.summary
+        });
+        await message.reply(`🚫 Lavalink 연결 상태를 확인해줘.\n${nodeStatus.summary}`);
+        return;
+      }
+
+      const player = await music.createPlayer({
+        guildId,
+        textId: musicConfig.music_command_channel_id,
+        voiceId,
+        volume: 60
+      });
+
+      if (player.voiceId && player.voiceId !== voiceId) {
+        await logMusicAction('failed', 'Music add failed: user in different voice channel.', {
+          source: 'discord_message',
+          query,
+          user_voice_id: voiceId,
+          player_voice_id: player.voiceId
+        });
+        await message.reply('🚫 현재 음악이 재생 중인 음성 채널에서만 추가할 수 있어.');
+        return;
+      }
+
+      const searchResult = await searchTracksWithFallback(music, query, {
+        id: message.author.id,
+        username: message.author.username,
+        displayName: message.member?.displayName ?? message.author.globalName ?? message.author.username,
+        avatarUrl: message.author.displayAvatarURL({ extension: 'png', size: 128 }),
+        source: 'discord_message'
+      });
+
+      if (!searchResult.result.tracks.length) {
+        await logMusicAction('failed', 'Music add failed: no search results.', {
+          source: 'discord_message',
+          query,
+          fallback_used: searchResult.fallbackUsed,
+          fallback_query: searchResult.fallbackQuery
+        });
+        await message.reply('🔎 검색 결과가 없어. URL이면 자동 보정 검색도 시도했지만 실패했어.');
+        return;
+      }
+
+      const fallbackSuffix = searchResult.fallbackUsed && searchResult.fallbackQuery
+        ? ` (자동 보정: ${searchResult.fallbackQuery})`
+        : '';
+
+      if (searchResult.result.type === 'PLAYLIST') {
+        player.queue.add(searchResult.result.tracks);
+        await logMusicAction('success', `Playlist added via Discord message (${searchResult.result.tracks.length} tracks).`, {
+          source: 'discord_message',
+          query,
+          fallback_used: searchResult.fallbackUsed,
+          fallback_query: searchResult.fallbackQuery,
+          count: searchResult.result.tracks.length
+        });
+        await message.reply(`📚 **${searchResult.result.playlistName ?? '플레이리스트'}** ${searchResult.result.tracks.length}곡을 추가했어.${fallbackSuffix}`);
+      } else {
+        const track = searchResult.result.tracks[0];
+        player.queue.add(track);
+        await logMusicAction('success', `${track.title} added via Discord message.`, {
+          source: 'discord_message',
+          query,
+          track_id: track.track,
+          fallback_used: searchResult.fallbackUsed,
+          fallback_query: searchResult.fallbackQuery
+        });
+        await message.reply(`➕ **${track.title}** 을(를) 대기열에 추가했어.${fallbackSuffix}`);
+      }
+
+      if (!player.playing && !player.paused) {
+        await player.play();
+      }
+
+      await updateMusicSetupMessage(player, player.queue.current ?? null).catch(() => {});
+      await updateMusicState(player).catch(() => {});
+      return;
     }
 
     const botId = client.user?.id;

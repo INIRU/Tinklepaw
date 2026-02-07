@@ -10,6 +10,8 @@ type QueueTrack = {
   author?: string | null;
   thumbnail?: string | null;
   length?: number | null;
+  requesterName?: string | null;
+  requesterAvatarUrl?: string | null;
 };
 
 type MusicPanelParams = {
@@ -19,6 +21,8 @@ type MusicPanelParams = {
   durationMs?: number | null;
   positionMs?: number | null;
   queue: QueueTrack[];
+  autoplayEnabled?: boolean;
+  filterLabel?: string;
 };
 
 const canvasWidth = 1200;
@@ -75,6 +79,37 @@ const drawRoundedImage = (ctx: CanvasRenderingContext2D, image: Image, x: number
   ctx.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
 
   ctx.restore();
+};
+
+const drawCircleImage = (ctx: CanvasRenderingContext2D, image: Image, x: number, y: number, size: number) => {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.clip();
+
+  const scale = Math.max(size / image.width, size / image.height);
+  const drawWidth = image.width * scale;
+  const drawHeight = image.height * scale;
+  const offsetX = x + (size - drawWidth) / 2;
+  const offsetY = y + (size - drawHeight) / 2;
+  ctx.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+  ctx.restore();
+};
+
+const drawChip = (ctx: CanvasRenderingContext2D, x: number, y: number, text: string, tone: 'green' | 'slate') => {
+  ctx.font = `600 10px ${numberFontFamily}`;
+  const textWidth = ctx.measureText(text).width;
+  const width = textWidth + 16;
+  const bg = tone === 'green' ? 'rgba(29,185,84,0.2)' : 'rgba(148,163,184,0.2)';
+  const fg = tone === 'green' ? '#6ee7b7' : '#cbd5e1';
+  ctx.fillStyle = bg;
+  drawRoundedRect(ctx, x, y, width, 20, 10);
+  ctx.fill();
+  ctx.fillStyle = fg;
+  ctx.textAlign = 'left';
+  ctx.fillText(text, x + 8, y + 13);
+  return width;
 };
 
 const truncateText = (ctx: CanvasRenderingContext2D, text: string, maxWidth: number) => {
@@ -215,6 +250,13 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
   ctx.font = `12px ${fontFamily}`;
   ctx.fillText(artistText, textCenterX, artistY);
 
+  const chipY = artistY + 10;
+  const chipStartX = leftPanelX + 18;
+  const autoplayLabel = params.autoplayEnabled === false ? 'AUTO OFF' : 'AUTO ON';
+  const filterLabel = params.filterLabel ?? '필터 해제';
+  const firstChipWidth = drawChip(ctx, chipStartX, chipY, autoplayLabel, params.autoplayEnabled === false ? 'slate' : 'green');
+  drawChip(ctx, chipStartX + firstChipWidth + 8, chipY, filterLabel, 'slate');
+
   const elapsed = formatDuration(params.positionMs ?? 0);
   const total = formatDuration(params.durationMs ?? 0);
   const barX = leftPanelX + 16;
@@ -257,7 +299,7 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
       ctx.shadowColor = 'rgba(0,0,0,0.35)';
       ctx.shadowBlur = 10;
       ctx.fillStyle = 'rgba(19,22,24,0.9)';
-      drawRoundedRect(ctx, queueX, y, queueWidth, 58, 14);
+      drawRoundedRect(ctx, queueX, y, queueWidth, 66, 14);
       ctx.fill();
       ctx.restore();
 
@@ -280,21 +322,36 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
       }
 
       const titleX = thumbX + queueThumbSize + 12;
-      const titleWidth = queueWidth - (titleX - queueX) - 58;
+      const titleWidth = queueWidth - (titleX - queueX) - 92;
       ctx.fillStyle = '#f8fafc';
       ctx.font = `600 13px ${fontFamily}`;
-      ctx.fillText(truncateText(ctx, track.title, titleWidth), titleX, y + 26);
+      ctx.fillText(truncateText(ctx, track.title, titleWidth), titleX, y + 24);
       ctx.fillStyle = '#9ca3af';
       ctx.font = `11px ${numberFontFamily}`;
-      ctx.fillText(truncateText(ctx, track.author ?? '알 수 없음', titleWidth), titleX, y + 44);
+      ctx.fillText(truncateText(ctx, track.author ?? '알 수 없음', titleWidth), titleX, y + 38);
+
+      const requesterName = track.requesterName ?? '알 수 없음';
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = `10px ${fontFamily}`;
+      ctx.fillText(truncateText(ctx, `요청: ${requesterName}`, titleWidth), titleX, y + 53);
 
       const duration = formatDuration(track.length ?? 0);
       ctx.fillStyle = '#d4d4d8';
       ctx.font = `11px ${numberFontFamily}`;
       const durationWidth = ctx.measureText(duration).width;
-      ctx.fillText(duration, queueX + queueWidth - durationWidth - 14, y + 26);
+      const durationX = queueX + queueWidth - durationWidth - 14;
+      ctx.fillText(duration, durationX, y + 24);
 
-      y += 68;
+      if (track.requesterAvatarUrl) {
+        try {
+          const avatar = await loadImage(track.requesterAvatarUrl);
+          drawCircleImage(ctx, avatar, queueX + queueWidth - 30, y + 38, 18);
+        } catch {
+          // ignore avatar load error
+        }
+      }
+
+      y += 76;
     }
 
     const overflowCount = params.queue.length - list.length;

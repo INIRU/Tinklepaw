@@ -7,7 +7,8 @@ import { handleError } from '../errorHandler.js';
 import { getBotContext } from '../context.js';
 import { getAppConfig } from '../services/config.js';
 import { isSpotifyQuery, normalizeMusicQuery, searchTracksWithFallback } from '../services/musicSearch.js';
-import { clearMusicState, formatDuration, getMusic, getNodeStatus, updateMusicSetupMessage, updateMusicState } from '../services/music.js';
+import { applyMusicFilterPreset, clearMusicState, formatDuration, getMusic, getNodeStatus, MUSIC_FILTER_LABELS, updateMusicSetupMessage, updateMusicState } from '../services/music.js';
+import type { MusicFilterPreset } from '../services/music.js';
 
 import type { SlashCommand } from '../commands/types.js';
 
@@ -15,9 +16,45 @@ const commandMap: Map<string, SlashCommand> = new Map(commands.map((c) => [c.nam
 const musicCommandActionMap: Partial<Record<string, string>> = {
   setup: 'setup',
 };
+const FILTER_PRESET_OPTIONS: Array<{ value: MusicFilterPreset; label: string; description: string }> = [
+  { value: 'off', label: '필터 해제', description: '원본 사운드로 재생합니다.' },
+  { value: 'bass_boost', label: 'Bass Boost', description: '저음을 강조합니다.' },
+  { value: 'nightcore', label: 'Nightcore', description: '속도와 피치를 높입니다.' },
+  { value: 'vaporwave', label: 'Vaporwave', description: '속도/피치를 낮춰 몽환적으로 만듭니다.' },
+  { value: 'karaoke', label: 'Karaoke', description: '보컬 대역을 약화합니다.' }
+];
+const pendingFilterSelection = new Map<string, MusicFilterPreset>();
 const musicUiColor = 0x3b82f6;
 const buildMusicStatusEmbed = (title: string, description: string) =>
   new EmbedBuilder().setTitle(title).setDescription(description).setColor(musicUiColor);
+
+const toFilterPreset = (value: unknown): MusicFilterPreset => {
+  if (value === 'bass_boost' || value === 'nightcore' || value === 'vaporwave' || value === 'karaoke') {
+    return value;
+  }
+  return 'off';
+};
+
+const filterSelectionKey = (guildId: string, userId: string) => `${guildId}:${userId}`;
+
+const buildFilterRows = (selected: MusicFilterPreset) => [
+  new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('music_filter_select')
+      .setPlaceholder('오디오 필터를 선택하세요')
+      .addOptions(
+        FILTER_PRESET_OPTIONS.map((option) => ({
+          label: option.label,
+          description: option.description,
+          value: option.value,
+          default: option.value === selected
+        }))
+      )
+  ),
+  new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId('music_filter_apply').setLabel('필터 적용').setStyle(ButtonStyle.Primary).setEmoji('✅')
+  )
+];
 
 const formatQueueLine = (track: { title: string; uri?: string | null; length?: number }, index: number) => {
   const duration = track.length ? formatDuration(track.length) : 'LIVE';
@@ -118,6 +155,27 @@ export function registerInteractionCreate(client: Client) {
         await handleError(e, interaction, interaction.commandName);
       }
     } else if (interaction.isStringSelectMenu()) {
+      if (interaction.customId === 'music_filter_select') {
+        if (!interaction.guildId) {
+          await interaction.update({
+            embeds: [buildMusicStatusEmbed('🚫 서버 전용', '서버에서만 사용할 수 있어요.')],
+            components: []
+          });
+          return;
+        }
+
+        const selected = toFilterPreset(interaction.values[0]);
+        pendingFilterSelection.set(filterSelectionKey(interaction.guildId, interaction.user.id), selected);
+
+        await interaction.update({
+          embeds: [
+            buildMusicStatusEmbed('🎛️ 필터 선택', `선택된 필터: **${MUSIC_FILTER_LABELS[selected]}**\n\n아래 버튼으로 적용하세요.`)
+          ],
+          components: buildFilterRows(selected)
+        });
+        return;
+      }
+
       // 알림 선택 메뉴 처리
       if (interaction.customId === 'select_notification') {
         const ctx = getBotContext();
@@ -347,7 +405,10 @@ export function registerInteractionCreate(client: Client) {
 
       const searchResult = await searchTracksWithFallback(music, query, {
         id: interaction.user.id,
-        username: interaction.user.username
+        username: interaction.user.username,
+        displayName: (interaction.member as GuildMember | null)?.displayName ?? interaction.user.globalName ?? interaction.user.username,
+        avatarUrl: interaction.user.displayAvatarURL({ extension: 'png', size: 128 }),
+        source: 'discord_modal'
       });
       if (!searchResult.result.tracks.length) {
         await logMusicControlInteraction({
@@ -614,6 +675,89 @@ export function registerInteractionCreate(client: Client) {
         return;
       }
 
+      if (interaction.customId === 'music_filter_open') {
+        if (!interaction.guildId) {
+          await interaction.reply({ embeds: [buildMusicStatusEmbed('🚫 서버 전용', '서버에서만 사용할 수 있어요.')], ephemeral: true });
+          return;
+        }
+
+        const music = getMusic();
+        const player = music.players.get(interaction.guildId);
+        if (!player) {
+          await interaction.reply({
+            embeds: [buildMusicStatusEmbed('🎵 재생 없음', '필터를 적용하려면 먼저 음악을 재생해 주세요.')],
+            ephemeral: true
+          });
+          return;
+        }
+
+        const selected = toFilterPreset(player.data.get('music_filter_preset'));
+        pendingFilterSelection.set(filterSelectionKey(interaction.guildId, interaction.user.id), selected);
+
+        await interaction.reply({
+          embeds: [buildMusicStatusEmbed('🎛️ 필터 설정', `현재 필터: **${MUSIC_FILTER_LABELS[selected]}**\n\n드롭다운에서 선택 후 적용 버튼을 눌러주세요.`)],
+          components: buildFilterRows(selected),
+          ephemeral: true
+        });
+        return;
+      }
+
+      if (interaction.customId === 'music_autoplay_toggle') {
+        if (!interaction.guildId) {
+          await interaction.reply({ embeds: [buildMusicStatusEmbed('🚫 서버 전용', '서버에서만 사용할 수 있어요.')], ephemeral: true });
+          return;
+        }
+
+        const music = getMusic();
+        const player = music.players.get(interaction.guildId);
+        if (!player) {
+          await interaction.reply({
+            embeds: [buildMusicStatusEmbed('🎵 재생 없음', '자동재생을 바꾸려면 먼저 음악을 재생해 주세요.')],
+            ephemeral: true
+          });
+          return;
+        }
+
+        const current = player.data.get('music_autoplay') !== false;
+        const next = !current;
+        player.data.set('music_autoplay', next);
+
+        await logMusicControlInteraction({
+          guildId: interaction.guildId,
+          action: 'set_autoplay',
+          status: 'requested',
+          message: 'Discord autoplay toggle requested.',
+          requestedBy: interaction.user.id,
+          payload: {
+            source: 'discord_button',
+            custom_id: interaction.customId,
+            autoplay: next
+          }
+        });
+
+        await updateMusicSetupMessage(player, player.queue.current ?? null).catch(() => {});
+        await updateMusicState(player).catch(() => {});
+
+        await logMusicControlInteraction({
+          guildId: interaction.guildId,
+          action: 'set_autoplay',
+          status: 'success',
+          message: `Autoplay ${next ? 'enabled' : 'disabled'} via Discord button.`,
+          requestedBy: interaction.user.id,
+          payload: {
+            source: 'discord_button',
+            custom_id: interaction.customId,
+            autoplay: next
+          }
+        });
+
+        await interaction.reply({
+          embeds: [buildMusicStatusEmbed('♾️ 자동재생 설정', `자동재생이 **${next ? '켜짐' : '꺼짐'}** 상태로 바뀌었습니다.`)],
+          ephemeral: true
+        });
+        return;
+      }
+
       if (interaction.customId === 'music_commands_show') {
         const embed = new EmbedBuilder()
           .setTitle('🎵 | 음악')
@@ -666,6 +810,82 @@ export function registerInteractionCreate(client: Client) {
           ],
           ephemeral: true
         });
+        return;
+      }
+
+      if (interaction.customId === 'music_filter_apply') {
+        if (!interaction.guildId) {
+          await interaction.reply({ embeds: [buildMusicStatusEmbed('🚫 서버 전용', '서버에서만 사용할 수 있어요.')], ephemeral: true });
+          return;
+        }
+
+        const music = getMusic();
+        const player = music.players.get(interaction.guildId);
+        if (!player) {
+          await interaction.reply({ embeds: [buildMusicStatusEmbed('🎵 재생 없음', '필터를 적용할 재생 세션이 없습니다.')], ephemeral: true });
+          return;
+        }
+
+        await interaction.deferUpdate();
+        const key = filterSelectionKey(interaction.guildId, interaction.user.id);
+        const selected = pendingFilterSelection.get(key) ?? toFilterPreset(player.data.get('music_filter_preset'));
+
+        await logMusicControlInteraction({
+          guildId: interaction.guildId,
+          action: 'set_filter',
+          status: 'requested',
+          message: 'Discord filter apply requested.',
+          requestedBy: interaction.user.id,
+          payload: {
+            source: 'discord_button',
+            custom_id: interaction.customId,
+            filter: selected
+          }
+        });
+
+        try {
+          await applyMusicFilterPreset(player, selected);
+          pendingFilterSelection.delete(key);
+
+          await updateMusicSetupMessage(player, player.queue.current ?? null).catch(() => {});
+          await updateMusicState(player).catch(() => {});
+
+          await logMusicControlInteraction({
+            guildId: interaction.guildId,
+            action: 'set_filter',
+            status: 'success',
+            message: `Filter ${selected} applied from Discord controls.`,
+            requestedBy: interaction.user.id,
+            payload: {
+              source: 'discord_button',
+              custom_id: interaction.customId,
+              filter: selected
+            }
+          });
+
+          await interaction.editReply({
+            embeds: [buildMusicStatusEmbed('🎛️ 필터 적용 완료', `현재 필터: **${MUSIC_FILTER_LABELS[selected]}**`)],
+            components: buildFilterRows(selected)
+          });
+        } catch (error) {
+          await logMusicControlInteraction({
+            guildId: interaction.guildId,
+            action: 'set_filter',
+            status: 'failed',
+            message: error instanceof Error ? error.message : 'Filter apply failed.',
+            requestedBy: interaction.user.id,
+            payload: {
+              source: 'discord_button',
+              custom_id: interaction.customId,
+              filter: selected
+            }
+          });
+
+          await interaction.editReply({
+            embeds: [buildMusicStatusEmbed('❌ 필터 적용 실패', '필터를 적용하지 못했습니다. 잠시 후 다시 시도해 주세요.')],
+            components: buildFilterRows(selected)
+          });
+        }
         return;
       }
 

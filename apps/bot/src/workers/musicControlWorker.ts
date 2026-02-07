@@ -49,6 +49,27 @@ const asPayloadObject = (payload: Json | null): Record<string, Json> | null => {
   return payload as Record<string, Json>;
 };
 
+const asRequesterFromPayload = (payload: Json | null, fallbackId: string | null) => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return {
+      id: fallbackId ?? 'web',
+      username: 'web',
+      displayName: null as string | null,
+      avatarUrl: null as string | null,
+      source: 'web'
+    };
+  }
+
+  const value = payload as Record<string, Json>;
+  const id = typeof value.id === 'string' ? value.id : (fallbackId ?? 'web');
+  const username = typeof value.username === 'string' ? value.username : 'web';
+  const displayName = typeof value.displayName === 'string' ? value.displayName : null;
+  const avatarUrl = typeof value.avatarUrl === 'string' ? value.avatarUrl : null;
+  const source = typeof value.source === 'string' ? value.source : 'web';
+
+  return { id, username, displayName, avatarUrl, source };
+};
+
 const reorderQueue = (player: KazagumoPlayer, order: string[]) => {
   if (!player || !Array.isArray(order) || order.length === 0) return;
   const current = player.queue.slice(0);
@@ -179,19 +200,24 @@ const handleJob = async (job: MusicControlJob) => {
       break;
     }
     case 'add': {
-      const payload = asPayloadObject(job.payload) as { query?: Json } | null;
+      const payload = asPayloadObject(job.payload) as { query?: Json; requester?: Json } | null;
       const query = typeof payload?.query === 'string' ? payload.query : '';
       if (!query) {
         failJob('추가할 검색어를 입력해 주세요.');
       }
+
+      const requester = asRequesterFromPayload(payload?.requester ?? null, job.requested_by);
 
       if (isSpotifyQuery(query)) {
         failJob('Spotify URL은 아직 지원하지 않아요. YouTube 또는 SoundCloud URL을 사용해 주세요.');
       }
 
       const searchResult = await searchTracksWithFallback(music, query, {
-        id: job.requested_by ?? 'web',
-        username: 'web'
+        id: requester.id,
+        username: requester.username,
+        displayName: requester.displayName ?? undefined,
+        avatarUrl: requester.avatarUrl ?? undefined,
+        source: requester.source
       });
 
       if (!searchResult.result.tracks.length) {

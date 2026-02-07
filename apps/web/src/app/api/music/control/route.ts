@@ -22,7 +22,25 @@ const JOB_POLL_INTERVAL_MS = 180;
 
 type ControlPayload = {
   action: 'play' | 'pause' | 'stop' | 'skip' | 'previous' | 'reorder' | 'add' | 'remove' | 'clear';
-  payload?: { order?: string[]; query?: string; trackId?: string; index?: number };
+  payload?: {
+    order?: string[];
+    query?: string;
+    trackId?: string;
+    index?: number;
+    requester?: {
+      id: string;
+      username: string;
+      displayName: string;
+      avatarUrl: string | null;
+      source: 'web';
+    };
+  };
+};
+
+const userAvatarUrl = (id: string, avatar: string | null | undefined) => {
+  if (!avatar) return null;
+  const ext = avatar.startsWith('a_') ? 'gif' : 'png';
+  return `https://cdn.discordapp.com/avatars/${id}/${avatar}.${ext}?size=64`;
 };
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
@@ -106,16 +124,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: payloadError }, { status: 400 });
   }
   const requestedBy = ctx.session.user.id;
+  const requesterUsername = ctx.member.user?.username ?? ctx.session.user.name ?? 'web';
+  const requesterDisplayName = ctx.member.nick ?? ctx.member.user?.global_name ?? requesterUsername;
+  const requesterAvatarUrl = userAvatarUrl(requestedBy, ctx.member.user?.avatar ?? null);
+  const normalizedPayload = body.action === 'add'
+    ? {
+        ...payload,
+        requester: {
+          id: requestedBy,
+          username: requesterUsername,
+          displayName: requesterDisplayName,
+          avatarUrl: requesterAvatarUrl,
+          source: 'web' as const
+        }
+      }
+    : payload;
 
   const { data: job, error } = await supabase
     .from('music_control_jobs')
     .insert({
-      guild_id: env.NYARU_GUILD_ID,
-      action: body.action,
-      payload,
-      status: 'pending',
-      requested_by: requestedBy
-    })
+        guild_id: env.NYARU_GUILD_ID,
+        action: body.action,
+        payload: normalizedPayload,
+        status: 'pending',
+        requested_by: requestedBy
+      })
     .select('job_id')
     .single();
 
@@ -126,7 +159,7 @@ export async function POST(request: Request) {
     action: body.action,
     status: 'requested',
     message: 'queued from web',
-    payload,
+    payload: normalizedPayload,
     requested_by: requestedBy
   });
 
