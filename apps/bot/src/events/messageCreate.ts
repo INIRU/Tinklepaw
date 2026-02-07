@@ -12,7 +12,8 @@ import { generateInventoryEmbed } from '../services/inventory.js';
 import { getChannelMentions } from '../services/channelCache.js';
 
 function isMentionOrReplyToBot(message: Message, botUserId: string): boolean {
-  if (message.mentions.has(botUserId)) return true;
+  const content = message.content.trimStart();
+  if (content.startsWith(`<@${botUserId}>`) || content.startsWith(`<@!${botUserId}>`)) return true;
   const ref = message.reference;
   if (!ref?.messageId) return false;
   const replied = message.channel.messages.cache.get(ref.messageId);
@@ -65,7 +66,7 @@ export function registerMessageCreate(client: Client) {
     if (!botId) return;
     if (!isMentionOrReplyToBot(message, botId)) return;
 
-    const text = message.content.replaceAll(`<@${botId}>`, '').trim();
+    const text = message.content.replace(new RegExp(`^\s*<@!?${botId}>\s*`), '').trim();
     if (!text) {
       await message.reply('할 말 있어? 메시지를 같이 보내줘.');
       return;
