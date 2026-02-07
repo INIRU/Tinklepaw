@@ -45,6 +45,9 @@ Notes:
 - Bot: `npm run dev:bot`
 - Both: `npm run dev`
 
+## Deployment Retry
+- If Vercel build fails due a temporary provider error, trigger a redeploy with a docs-only commit.
+
 ## OAuth Redirect URL
 Discord Developer Portal > OAuth2 > Redirects:
 - `http://localhost:3000/api/auth/callback/discord`
