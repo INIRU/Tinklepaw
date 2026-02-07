@@ -24,6 +24,8 @@ type TopUser = {
   avatarUrl: string | null;
   chatMessages: number;
   voiceHours: number;
+  joins: number;
+  leaves: number;
   score: number;
 };
 
@@ -288,13 +290,15 @@ export default function AdminAnalyticsClient() {
                       <th className="py-2 pr-3">유저</th>
                       <th className="py-2 pr-3">채팅</th>
                       <th className="py-2 pr-3">통화 시간</th>
+                      <th className="py-2 pr-3">입장</th>
+                      <th className="py-2 pr-3">퇴장</th>
                       <th className="py-2">점수</th>
                     </tr>
                   </thead>
                   <tbody>
                     {selected.topUsers.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="py-6 text-center muted">집계된 활동 유저가 없습니다.</td>
+                        <td colSpan={7} className="py-6 text-center muted">집계된 활동 유저가 없습니다.</td>
                       </tr>
                     ) : (
                       selected.topUsers.map((user, index) => (
@@ -312,6 +316,8 @@ export default function AdminAnalyticsClient() {
                           </td>
                           <td className="py-3 pr-3">{user.chatMessages.toLocaleString()}</td>
                           <td className="py-3 pr-3">{user.voiceHours.toFixed(1)}h</td>
+                          <td className="py-3 pr-3">{user.joins.toLocaleString()}</td>
+                          <td className="py-3 pr-3">{user.leaves.toLocaleString()}</td>
                           <td className="py-3 font-semibold">{user.score.toLocaleString()}</td>
                         </tr>
                       ))

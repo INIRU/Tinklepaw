@@ -33,6 +33,8 @@ type TopUser = {
   avatarUrl: string | null;
   chatMessages: number;
   voiceHours: number;
+  joins: number;
+  leaves: number;
   score: number;
 };
 
@@ -40,6 +42,8 @@ type TopUserAggregate = {
   userId: string;
   chatMessages: number;
   voiceHours: number;
+  joins: number;
+  leaves: number;
   score: number;
 };
 
@@ -158,7 +162,7 @@ const aggregatePeriod = (
   const pointByKey = new Map(points.map((point) => [point.key, point]));
   const periodStartMs = starts[0]?.getTime() ?? 0;
 
-  const userStats = new Map<string, { chatMessages: number; voiceSeconds: number }>();
+  const userStats = new Map<string, { chatMessages: number; voiceSeconds: number; joins: number; leaves: number }>();
 
   for (const event of events) {
     const createdAt = new Date(event.created_at);
@@ -180,9 +184,11 @@ const aggregatePeriod = (
     }
 
     if (event.user_id && createdAt.getTime() >= periodStartMs) {
-      const stats = userStats.get(event.user_id) ?? { chatMessages: 0, voiceSeconds: 0 };
+      const stats = userStats.get(event.user_id) ?? { chatMessages: 0, voiceSeconds: 0, joins: 0, leaves: 0 };
       if (event.event_type === 'chat_message') stats.chatMessages += value;
       if (event.event_type === 'voice_seconds') stats.voiceSeconds += value;
+      if (event.event_type === 'member_join') stats.joins += value;
+      if (event.event_type === 'member_leave') stats.leaves += value;
       userStats.set(event.user_id, stats);
     }
   }
@@ -207,6 +213,8 @@ const aggregatePeriod = (
         userId,
         chatMessages: stats.chatMessages,
         voiceHours: Number((stats.voiceSeconds / 3600).toFixed(2)),
+        joins: stats.joins,
+        leaves: stats.leaves,
         score,
       };
     })
@@ -249,6 +257,8 @@ const resolveTopUsers = async (
       avatarUrl: profile?.avatarUrl ?? null,
       chatMessages: user.chatMessages,
       voiceHours: user.voiceHours,
+      joins: user.joins,
+      leaves: user.leaves,
       score: user.score,
     };
   });
