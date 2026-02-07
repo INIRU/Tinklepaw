@@ -83,6 +83,23 @@ export type Database = {
         Update: Partial<Database['nyang']['Tables']['status_samples']['Row']>;
         Relationships: [];
       };
+      activity_events: {
+        Row: {
+          event_id: number;
+          guild_id: string;
+          user_id: string | null;
+          event_type: string;
+          value: number;
+          meta: Json;
+          created_at: string;
+        };
+        Insert: Partial<Database['nyang']['Tables']['activity_events']['Row']> & {
+          guild_id: string;
+          event_type: string;
+        };
+        Update: Partial<Database['nyang']['Tables']['activity_events']['Row']>;
+        Relationships: [];
+      };
       music_control_jobs: {
         Row: {
           job_id: string;

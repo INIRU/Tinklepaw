@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ChevronRight, Dices, Settings, Users, Bot, Bell } from 'lucide-react';
+import { ChevronRight, Dices, Settings, Users, Bot, Bell, ChartColumnBig } from 'lucide-react';
 
 import { requireAdmin } from '@/lib/server/guards';
 import MotionIn from '@/components/motion/MotionIn';
@@ -42,6 +42,13 @@ export default async function AdminHome() {
       href: '/admin/notifications',
       icon: Bell,
       color: 'yellow'
+    },
+    {
+      title: '활동 통계',
+      desc: '입장/이탈, 채팅, 통화 사용량 분석',
+      href: '/admin/analytics',
+      icon: ChartColumnBig,
+      color: 'mint'
     }
   ];
 

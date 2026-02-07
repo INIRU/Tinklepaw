@@ -2,6 +2,7 @@ import type { Client, GuildMember, TextChannel } from 'discord.js';
 
 import { getBotContext } from '../context.js';
 import { getAppConfig } from '../services/config.js';
+import { recordActivityEvent } from '../services/activityEvents.js';
 
 function renderTemplate(template: string, member: GuildMember) {
   return template
@@ -14,6 +15,16 @@ export function registerGuildMemberAdd(client: Client) {
   client.on('guildMemberAdd', async (member: GuildMember) => {
     const ctx = getBotContext();
     if (member.guild.id !== ctx.env.NYARU_GUILD_ID) return;
+
+    void recordActivityEvent({
+      guildId: member.guild.id,
+      userId: member.user.id,
+      eventType: 'member_join',
+      value: 1,
+      meta: {
+        source: 'guild_member_add'
+      }
+    });
 
     let cfg;
     try {

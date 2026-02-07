@@ -10,6 +10,7 @@ import { handleError } from '../errorHandler.js';
 import { getAppConfig } from '../services/config.js';
 import { getMusic, getNodeStatus, updateMusicSetupMessage, updateMusicState } from '../services/music.js';
 import { isSpotifyQuery, normalizeMusicQuery, searchTracksWithFallback } from '../services/musicSearch.js';
+import { recordActivityEvent } from '../services/activityEvents.js';
 
 import { generateInventoryEmbed } from '../services/inventory.js';
 import { getChannelMentions } from '../services/channelCache.js';
@@ -41,6 +42,18 @@ export function registerMessageCreate(client: Client) {
     if (message.author.bot) return;
     if (!message.content) return;
     const guildId = message.guildId;
+
+    void recordActivityEvent({
+      guildId,
+      userId: message.author.id,
+      eventType: 'chat_message',
+      value: 1,
+      meta: {
+        source: 'message_create',
+        channel_id: message.channelId,
+        message_id: message.id
+      }
+    });
 
     if (await handleRpsMessage(message)) return;
     if (await handleWordChainMessage(message)) return;
