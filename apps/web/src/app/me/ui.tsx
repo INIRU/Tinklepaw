@@ -1,10 +1,16 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { m } from 'framer-motion';
 import { ArrowRight, Dices, Package, Sparkles, LogOut, Coins } from 'lucide-react';
 import { signOut } from 'next-auth/react';
+import gsap from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+
+if (typeof window !== 'undefined') {
+  gsap.registerPlugin(ScrollTrigger);
+}
 
 type UserView = {
   name: string;
@@ -17,8 +23,131 @@ export default function MeClient(props: {
   children: ReactNode;
   fallbackAvatar: ReactNode;
 }) {
+  const [animatedPoints, setAnimatedPoints] = useState(0);
+  const previousPointsRef = useRef(0);
+  const pointsTweenRef = useRef<gsap.core.Tween | null>(null);
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const pointsCardRef = useRef<HTMLDivElement | null>(null);
+  const pointsValueRef = useRef<HTMLDivElement | null>(null);
+  const prefersReducedMotionRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const syncMotionPreference = () => {
+      prefersReducedMotionRef.current = media.matches;
+    };
+
+    syncMotionPreference();
+    media.addEventListener('change', syncMotionPreference);
+
+    return () => media.removeEventListener('change', syncMotionPreference);
+  }, []);
+
+  useEffect(() => {
+    if (prefersReducedMotionRef.current) return;
+
+    const section = sectionRef.current;
+    if (!section) return;
+
+    const targets = Array.from(
+      section.querySelectorAll<HTMLElement>('[data-me-scroll-reveal]'),
+    );
+
+    if (targets.length === 0) return;
+
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        targets,
+        { y: 20, autoAlpha: 0 },
+        {
+          y: 0,
+          autoAlpha: 1,
+          duration: 0.5,
+          stagger: 0.08,
+          ease: 'power3.out',
+          scrollTrigger: {
+            trigger: section,
+            start: 'top 78%',
+            once: true
+          }
+        }
+      );
+    }, section);
+
+    return () => ctx.revert();
+  }, []);
+
+  useEffect(() => {
+    const nextPoints = props.user.points;
+    const previousPoints = previousPointsRef.current;
+
+    if (prefersReducedMotionRef.current) {
+      previousPointsRef.current = nextPoints;
+      setAnimatedPoints(nextPoints);
+      return;
+    }
+
+    pointsTweenRef.current?.kill();
+
+    const counter = { value: previousPoints };
+    pointsTweenRef.current = gsap.to(counter, {
+      value: nextPoints,
+      duration: 0.9,
+      ease: 'power3.out',
+      onUpdate: () => {
+        const rounded = Math.round(counter.value);
+        previousPointsRef.current = rounded;
+        setAnimatedPoints(rounded);
+      },
+      onComplete: () => {
+        previousPointsRef.current = nextPoints;
+        setAnimatedPoints(nextPoints);
+      }
+    });
+
+    if (pointsCardRef.current && pointsValueRef.current) {
+      gsap.fromTo(
+        pointsCardRef.current,
+        { autoAlpha: 0.72, y: 10, scale: 0.98 },
+        {
+          autoAlpha: 1,
+          y: 0,
+          scale: 1,
+          duration: 0.32,
+          ease: 'power2.out',
+          overwrite: 'auto'
+        }
+      );
+
+      gsap.fromTo(
+        pointsValueRef.current,
+        { y: 6, autoAlpha: 0.64 },
+        {
+          y: 0,
+          autoAlpha: 1,
+          duration: 0.35,
+          ease: 'power2.out',
+          overwrite: 'auto'
+        }
+      );
+    }
+
+    return () => {
+      pointsTweenRef.current?.kill();
+    };
+  }, [props.user.points]);
+
+  useEffect(() => {
+    return () => {
+      pointsTweenRef.current?.kill();
+    };
+  }, []);
+
   return (
     <m.section
+      ref={sectionRef}
       initial={{ opacity: 0, y: 10, filter: 'blur(2px)' }}
       animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
@@ -66,14 +195,14 @@ export default function MeClient(props: {
             </div>
             <div className="text-sm muted mb-4">Discord 계정으로 로그인되어 있어.</div>
             
-            <div className="inline-flex items-center gap-3 rounded-2xl border border-[color:var(--border)] bg-gradient-to-br from-[color:var(--accent-pink)]/10 to-transparent p-4">
+            <div ref={pointsCardRef} data-me-scroll-reveal className="inline-flex items-center gap-3 rounded-2xl border border-[color:var(--border)] bg-gradient-to-br from-[color:var(--accent-pink)]/10 to-transparent p-4">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[color:var(--accent-pink)] text-white shadow-lg shadow-pink-500/20">
                 <Coins className="h-5 w-5" />
               </div>
               <div>
                 <div className="text-[10px] font-bold muted-2 uppercase tracking-wider">보유 포인트</div>
-                <div className="text-lg font-bold text-[color:var(--fg)]">
-                  {props.user.points.toLocaleString()} <span className="text-sm font-medium opacity-60 ml-0.5">P</span>
+                <div ref={pointsValueRef} className="text-lg font-bold text-[color:var(--fg)]">
+                  {animatedPoints.toLocaleString()} <span className="text-sm font-medium opacity-60 ml-0.5">P</span>
                 </div>
               </div>
             </div>
@@ -81,7 +210,7 @@ export default function MeClient(props: {
         </div>
 
         <div className="mt-10 grid gap-3 sm:grid-cols-2">
-          <m.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }}>
+          <m.div data-me-scroll-reveal whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }}>
             <Link
               className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] px-4 py-4 text-sm font-semibold inline-flex w-full items-center justify-between hover:bg-[color:var(--bg)] transition-colors shadow-sm"
               href="/inventory"
@@ -96,7 +225,7 @@ export default function MeClient(props: {
             </Link>
           </m.div>
 
-          <m.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }}>
+          <m.div data-me-scroll-reveal whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }}>
             <Link
               className="rounded-2xl btn-bangul px-4 py-4 text-sm font-semibold inline-flex w-full items-center justify-between shadow-lg"
               href="/draw"

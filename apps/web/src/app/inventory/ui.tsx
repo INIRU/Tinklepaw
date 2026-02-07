@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from '@/components/toast/ToastProvider';
 import { m, AnimatePresence } from 'framer-motion';
-import { Package, Sparkles, CheckCircle2, Circle, Search, X } from 'lucide-react';
+import { Package, Sparkles, CheckCircle2, Search, X } from 'lucide-react';
 import { Skeleton } from '@/components/ui/Skeleton';
+import gsap from 'gsap';
 
 type InventoryItem = {
   itemId: string;
@@ -91,9 +92,27 @@ export default function InventoryClient() {
   const [mounted, setMounted] = useState(false);
   const [equipLoading, setEquipLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const equippedSectionRef = useRef<HTMLElement | null>(null);
+  const prevEquippedIdRef = useRef<string | null>(null);
+  const prefersReducedMotionRef = useRef(false);
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const syncMotionPreference = () => {
+      prefersReducedMotionRef.current = media.matches;
+    };
+
+    syncMotionPreference();
+    media.addEventListener('change', syncMotionPreference);
+
+    return () => media.removeEventListener('change', syncMotionPreference);
   }, []);
 
   const fetchInventory = useCallback(async () => {
@@ -168,6 +187,77 @@ export default function InventoryClient() {
     ? allItems.filter((inv) => inv.item.name.toLowerCase().includes(query))
     : allItems;
 
+  useEffect(() => {
+    if (loading) return;
+
+    const grid = gridRef.current;
+    if (!grid) return;
+
+    const cards = Array.from(grid.querySelectorAll<HTMLElement>('[data-inventory-card]'));
+    if (cards.length === 0) return;
+
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        cards,
+        {
+          autoAlpha: 0,
+          y: prefersReducedMotionRef.current ? 0 : 16,
+          scale: prefersReducedMotionRef.current ? 1 : 0.97
+        },
+        {
+          autoAlpha: 1,
+          y: 0,
+          scale: 1,
+          duration: prefersReducedMotionRef.current ? 0.05 : 0.34,
+          stagger: prefersReducedMotionRef.current ? 0 : 0.03,
+          ease: 'power2.out',
+          overwrite: 'auto'
+        }
+      );
+    }, grid);
+
+    return () => ctx.revert();
+  }, [filteredItems.length, loading, query]);
+
+  useEffect(() => {
+    if (!equippedItemId) {
+      prevEquippedIdRef.current = null;
+      return;
+    }
+
+    if (prevEquippedIdRef.current === equippedItemId) return;
+    prevEquippedIdRef.current = equippedItemId;
+
+    if (prefersReducedMotionRef.current) return;
+
+    const tl = gsap.timeline({ defaults: { overwrite: 'auto' } });
+
+    if (equippedSectionRef.current) {
+      tl.fromTo(
+        equippedSectionRef.current,
+        { autoAlpha: 0.75, y: 10, scale: 0.98 },
+        { autoAlpha: 1, y: 0, scale: 1, duration: 0.28, ease: 'power2.out' }
+      );
+    }
+
+    const equippedCard = Array.from(
+      gridRef.current?.querySelectorAll<HTMLElement>('[data-item-id]') ?? [],
+    ).find((card) => card.dataset.itemId === equippedItemId);
+
+    if (equippedCard) {
+      tl.fromTo(
+        equippedCard,
+        { scale: 0.9, filter: 'brightness(1.45)' },
+        { scale: 1, filter: 'brightness(1)', duration: 0.38, ease: 'back.out(1.6)' },
+        0,
+      );
+    }
+
+    return () => {
+      tl.kill();
+    };
+  }, [equippedItemId]);
+
   if (!mounted) {
     return null;
   }
@@ -216,7 +306,7 @@ export default function InventoryClient() {
         ) : (
           <>
             {data?.equipped?.item && (
-              <section className="mb-8">
+              <section ref={equippedSectionRef} className="mb-8">
                 <h2 className="mb-4 text-lg font-semibold flex items-center gap-2">
                   <CheckCircle2 className="h-5 w-5 text-[color:var(--accent-mint)]" />
                   현재 장착 중
@@ -330,13 +420,15 @@ export default function InventoryClient() {
                       <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.08),transparent_45%),radial-gradient(circle_at_80%_10%,rgba(255,191,36,0.08),transparent_40%),radial-gradient(circle_at_50%_100%,rgba(147,197,253,0.08),transparent_45%)] pointer-events-none" />
                       <div className="absolute inset-0 opacity-60 bg-[linear-gradient(0deg,rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] [background-size:28px_28px] pointer-events-none" />
 
-                      <div className="relative grid gap-3 grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7">
+                      <div ref={gridRef} className="relative grid gap-3 grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7">
                         <AnimatePresence mode="popLayout">
                           {filteredItems.map((inv, idx) => {
                           const isEquipped = equippedItemId === inv.itemId;
                           return (
                             <m.div
                               key={inv.itemId}
+                              data-inventory-card
+                              data-item-id={inv.itemId}
                               layout
                               layoutId={`inv-${inv.itemId}`}
                               exit={{ opacity: 0, scale: 0.95 }}

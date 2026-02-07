@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Bell,
@@ -15,8 +15,14 @@ import {
   X,
 } from 'lucide-react';
 import { m, AnimatePresence } from 'framer-motion';
+import gsap from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { Notification } from '../../components/notification/NotificationItem';
 import { markAsRead, deleteNotification, claimReward, markAllAsRead, deleteAllRead } from './actions';
+
+if (typeof window !== 'undefined') {
+  gsap.registerPlugin(ScrollTrigger);
+}
 
 export function NotificationClientPage({
   initialNotifications,
@@ -31,6 +37,119 @@ export function NotificationClientPage({
   const [errorMessage, setErrorMessage] = useState('');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const unreadCount = useMemo(() => notifications.filter((n) => !n.is_read).length, [notifications]);
+  const unreadBadgeRef = useRef<HTMLSpanElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  const previousUnreadRef = useRef(0);
+  const prefersReducedMotionRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const syncMotionPreference = () => {
+      prefersReducedMotionRef.current = media.matches;
+    };
+
+    syncMotionPreference();
+    media.addEventListener('change', syncMotionPreference);
+
+    return () => media.removeEventListener('change', syncMotionPreference);
+  }, []);
+
+  useEffect(() => {
+    const previousUnread = previousUnreadRef.current;
+    previousUnreadRef.current = unreadCount;
+
+    if (previousUnread === unreadCount || prefersReducedMotionRef.current) return;
+    if (!unreadBadgeRef.current) return;
+
+    gsap.fromTo(
+      unreadBadgeRef.current,
+      { scale: 0.7, autoAlpha: 0.75 },
+      {
+        scale: 1,
+        autoAlpha: 1,
+        duration: 0.34,
+        ease: 'back.out(2.2)',
+        overwrite: 'auto'
+      }
+    );
+  }, [unreadCount]);
+
+  useEffect(() => {
+    const listNode = listRef.current;
+    if (!listNode) return;
+
+    const cards = Array.from(listNode.querySelectorAll<HTMLElement>('[data-notification-card]'));
+    if (cards.length === 0) return;
+
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        cards,
+        {
+          autoAlpha: 0,
+          y: prefersReducedMotionRef.current ? 0 : 16,
+          scale: prefersReducedMotionRef.current ? 1 : 0.98
+        },
+        {
+          autoAlpha: 1,
+          y: 0,
+          scale: 1,
+          duration: prefersReducedMotionRef.current ? 0.05 : 0.32,
+          stagger: prefersReducedMotionRef.current ? 0 : 0.04,
+          ease: 'power2.out',
+          overwrite: 'auto'
+        }
+      );
+    }, listNode);
+
+    return () => ctx.revert();
+  }, [viewMode, notifications.length]);
+
+  useEffect(() => {
+    if (prefersReducedMotionRef.current) return;
+
+    const header = headerRef.current;
+    if (!header) return;
+
+    const ctx = gsap.context(() => {
+      const revealTargets = gsap.utils.toArray<HTMLElement>('[data-noti-scroll-reveal]');
+
+      if (revealTargets.length > 0) {
+        gsap.fromTo(
+          revealTargets,
+          { y: 20, autoAlpha: 0 },
+          {
+            y: 0,
+            autoAlpha: 1,
+            duration: 0.52,
+            stagger: 0.08,
+            ease: 'power3.out',
+            scrollTrigger: {
+              trigger: header,
+              start: 'top 78%',
+              once: true
+            }
+          }
+        );
+      }
+
+      gsap.to('[data-noti-float]', {
+        yPercent: -18,
+        scale: 1.05,
+        ease: 'none',
+        scrollTrigger: {
+          trigger: header,
+          start: 'top bottom',
+          end: 'bottom top',
+          scrub: 0.8
+        }
+      });
+    }, header);
+
+    return () => ctx.revert();
+  }, []);
 
   const handleRead = async (id: string) => {
     setNotifications((prev) =>
@@ -149,12 +268,12 @@ export function NotificationClientPage({
   return (
     <div className='space-y-6'>
       {/* 헤더 섹션 */}
-      <div className='relative overflow-hidden rounded-3xl card-glass p-6 md:p-8'>
+      <div ref={headerRef} className='relative overflow-hidden rounded-3xl card-glass p-6 md:p-8'>
         <div className='relative'>
-          <div className='flex items-start justify-between gap-6'>
+          <div data-noti-scroll-reveal className='flex items-start justify-between gap-6'>
             <div className='flex items-center gap-4'>
               <div className='relative'>
-                <div className='absolute -inset-1 bg-gradient-to-br from-[color:var(--accent-pink)] to-[color:var(--accent-lavender)] rounded-2xl blur-md opacity-20 animate-pulse-slow' />
+                <div data-noti-float className='absolute -inset-1 bg-gradient-to-br from-[color:var(--accent-pink)] to-[color:var(--accent-lavender)] rounded-2xl blur-md opacity-20 animate-pulse-slow' />
                 <div className='relative p-3 rounded-2xl bg-[color:var(--chip)] border border-[color:var(--border)] shadow-lg'>
                   <Inbox
                     className='w-7 h-7 text-[color:var(--accent-pink)]'
@@ -196,7 +315,10 @@ export function NotificationClientPage({
                 >
                   안읽음
                   {unreadNotificationsCount > 0 && (
-                    <span className='absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white'>
+                    <span
+                      ref={unreadBadgeRef}
+                      className='absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white'
+                    >
                       {unreadNotificationsCount}
                     </span>
                   )}
@@ -205,7 +327,7 @@ export function NotificationClientPage({
             </div>
           </div>
 
-          <div className='mt-6 flex flex-wrap items-center gap-3'>
+          <div data-noti-scroll-reveal className='mt-6 flex flex-wrap items-center gap-3'>
             {unreadCount > 0 && (
               <m.button
                 initial={{ opacity: 0, scale: 0.9 }}
@@ -233,6 +355,7 @@ export function NotificationClientPage({
 
       {/* 알림 리스트 */}
       <m.div
+        ref={listRef}
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
@@ -264,6 +387,7 @@ export function NotificationClientPage({
             {filteredNotifications.map((notification, index) => (
               <m.div
                 key={notification.id}
+                data-notification-card
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9 }}

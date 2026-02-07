@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '@/components/toast/ToastProvider';
 import { GachaScene } from './GachaScene';
 import { AnimatePresence, m } from 'framer-motion';
+import gsap from 'gsap';
 import { X, Info, Coins, AlertCircle, ChevronDown, History, Copy, Download, Search, Sparkles } from 'lucide-react';
 import Image from 'next/image';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -144,10 +145,26 @@ export default function DrawClient() {
   const [drawResults, setDrawResults] = useState<DrawResult[]>([]);
   const [showResultModal, setShowResultModal] = useState(false);
   const [busy, setBusy] = useState(false);
+  const resultModalRef = useRef<HTMLDivElement | null>(null);
+  const prefersReducedMotionRef = useRef(false);
 
   useEffect(() => {
     const id = setInterval(() => setNowMs(Date.now()), 60_000);
     return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const syncMotionPreference = () => {
+      prefersReducedMotionRef.current = media.matches;
+    };
+
+    syncMotionPreference();
+    media.addEventListener('change', syncMotionPreference);
+
+    return () => media.removeEventListener('change', syncMotionPreference);
   }, []);
 
   // Computed
@@ -172,6 +189,73 @@ export default function DrawClient() {
       order[curr.rarity] > order[prev.rarity] ? curr : prev,
     ).rarity;
   }, [drawResults]);
+
+  useEffect(() => {
+    if (!showResultModal || drawResults.length === 0) return;
+
+    const modal = resultModalRef.current;
+    if (!modal) return;
+
+    const reduced = prefersReducedMotionRef.current;
+    const cards = Array.from(modal.querySelectorAll<HTMLElement>('[data-result-card]'));
+
+    const tl = gsap.timeline({ defaults: { overwrite: 'auto' } });
+
+    tl.fromTo(
+      modal,
+      { autoAlpha: 0, y: reduced ? 0 : 12, scale: reduced ? 1 : 0.98 },
+      {
+        autoAlpha: 1,
+        y: 0,
+        scale: 1,
+        duration: reduced ? 0.05 : 0.28,
+        ease: 'power2.out'
+      }
+    );
+
+    if (cards.length > 0) {
+      tl.fromTo(
+        cards,
+        { autoAlpha: 0, y: reduced ? 0 : 20, scale: reduced ? 1 : 0.94 },
+        {
+          autoAlpha: 1,
+          y: 0,
+          scale: 1,
+          duration: reduced ? 0.05 : 0.38,
+          stagger: reduced ? 0 : 0.05,
+          ease: 'power3.out'
+        },
+        '-=0.12'
+      );
+
+      if (!reduced) {
+        const premiumCards = cards.filter((card) => {
+          const rarity = card.dataset.rarity;
+          return rarity === 'SS' || rarity === 'SSS';
+        });
+
+        if (premiumCards.length > 0) {
+          tl.fromTo(
+            premiumCards,
+            { scale: 1 },
+            {
+              scale: 1.04,
+              duration: 0.22,
+              ease: 'sine.inOut',
+              yoyo: true,
+              repeat: 1,
+              stagger: 0.06
+            },
+            '-=0.16'
+          );
+        }
+      }
+    }
+
+    return () => {
+      tl.kill();
+    };
+  }, [drawResults, showResultModal]);
 
   useEffect(() => {
     fetch('/api/gacha/pools')
@@ -916,6 +1000,7 @@ export default function DrawClient() {
           {showResultModal && drawResults.length > 0 && (
             <div className='absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm'>
               <m.div
+                ref={resultModalRef}
                 initial={{ opacity: 0, scale: 0.8, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9 }}
@@ -945,7 +1030,12 @@ export default function DrawClient() {
                       const isVariant = Boolean(item.isVariant);
 
                       return (
-                        <div key={`${item.itemId}-${idx}`} className='group flex flex-col items-center gap-2 w-full'>
+                        <div
+                          key={`${item.itemId}-${idx}`}
+                          data-result-card
+                          data-rarity={item.rarity}
+                          className='group flex flex-col items-center gap-2 w-full'
+                        >
                           <div
                             className={`relative w-full aspect-square rounded-2xl border-2 p-2 transition-all ${
                               drawResults.length === 1 ? 'max-w-xs' : ''
