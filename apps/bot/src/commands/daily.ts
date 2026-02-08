@@ -98,7 +98,7 @@ export const dailyCommand: SlashCommand = {
           .setColor(0x64748b)
           .setTitle('🕒 오늘의 보물상자는 이미 열었어!')
           .setDescription(`다음 보물상자 오픈 가능 시간: **${nextAt} (KST)**`)
-          .addFields({ name: '현재 포인트', value: `${row.out_new_balance.toLocaleString('ko-KR')} PT`, inline: true });
+          .addFields({ name: '현재 포인트', value: `${row.out_new_balance.toLocaleString('ko-KR')} p`, inline: true });
 
         await interaction.editReply({ embeds: [alreadyEmbed] });
         return;
@@ -121,9 +121,9 @@ export const dailyCommand: SlashCommand = {
         .setDescription(
           [
             `⭐ 등급: **${TIER_LABELS[tier]}**`,
-            `💰 포인트: **+${row.out_reward_points.toLocaleString('ko-KR')} PT**`,
+            `💰 포인트: **+${row.out_reward_points.toLocaleString('ko-KR')} p**`,
             itemLine,
-            `🪙 현재 잔액: **${row.out_new_balance.toLocaleString('ko-KR')} PT**`
+            `🪙 현재 잔액: **${row.out_new_balance.toLocaleString('ko-KR')} p**`
           ].join('\n')
         )
         .setImage('attachment://treasure-open.gif')
