@@ -78,6 +78,8 @@ type EconomyPoint = {
   net: number;
   cumulative: number;
   activeUsers: number;
+  netMovingAvg7: number;
+  netTrend: number;
 };
 
 type EconomyTotals = {
@@ -101,12 +103,45 @@ type EconomyKindTotal = {
   net: number;
 };
 
+type EconomyCategoryTotal = {
+  category: string;
+  label: string;
+  issued: number;
+  burned: number;
+  net: number;
+  eventCount: number;
+  kinds: string[];
+};
+
 type EconomyPayload = {
   points: EconomyPoint[];
   totals: EconomyTotals;
   comparison: EconomyComparison;
   topSources: EconomyKindTotal[];
   topSinks: EconomyKindTotal[];
+  sourceCategories: EconomyCategoryTotal[];
+  sinkCategories: EconomyCategoryTotal[];
+};
+
+const ECONOMY_KIND_CATEGORY_MAP: Record<string, string> = {
+  chat_grant: 'engagement_reward',
+  voice_grant: 'engagement_reward',
+  daily_chest_claim: 'daily_reward',
+  gacha_reward: 'gacha_reward',
+  duplicate_refund: 'refund',
+  gacha_spend: 'gacha_spend',
+  admin_adjust: 'admin_adjustment',
+};
+
+const ECONOMY_CATEGORY_LABELS: Record<string, string> = {
+  engagement_reward: '활동 보상',
+  daily_reward: '일일 상자 보상',
+  gacha_reward: '가챠 보상',
+  refund: '환급/보정',
+  gacha_spend: '가챠 소모',
+  admin_adjustment: '관리자 조정',
+  other_source: '기타 발행',
+  other_sink: '기타 소각',
 };
 
 const PERIOD_BUCKET_COUNT: Record<Period, number> = {
@@ -253,6 +288,38 @@ const comparePct = (current: number, previous: number) => {
   return ((current - previous) / previous) * 100;
 };
 
+const resolveEconomyCategoryKey = (kind: string, amount: number): string => {
+  const mapped = ECONOMY_KIND_CATEGORY_MAP[kind];
+  if (mapped) return mapped;
+  if (amount > 0) return 'other_source';
+  if (amount < 0) return 'other_sink';
+  return 'other_source';
+};
+
+const movingAverage = (series: number[], windowSize: number) =>
+  series.map((_, index) => {
+    const from = Math.max(0, index - windowSize + 1);
+    const sample = series.slice(from, index + 1);
+    const sum = sample.reduce((acc, value) => acc + value, 0);
+    return Number((sum / Math.max(sample.length, 1)).toFixed(2));
+  });
+
+const trendline = (series: number[]) => {
+  if (series.length === 0) return [] as number[];
+
+  const n = series.length;
+  const sumX = ((n - 1) * n) / 2;
+  const sumY = series.reduce((acc, value) => acc + value, 0);
+  const sumXY = series.reduce((acc, value, index) => acc + index * value, 0);
+  const sumXX = series.reduce((acc, _value, index) => acc + index * index, 0);
+  const denominator = n * sumXX - sumX * sumX;
+
+  const slope = denominator === 0 ? 0 : (n * sumXY - sumX * sumY) / denominator;
+  const intercept = (sumY - slope * sumX) / n;
+
+  return series.map((_, index) => Number((intercept + slope * index).toFixed(2)));
+};
+
 const aggregatePeriod = (
   period: Period,
   events: ActivityEventRow[],
@@ -368,12 +435,15 @@ const aggregateEconomyPeriod = (
     net: 0,
     cumulative: 0,
     activeUsers: 0,
+    netMovingAvg7: 0,
+    netTrend: 0,
   }));
   const pointByKey = new Map(points.map((point) => [point.key, point]));
 
   const activeUsersByKey = new Map<string, Set<string>>();
   const periodActiveUsers = new Set<string>();
   const kindTotals = new Map<string, EconomyKindTotal>();
+  const categoryTotals = new Map<string, EconomyCategoryTotal>();
 
   for (const event of events) {
     const createdAt = new Date(event.created_at);
@@ -409,6 +479,25 @@ const aggregateEconomyPeriod = (
       totals.burned += burned;
       totals.net += amount;
       kindTotals.set(event.kind, totals);
+
+      const categoryKey = resolveEconomyCategoryKey(event.kind, amount);
+      const category = categoryTotals.get(categoryKey) ?? {
+        category: categoryKey,
+        label: ECONOMY_CATEGORY_LABELS[categoryKey] ?? categoryKey,
+        issued: 0,
+        burned: 0,
+        net: 0,
+        eventCount: 0,
+        kinds: [],
+      };
+      category.issued += issued;
+      category.burned += burned;
+      category.net += amount;
+      category.eventCount += 1;
+      if (!category.kinds.includes(event.kind)) {
+        category.kinds.push(event.kind);
+      }
+      categoryTotals.set(categoryKey, category);
     }
   }
 
@@ -422,7 +511,16 @@ const aggregateEconomyPeriod = (
     };
   });
 
-  const totals = normalizedPoints.reduce(
+  const netSeries = normalizedPoints.map((point) => point.net);
+  const netMovingAvg7 = movingAverage(netSeries, 7);
+  const netTrend = trendline(netSeries);
+  const enrichedPoints = normalizedPoints.map((point, index) => ({
+    ...point,
+    netMovingAvg7: netMovingAvg7[index] ?? 0,
+    netTrend: netTrend[index] ?? 0,
+  }));
+
+  const totals = enrichedPoints.reduce(
     (acc, point) => {
       acc.issued += point.issued;
       acc.burned += point.burned;
@@ -439,8 +537,8 @@ const aggregateEconomyPeriod = (
     }
   );
 
-  const latest = normalizedPoints.at(-1);
-  const previous = normalizedPoints.at(-2);
+  const latest = enrichedPoints.at(-1);
+  const previous = enrichedPoints.at(-2);
   const comparison: EconomyComparison = {
     issuedPct: Number(comparePct(latest?.issued ?? 0, previous?.issued ?? 0).toFixed(2)),
     burnedPct: Number(comparePct(latest?.burned ?? 0, previous?.burned ?? 0).toFixed(2)),
@@ -448,6 +546,10 @@ const aggregateEconomyPeriod = (
   };
 
   const kindTotalsArray = Array.from(kindTotals.values());
+  const categoryTotalsArray = Array.from(categoryTotals.values()).map((value) => ({
+    ...value,
+    kinds: [...value.kinds].sort(),
+  }));
   const topSources = kindTotalsArray
     .filter((value) => value.issued > 0)
     .sort((a, b) => b.issued - a.issued)
@@ -456,13 +558,23 @@ const aggregateEconomyPeriod = (
     .filter((value) => value.burned > 0)
     .sort((a, b) => b.burned - a.burned)
     .slice(0, 5);
+  const sourceCategories = categoryTotalsArray
+    .filter((value) => value.issued > 0)
+    .sort((a, b) => b.issued - a.issued)
+    .slice(0, 5);
+  const sinkCategories = categoryTotalsArray
+    .filter((value) => value.burned > 0)
+    .sort((a, b) => b.burned - a.burned)
+    .slice(0, 5);
 
   return {
-    points: normalizedPoints,
+    points: enrichedPoints,
     totals,
     comparison,
     topSources,
     topSinks,
+    sourceCategories,
+    sinkCategories,
   };
 };
 

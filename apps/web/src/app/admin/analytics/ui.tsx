@@ -52,6 +52,16 @@ type EconomyKindTotal = {
   net: number;
 };
 
+type EconomyCategoryTotal = {
+  category: string;
+  label: string;
+  issued: number;
+  burned: number;
+  net: number;
+  eventCount: number;
+  kinds: string[];
+};
+
 type EconomyPoint = {
   key: string;
   label: string;
@@ -60,6 +70,8 @@ type EconomyPoint = {
   net: number;
   cumulative: number;
   activeUsers: number;
+  netMovingAvg7: number;
+  netTrend: number;
 };
 
 type EconomyTotals = {
@@ -82,6 +94,8 @@ type EconomyPayload = {
   comparison: EconomyComparison;
   topSources: EconomyKindTotal[];
   topSinks: EconomyKindTotal[];
+  sourceCategories: EconomyCategoryTotal[];
+  sinkCategories: EconomyCategoryTotal[];
 };
 
 type PeriodPayload = {
@@ -329,6 +343,74 @@ function EconomyMetricChart({
   );
 }
 
+function NetTrendChart({ points }: { points: EconomyPoint[] }) {
+  const values = points.flatMap((point) => [point.net, point.netMovingAvg7, point.netTrend]);
+  const min = Math.min(...values, 0);
+  const max = Math.max(...values, 1);
+  const range = Math.max(max - min, 1);
+  const baseline = ((max - 0) / range) * 100;
+
+  const toY = (value: number) => ((max - value) / range) * 100;
+  const toX = (index: number) => (points.length <= 1 ? 0 : (index / (points.length - 1)) * 100);
+
+  const netPath = points.map((point, index) => `${toX(index)},${toY(point.net)}`).join(' ');
+  const movingPath = points.map((point, index) => `${toX(index)},${toY(point.netMovingAvg7)}`).join(' ');
+  const trendPath = points.map((point, index) => `${toX(index)},${toY(point.netTrend)}`).join(' ');
+
+  return (
+    <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-5">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold">순증감 추세 (7기간 이동평균 + 추세선)</h3>
+          <p className="mt-1 text-xs muted">막대: 순증감 · 청록선: 7기간 이동평균 · 주황선: 선형 추세선</p>
+        </div>
+        <div className="text-xs muted">최근 {points.at(-1)?.net.toLocaleString() ?? 0}p</div>
+      </div>
+
+      <div className="relative h-48 rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 px-2 py-2">
+        <div className="absolute left-2 right-2 border-t border-dashed border-[color:var(--border)]/80" style={{ top: `${baseline}%` }} />
+
+        <div className="absolute inset-0 px-2 py-2">
+          <div className="flex h-full items-stretch gap-1">
+            {points.map((point) => {
+              const y = toY(point.net);
+              const top = Math.min(y, baseline);
+              const height = Math.max(Math.abs(y - baseline), 1.5);
+
+              return (
+                <div key={point.key} className="relative min-w-0 flex-1">
+                  <div
+                    title={`${point.label} · ${point.net >= 0 ? '+' : ''}${point.net.toLocaleString()}p`}
+                    className={`absolute left-0 right-0 rounded-sm ${point.net >= 0 ? 'bg-emerald-400/75' : 'bg-rose-400/75'}`}
+                    style={{ top: `${top}%`, height: `${height}%` }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <svg className="absolute inset-0 h-full w-full px-2 py-2" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
+          <polyline fill="none" stroke="rgba(125,211,252,0.95)" strokeWidth="1.2" points={netPath} />
+          <polyline fill="none" stroke="rgba(45,212,191,0.95)" strokeWidth="1.4" points={movingPath} />
+          <polyline fill="none" stroke="rgba(251,146,60,0.95)" strokeWidth="1.2" strokeDasharray="2 2" points={trendPath} />
+        </svg>
+
+        <div className="pointer-events-none absolute bottom-0 left-2 right-2 grid text-[10px] muted" style={{ gridTemplateColumns: `repeat(${Math.max(points.length, 1)}, minmax(0,1fr))` }}>
+          {points.map((point, index) => {
+            const show = index === 0 || index === points.length - 1 || index % Math.max(1, Math.floor(points.length / 4)) === 0;
+            return (
+              <div key={`${point.key}-label`} className="truncate text-center">
+                {show ? point.label : ''}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminAnalyticsClient() {
   const [period, setPeriod] = useState<Period>('day');
   const [rangeDays, setRangeDays] = useState(365);
@@ -411,6 +493,8 @@ export default function AdminAnalyticsClient() {
           comparison: { issuedPct: 0, burnedPct: 0, netPct: 0 },
           topSources: [],
           topSinks: [],
+          sourceCategories: [],
+          sinkCategories: [],
         },
       },
     [data, period]
@@ -602,6 +686,8 @@ export default function AdminAnalyticsClient() {
                 </div>
               </div>
 
+              <NetTrendChart points={selected.economy.points} />
+
               <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
                 {ECONOMY_METRICS.map((metric) => (
                   <EconomyMetricChart
@@ -618,7 +704,46 @@ export default function AdminAnalyticsClient() {
 
               <div className="grid gap-4 lg:grid-cols-2">
                 <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/30 p-4">
-                  <h3 className="text-sm font-semibold">주요 발행 소스</h3>
+                  <h3 className="text-sm font-semibold">발행 카테고리</h3>
+                  <div className="mt-3 space-y-2">
+                    {selected.economy.sourceCategories.length === 0 ? (
+                      <div className="text-sm muted">발행 카테고리 데이터가 없습니다.</div>
+                    ) : (
+                      selected.economy.sourceCategories.map((category) => (
+                        <div key={category.category} className="rounded-xl border border-[color:var(--border)]/70 bg-[color:var(--surface)]/40 px-3 py-2">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="font-semibold">{category.label}</span>
+                            <span className="text-emerald-300">+{category.issued.toLocaleString()}p</span>
+                          </div>
+                          <div className="mt-1 text-xs muted font-mono break-all">{category.kinds.join(', ')}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/30 p-4">
+                  <h3 className="text-sm font-semibold">소각 카테고리</h3>
+                  <div className="mt-3 space-y-2">
+                    {selected.economy.sinkCategories.length === 0 ? (
+                      <div className="text-sm muted">소각 카테고리 데이터가 없습니다.</div>
+                    ) : (
+                      selected.economy.sinkCategories.map((category) => (
+                        <div key={category.category} className="rounded-xl border border-[color:var(--border)]/70 bg-[color:var(--surface)]/40 px-3 py-2">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="font-semibold">{category.label}</span>
+                            <span className="text-rose-300">-{category.burned.toLocaleString()}p</span>
+                          </div>
+                          <div className="mt-1 text-xs muted font-mono break-all">{category.kinds.join(', ')}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/20 p-4">
+                  <h3 className="text-sm font-semibold">세부 발행 이벤트 (kind)</h3>
                   <div className="mt-3 space-y-2">
                     {selected.economy.topSources.length === 0 ? (
                       <div className="text-sm muted">발행 이벤트가 없습니다.</div>
@@ -632,8 +757,8 @@ export default function AdminAnalyticsClient() {
                     )}
                   </div>
                 </div>
-                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/30 p-4">
-                  <h3 className="text-sm font-semibold">주요 소각 소스</h3>
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/20 p-4">
+                  <h3 className="text-sm font-semibold">세부 소각 이벤트 (kind)</h3>
                   <div className="mt-3 space-y-2">
                     {selected.economy.topSinks.length === 0 ? (
                       <div className="text-sm muted">소각 이벤트가 없습니다.</div>
