@@ -206,6 +206,21 @@ export type Database = {
         Update: Partial<Database['nyang']['Tables']['point_balances']['Row']>;
         Relationships: [];
       };
+      sword_forge_state: {
+        Row: {
+          discord_user_id: string;
+          level: number;
+          enhance_attempts: number;
+          success_count: number;
+          sold_count: number;
+          last_enhanced_at: string | null;
+          last_sold_at: string | null;
+          updated_at: string;
+        };
+        Insert: Partial<Database['nyang']['Tables']['sword_forge_state']['Row']> & { discord_user_id: string };
+        Update: Partial<Database['nyang']['Tables']['sword_forge_state']['Row']>;
+        Relationships: [];
+      };
       point_events: {
         Row: {
           id: string;
@@ -406,6 +421,54 @@ export type Database = {
           out_reward_tier: string;
           out_new_balance: number;
           out_next_available_at: string;
+        }>;
+      };
+      get_sword_forge_status: {
+        Args: {
+          p_discord_user_id: string;
+        };
+        Returns: Array<{
+          out_level: number;
+          out_enhance_cost: number;
+          out_sell_price: number;
+          out_success_rate_pct: number;
+          out_balance: number;
+          out_enhance_attempts: number;
+          out_success_count: number;
+          out_sold_count: number;
+        }>;
+      };
+      enhance_sword: {
+        Args: {
+          p_discord_user_id: string;
+        };
+        Returns: Array<{
+          out_success: boolean;
+          out_error_code: string | null;
+          out_previous_level: number;
+          out_new_level: number;
+          out_cost: number;
+          out_result: string;
+          out_success_rate_pct: number;
+          out_sell_price: number;
+          out_new_balance: number;
+          out_enhance_attempts: number;
+          out_success_count: number;
+        }>;
+      };
+      sell_sword: {
+        Args: {
+          p_discord_user_id: string;
+        };
+        Returns: Array<{
+          out_success: boolean;
+          out_error_code: string | null;
+          out_sold_level: number;
+          out_payout: number;
+          out_new_balance: number;
+          out_reset_level: number;
+          out_next_enhance_cost: number;
+          out_sell_count: number;
         }>;
       };
       play_lottery_ticket: {

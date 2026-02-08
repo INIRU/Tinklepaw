@@ -5,7 +5,7 @@ import { m } from 'framer-motion';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { useEffect, useRef, type ComponentType, type PointerEvent as ReactPointerEvent } from 'react';
-import { Dices, Package, MessageCircle, User } from 'lucide-react';
+import { Dices, Package, MessageCircle, User, Hammer } from 'lucide-react';
 
 if (typeof window !== 'undefined') {
   gsap.registerPlugin(ScrollTrigger);
@@ -22,6 +22,7 @@ type Item = {
 const items: Item[] = [
   { title: '뽑기', desc: '멋진 연출과 함께 역할 아이템을 뽑아봐', href: '/draw', icon: Dices, tint: 'pink' },
   { title: '인벤토리', desc: '보유/장착 상태 확인', href: '/inventory', icon: Package, tint: 'lavender' },
+  { title: '강화', desc: '검 강화 후 포인트로 판매', href: '/forge', icon: Hammer, tint: 'mint' },
   { title: '문의', desc: '도움이 필요하면 여기로', href: '/support', icon: MessageCircle, tint: 'sky' },
   { title: '내 정보', desc: '내 프로필/설정', href: '/me', icon: User, tint: 'mint' }
 ];

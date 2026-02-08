@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { Menu, X as CloseIcon, LogOut, Package, Dices, MessageCircle, Settings, User, Bell, Music } from 'lucide-react';
+import { Menu, X as CloseIcon, LogOut, Package, Dices, MessageCircle, Settings, User, Bell, Music, Hammer } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 
 import DiscordMark from '@/components/icons/DiscordMark';
@@ -39,6 +39,7 @@ export default function MainNav(props: {
   const navLinks = [
     { label: '뽑기', href: '/draw', icon: Dices },
     { label: '인벤토리', href: '/inventory', icon: Package },
+    { label: '강화', href: '/forge', icon: Hammer },
     { label: '음악', href: '/music', icon: Music },
     { label: '알림', href: '/notifications', icon: Bell, badge: unreadCount > 0 },
     { label: '문의', href: '/support', icon: MessageCircle },

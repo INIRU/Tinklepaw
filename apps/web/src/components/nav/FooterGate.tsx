@@ -13,6 +13,8 @@ export default function FooterGate({ user }: FooterGateProps) {
   if (
     pathname === '/draw' ||
     pathname.startsWith('/draw/') ||
+    pathname === '/forge' ||
+    pathname.startsWith('/forge/') ||
     pathname.startsWith('/admin')
   )
     return null;
