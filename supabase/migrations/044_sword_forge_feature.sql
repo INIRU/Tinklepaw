@@ -9,6 +9,19 @@ create table if not exists nyang.sword_forge_state (
   updated_at timestamptz not null default now()
 );
 
+create or replace function nyang.compute_sword_sell_price(
+  p_level integer
+)
+returns integer
+language sql
+immutable
+as $$
+  select case
+    when p_level <= 0 then 0
+    else 300 + (p_level * 320) + (p_level * p_level * 60) + (greatest(0, p_level - 10) * p_level * 24)
+  end;
+$$;
+
 create or replace function nyang.get_sword_forge_status(
   p_discord_user_id text
 )
@@ -53,10 +66,7 @@ begin
 
   out_level := v_state.level;
   out_enhance_cost := 300 + (v_state.level * 140) + (v_state.level * v_state.level * 12);
-  out_sell_price := case
-    when v_state.level <= 0 then 0
-    else 250 + (v_state.level * 275) + (v_state.level * v_state.level * 44)
-  end;
+  out_sell_price := nyang.compute_sword_sell_price(v_state.level);
   out_success_rate_pct := greatest(30.0, least(95.0, 94.0 - (v_state.level * 4.8)));
   out_balance := v_balance;
   out_enhance_attempts := v_state.enhance_attempts;
@@ -133,10 +143,7 @@ begin
     out_cost := v_cost;
     out_result := 'none';
     out_success_rate_pct := v_success_rate_pct;
-    out_sell_price := case
-      when v_state.level <= 0 then 0
-      else 250 + (v_state.level * 275) + (v_state.level * v_state.level * 44)
-    end;
+    out_sell_price := nyang.compute_sword_sell_price(v_state.level);
     out_new_balance := v_balance;
     out_enhance_attempts := v_state.enhance_attempts;
     out_success_count := v_state.success_count;
@@ -211,6 +218,8 @@ begin
   from sword_forge_state
   where discord_user_id = p_discord_user_id;
 
+  v_success_rate_pct := greatest(30.0, least(95.0, 94.0 - (v_state.level * 4.8)));
+
   out_success := true;
   out_error_code := null;
   out_previous_level := v_previous_level;
@@ -218,10 +227,7 @@ begin
   out_cost := v_cost;
   out_result := v_result;
   out_success_rate_pct := v_success_rate_pct;
-  out_sell_price := case
-    when v_state.level <= 0 then 0
-    else 250 + (v_state.level * 275) + (v_state.level * v_state.level * 44)
-  end;
+  out_sell_price := nyang.compute_sword_sell_price(v_state.level);
   out_new_balance := v_balance;
   out_enhance_attempts := v_state.enhance_attempts;
   out_success_count := v_state.success_count;
@@ -289,7 +295,7 @@ begin
   end if;
 
   v_sold_level := v_state.level;
-  v_payout := 250 + (v_state.level * 275) + (v_state.level * v_state.level * 44);
+  v_payout := nyang.compute_sword_sell_price(v_state.level);
 
   update point_balances
   set
