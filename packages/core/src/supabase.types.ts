@@ -65,6 +65,11 @@ export type Database = {
           daily_chest_legendary_min_points: number;
           daily_chest_legendary_max_points: number;
           daily_chest_item_drop_rate_pct: number;
+          lottery_jackpot_rate_pct: number;
+          lottery_gold_rate_pct: number;
+          lottery_silver_rate_pct: number;
+          lottery_bronze_rate_pct: number;
+          lottery_ticket_cooldown_seconds: number;
           server_intro: string | null;
           banner_image_url: string | null;
           icon_image_url: string | null;
@@ -416,6 +421,7 @@ export type Database = {
           out_payout: number;
           out_net_change: number;
           out_new_balance: number;
+          out_next_available_at: string | null;
         }>;
       };
       ensure_user: {

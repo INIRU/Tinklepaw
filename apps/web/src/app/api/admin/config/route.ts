@@ -54,6 +54,11 @@ export async function PUT(req: Request) {
     daily_chest_legendary_min_points?: number;
     daily_chest_legendary_max_points?: number;
     daily_chest_item_drop_rate_pct?: number;
+    lottery_jackpot_rate_pct?: number;
+    lottery_gold_rate_pct?: number;
+    lottery_silver_rate_pct?: number;
+    lottery_bronze_rate_pct?: number;
+    lottery_ticket_cooldown_seconds?: number;
   };
 
   const patch: Record<string, unknown> = {};
@@ -87,6 +92,11 @@ export async function PUT(req: Request) {
   if (body.daily_chest_legendary_min_points !== undefined) patch.daily_chest_legendary_min_points = body.daily_chest_legendary_min_points;
   if (body.daily_chest_legendary_max_points !== undefined) patch.daily_chest_legendary_max_points = body.daily_chest_legendary_max_points;
   if (body.daily_chest_item_drop_rate_pct !== undefined) patch.daily_chest_item_drop_rate_pct = body.daily_chest_item_drop_rate_pct;
+  if (body.lottery_jackpot_rate_pct !== undefined) patch.lottery_jackpot_rate_pct = body.lottery_jackpot_rate_pct;
+  if (body.lottery_gold_rate_pct !== undefined) patch.lottery_gold_rate_pct = body.lottery_gold_rate_pct;
+  if (body.lottery_silver_rate_pct !== undefined) patch.lottery_silver_rate_pct = body.lottery_silver_rate_pct;
+  if (body.lottery_bronze_rate_pct !== undefined) patch.lottery_bronze_rate_pct = body.lottery_bronze_rate_pct;
+  if (body.lottery_ticket_cooldown_seconds !== undefined) patch.lottery_ticket_cooldown_seconds = body.lottery_ticket_cooldown_seconds;
 
     const supabase = createSupabaseAdminClient();
 

@@ -15,6 +15,7 @@ type LotteryResultRow = {
   out_payout: number;
   out_net_change: number;
   out_new_balance: number;
+  out_next_available_at: string | null;
 };
 
 const LOTTERY_PRICE_P = 500;
@@ -51,6 +52,27 @@ const toLotteryTier = (value: string): LotteryTier => {
 };
 
 const signedP = (value: number) => `${value >= 0 ? '+' : ''}${value.toLocaleString('ko-KR')} p`;
+
+const formatKstTime = (value: string | null): string => {
+  if (!value) return '곧 다시';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '곧 다시';
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(date);
+};
+
+const toRelativeTime = (value: string | null): string | null => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return `<t:${Math.floor(date.getTime() / 1000)}:R>`;
+};
 
 export const lotteryCommand: SlashCommand = {
   name: 'lottery',
@@ -91,14 +113,32 @@ export const lotteryCommand: SlashCommand = {
       }
 
       if (!row.out_success) {
+        if (row.out_error_code === 'COOLDOWN_ACTIVE') {
+          const nextAt = formatKstTime(row.out_next_available_at);
+          const nextAtRelative = toRelativeTime(row.out_next_available_at);
+          const cooldownEmbed = new EmbedBuilder()
+            .setColor(0x64748b)
+            .setTitle('⏳ 복권 재구매 대기 중')
+            .setDescription(
+              [
+                `다음 구매 가능 시간: **${nextAt} (KST)**${nextAtRelative ? ` (${nextAtRelative})` : ''}`,
+                `현재 잔액: **${row.out_new_balance.toLocaleString('ko-KR')} p**`
+              ].join('\n')
+            )
+            .setFooter({ text: '조금만 기다리면 다시 구매할 수 있어!' });
+
+          await interaction.editReply({ embeds: [cooldownEmbed] });
+          return;
+        }
+
         if (row.out_error_code === 'INSUFFICIENT_POINTS') {
-          const need = Math.max(0, LOTTERY_PRICE_P - row.out_new_balance);
+          const need = Math.max(0, row.out_ticket_price - row.out_new_balance);
           const insufficientEmbed = new EmbedBuilder()
             .setColor(0xef4444)
             .setTitle('💸 포인트가 부족해!')
             .setDescription(
               [
-                `복권 1장 가격: **${LOTTERY_PRICE_P.toLocaleString('ko-KR')} p**`,
+                `복권 1장 가격: **${row.out_ticket_price.toLocaleString('ko-KR')} p**`,
                 `현재 잔액: **${row.out_new_balance.toLocaleString('ko-KR')} p**`,
                 `부족한 포인트: **${need.toLocaleString('ko-KR')} p**`
               ].join('\n')

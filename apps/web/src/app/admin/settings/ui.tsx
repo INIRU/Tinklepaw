@@ -35,6 +35,11 @@ type AppConfig = {
   daily_chest_legendary_min_points: number;
   daily_chest_legendary_max_points: number;
   daily_chest_item_drop_rate_pct: number;
+  lottery_jackpot_rate_pct: number;
+  lottery_gold_rate_pct: number;
+  lottery_silver_rate_pct: number;
+  lottery_bronze_rate_pct: number;
+  lottery_ticket_cooldown_seconds: number;
 };
 
 type DiscordChannel = { id: string; name: string };
@@ -1064,6 +1069,76 @@ export default function SettingsClient() {
             />
           </label>
         </div>
+      </section>
+
+      <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+        <h2 className="text-lg font-semibold">복권 설정</h2>
+        <p className="mt-2 text-xs muted">/복권 확률과 쿨타임(초)을 조절합니다. 복권 가격은 500p 고정입니다.</p>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm">
+            잭팟 확률(%)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              step="0.1"
+              min={0}
+              max={100}
+              value={cfg.lottery_jackpot_rate_pct}
+              onChange={(e) => setCfg({ ...cfg, lottery_jackpot_rate_pct: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            골드 확률(%)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              step="0.1"
+              min={0}
+              max={100}
+              value={cfg.lottery_gold_rate_pct}
+              onChange={(e) => setCfg({ ...cfg, lottery_gold_rate_pct: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            실버 확률(%)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              step="0.1"
+              min={0}
+              max={100}
+              value={cfg.lottery_silver_rate_pct}
+              onChange={(e) => setCfg({ ...cfg, lottery_silver_rate_pct: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            브론즈 확률(%)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              step="0.1"
+              min={0}
+              max={100}
+              value={cfg.lottery_bronze_rate_pct}
+              onChange={(e) => setCfg({ ...cfg, lottery_bronze_rate_pct: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm sm:col-span-2">
+            복권 쿨타임(초)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              min={0}
+              value={cfg.lottery_ticket_cooldown_seconds}
+              onChange={(e) => setCfg({ ...cfg, lottery_ticket_cooldown_seconds: Number(e.target.value) })}
+            />
+          </label>
+        </div>
+
+        <p className="mt-2 text-xs muted-2">
+          꽝 확률은 자동 계산됩니다: {Math.max(0, 100 - cfg.lottery_jackpot_rate_pct - cfg.lottery_gold_rate_pct - cfg.lottery_silver_rate_pct - cfg.lottery_bronze_rate_pct).toFixed(1)}%
+        </p>
       </section>
 
       <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
