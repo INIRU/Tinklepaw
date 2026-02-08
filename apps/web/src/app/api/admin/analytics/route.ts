@@ -127,6 +127,8 @@ const ECONOMY_KIND_CATEGORY_MAP: Record<string, string> = {
   chat_grant: 'engagement_reward',
   voice_grant: 'engagement_reward',
   daily_chest_claim: 'daily_reward',
+  lottery_ticket_purchase: 'lottery_spend',
+  lottery_ticket_payout: 'lottery_reward',
   gacha_reward: 'gacha_reward',
   duplicate_refund: 'refund',
   gacha_spend: 'gacha_spend',
@@ -136,6 +138,8 @@ const ECONOMY_KIND_CATEGORY_MAP: Record<string, string> = {
 const ECONOMY_CATEGORY_LABELS: Record<string, string> = {
   engagement_reward: '활동 보상',
   daily_reward: '일일 상자 보상',
+  lottery_spend: '복권 구매',
+  lottery_reward: '복권 당첨금',
   gacha_reward: '가챠 보상',
   refund: '환급/보정',
   gacha_spend: '가챠 소모',

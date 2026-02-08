@@ -403,6 +403,21 @@ export type Database = {
           out_next_available_at: string;
         }>;
       };
+      play_lottery_ticket: {
+        Args: {
+          p_discord_user_id: string;
+        };
+        Returns: Array<{
+          out_success: boolean;
+          out_error_code: string | null;
+          out_ticket_price: number;
+          out_ticket_number: number;
+          out_tier: string;
+          out_payout: number;
+          out_net_change: number;
+          out_new_balance: number;
+        }>;
+      };
       ensure_user: {
         Args: { p_discord_user_id: string };
         Returns: undefined;
