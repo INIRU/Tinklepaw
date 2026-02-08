@@ -18,8 +18,6 @@ type LotteryResultRow = {
   out_next_available_at: string | null;
 };
 
-const LOTTERY_PRICE_P = 500;
-
 const TIER_LABELS: Record<LotteryTier, string> = {
   jackpot: '잭팟',
   gold: '골드',
@@ -159,8 +157,7 @@ export const lotteryCommand: SlashCommand = {
         ticketNumber: row.out_ticket_number,
         ticketPrice: row.out_ticket_price,
         payout: row.out_payout,
-        netChange: row.out_net_change,
-        newBalance: row.out_new_balance
+        netChange: row.out_net_change
       });
 
       const resultEmbed = new EmbedBuilder()
@@ -172,8 +169,7 @@ export const lotteryCommand: SlashCommand = {
             `🏷️ 결과 등급: **${TIER_LABELS[tier]}**`,
             `💸 구매 비용: **-${row.out_ticket_price.toLocaleString('ko-KR')} p**`,
             `💰 당첨금: **+${row.out_payout.toLocaleString('ko-KR')} p**`,
-            `📈 순손익: **${signedP(row.out_net_change)}**`,
-            `🪙 현재 잔액: **${row.out_new_balance.toLocaleString('ko-KR')} p**`
+            `📈 순손익: **${signedP(row.out_net_change)}**`
           ].join('\n')
         )
         .setImage('attachment://lottery-result.png')
