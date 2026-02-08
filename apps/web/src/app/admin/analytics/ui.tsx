@@ -45,11 +45,51 @@ type PeriodComparison = {
   voiceHoursPct: number;
 };
 
+type EconomyKindTotal = {
+  kind: string;
+  issued: number;
+  burned: number;
+  net: number;
+};
+
+type EconomyPoint = {
+  key: string;
+  label: string;
+  issued: number;
+  burned: number;
+  net: number;
+  cumulative: number;
+  activeUsers: number;
+};
+
+type EconomyTotals = {
+  issued: number;
+  burned: number;
+  net: number;
+  cumulative: number;
+  activeUsers: number;
+};
+
+type EconomyComparison = {
+  issuedPct: number;
+  burnedPct: number;
+  netPct: number;
+};
+
+type EconomyPayload = {
+  points: EconomyPoint[];
+  totals: EconomyTotals;
+  comparison: EconomyComparison;
+  topSources: EconomyKindTotal[];
+  topSinks: EconomyKindTotal[];
+};
+
 type PeriodPayload = {
   points: PeriodPoint[];
   topUsers: TopUser[];
   totals: PeriodTotals;
   comparison: PeriodComparison;
+  economy: EconomyPayload;
 };
 
 type ChannelOption = {
@@ -67,6 +107,7 @@ type AnalyticsResponse = {
 };
 
 type MetricKey = keyof Pick<PeriodPoint, 'joins' | 'leaves' | 'chatMessages' | 'voiceHours' | 'joinRatePct' | 'churnRatePct'>;
+type EconomyMetricKey = keyof Pick<EconomyPoint, 'issued' | 'burned' | 'net' | 'cumulative' | 'activeUsers'>;
 
 const PERIOD_LABEL: Record<Period, string> = {
   day: '일별',
@@ -131,6 +172,50 @@ const METRICS: Array<{
   }
 ];
 
+const ECONOMY_METRICS: Array<{
+  key: EconomyMetricKey;
+  title: string;
+  icon: typeof UserPlus;
+  colorClass: string;
+  format: (value: number) => string;
+}> = [
+  {
+    key: 'issued',
+    title: '총 발행 p',
+    icon: UserPlus,
+    colorClass: 'bg-emerald-400',
+    format: (value) => `+${value.toLocaleString()}p`
+  },
+  {
+    key: 'burned',
+    title: '총 소각 p',
+    icon: UserMinus,
+    colorClass: 'bg-rose-400',
+    format: (value) => `-${value.toLocaleString()}p`
+  },
+  {
+    key: 'net',
+    title: '순증감 p',
+    icon: ChartColumnBig,
+    colorClass: 'bg-sky-400',
+    format: (value) => `${value >= 0 ? '+' : ''}${value.toLocaleString()}p`
+  },
+  {
+    key: 'cumulative',
+    title: '누적 순증감 p',
+    icon: ChartColumnBig,
+    colorClass: 'bg-violet-400',
+    format: (value) => `${value >= 0 ? '+' : ''}${value.toLocaleString()}p`
+  },
+  {
+    key: 'activeUsers',
+    title: '경제 활동 유저',
+    icon: MessageCircle,
+    colorClass: 'bg-amber-400',
+    format: (value) => `${value.toLocaleString()}명`
+  },
+];
+
 function MetricChart({
   title,
   icon: Icon,
@@ -167,6 +252,64 @@ function MetricChart({
           {points.map((point, index) => {
             const value = point[metric];
             const heightPercent = Math.max(4, (value / max) * 100);
+            const showLabel = index === 0 || index === points.length - 1 || index % Math.max(1, Math.floor(points.length / 4)) === 0;
+
+            return (
+              <div key={point.key} className="flex h-full min-w-0 flex-1 flex-col justify-end items-center gap-1">
+                <div
+                  title={`${point.label} · ${formatter(value)}`}
+                  className={`w-full rounded-t-md ${colorClass}`}
+                  style={{ height: `${heightPercent}%` }}
+                />
+                <div className="h-3 text-[10px] muted">{showLabel ? point.label : ''}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EconomyMetricChart({
+  title,
+  icon: Icon,
+  points,
+  metric,
+  colorClass,
+  formatter,
+}: {
+  title: string;
+  icon: typeof UserPlus;
+  points: EconomyPoint[];
+  metric: EconomyMetricKey;
+  colorClass: string;
+  formatter: (value: number) => string;
+}) {
+  const values = points.map((point) => point[metric]);
+  const min = Math.min(...values, 0);
+  const max = Math.max(...values, 1);
+  const range = Math.max(max - min, 1);
+  const latest = values.at(-1) ?? 0;
+
+  return (
+    <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-5">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="inline-flex items-center gap-2">
+          <span className="rounded-xl bg-[color:var(--chip)] p-2 border border-[color:var(--border)]">
+            <Icon className="h-4 w-4" />
+          </span>
+          <h3 className="text-sm font-semibold">{title}</h3>
+        </div>
+        <div className="text-xs muted">최근 {formatter(latest)}</div>
+      </div>
+
+      <div className="h-36 rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 px-2 py-2">
+        <div className="flex h-full items-end gap-1">
+          {points.map((point, index) => {
+            const value = point[metric];
+            const normalized = ((value - min) / range) * 100;
+            const heightPercent = Math.max(4, normalized);
             const showLabel = index === 0 || index === points.length - 1 || index % Math.max(1, Math.floor(points.length / 4)) === 0;
 
             return (
@@ -262,6 +405,13 @@ export default function AdminAnalyticsClient() {
         topUsers: [],
         totals: { joins: 0, leaves: 0, chatMessages: 0, voiceHours: 0 },
         comparison: { joinsPct: 0, leavesPct: 0, chatMessagesPct: 0, voiceHoursPct: 0 },
+        economy: {
+          points: [],
+          totals: { issued: 0, burned: 0, net: 0, cumulative: 0, activeUsers: 0 },
+          comparison: { issuedPct: 0, burnedPct: 0, netPct: 0 },
+          topSources: [],
+          topSinks: [],
+        },
       },
     [data, period]
   );
@@ -391,6 +541,113 @@ export default function AdminAnalyticsClient() {
                   formatter={metric.format}
                 />
               ))}
+            </div>
+
+            <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6 space-y-5">
+              <div>
+                <h2 className="text-lg font-semibold">경제 리포트</h2>
+                <p className="mt-1 text-sm muted">포인트 발행/소각/순증감/누적 추이를 자동 집계합니다. (1분 주기 갱신)</p>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 p-4">
+                  <div className="text-xs uppercase tracking-[0.12em] muted">총 발행 p</div>
+                  <div className="mt-1 text-xl font-bold text-emerald-300">+{selected.economy.totals.issued.toLocaleString()}p</div>
+                </div>
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 p-4">
+                  <div className="text-xs uppercase tracking-[0.12em] muted">총 소각 p</div>
+                  <div className="mt-1 text-xl font-bold text-rose-300">-{selected.economy.totals.burned.toLocaleString()}p</div>
+                </div>
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 p-4">
+                  <div className="text-xs uppercase tracking-[0.12em] muted">순증감 p</div>
+                  <div className={`mt-1 text-xl font-bold ${selected.economy.totals.net >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                    {selected.economy.totals.net >= 0 ? '+' : ''}
+                    {selected.economy.totals.net.toLocaleString()}p
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 p-4">
+                  <div className="text-xs uppercase tracking-[0.12em] muted">누적 순증감 p</div>
+                  <div className={`mt-1 text-xl font-bold ${selected.economy.totals.cumulative >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                    {selected.economy.totals.cumulative >= 0 ? '+' : ''}
+                    {selected.economy.totals.cumulative.toLocaleString()}p
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 p-4">
+                  <div className="text-xs uppercase tracking-[0.12em] muted">경제 활동 유저</div>
+                  <div className="mt-1 text-xl font-bold">{selected.economy.totals.activeUsers.toLocaleString()}명</div>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 p-4">
+                  <div className="text-xs uppercase tracking-[0.12em] muted">발행 증감</div>
+                  <div className={`mt-1 text-lg font-semibold ${selected.economy.comparison.issuedPct >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                    {selected.economy.comparison.issuedPct >= 0 ? '+' : ''}
+                    {selected.economy.comparison.issuedPct.toFixed(1)}%
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 p-4">
+                  <div className="text-xs uppercase tracking-[0.12em] muted">소각 증감</div>
+                  <div className={`mt-1 text-lg font-semibold ${selected.economy.comparison.burnedPct >= 0 ? 'text-rose-300' : 'text-emerald-300'}`}>
+                    {selected.economy.comparison.burnedPct >= 0 ? '+' : ''}
+                    {selected.economy.comparison.burnedPct.toFixed(1)}%
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 p-4">
+                  <div className="text-xs uppercase tracking-[0.12em] muted">순증감 변동</div>
+                  <div className={`mt-1 text-lg font-semibold ${selected.economy.comparison.netPct >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                    {selected.economy.comparison.netPct >= 0 ? '+' : ''}
+                    {selected.economy.comparison.netPct.toFixed(1)}%
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                {ECONOMY_METRICS.map((metric) => (
+                  <EconomyMetricChart
+                    key={metric.key}
+                    title={metric.title}
+                    icon={metric.icon}
+                    points={selected.economy.points}
+                    metric={metric.key}
+                    colorClass={metric.colorClass}
+                    formatter={metric.format}
+                  />
+                ))}
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/30 p-4">
+                  <h3 className="text-sm font-semibold">주요 발행 소스</h3>
+                  <div className="mt-3 space-y-2">
+                    {selected.economy.topSources.length === 0 ? (
+                      <div className="text-sm muted">발행 이벤트가 없습니다.</div>
+                    ) : (
+                      selected.economy.topSources.map((source) => (
+                        <div key={source.kind} className="flex items-center justify-between text-sm">
+                          <span className="font-mono muted">{source.kind}</span>
+                          <span className="text-emerald-300">+{source.issued.toLocaleString()}p</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/30 p-4">
+                  <h3 className="text-sm font-semibold">주요 소각 소스</h3>
+                  <div className="mt-3 space-y-2">
+                    {selected.economy.topSinks.length === 0 ? (
+                      <div className="text-sm muted">소각 이벤트가 없습니다.</div>
+                    ) : (
+                      selected.economy.topSinks.map((sink) => (
+                        <div key={sink.kind} className="flex items-center justify-between text-sm">
+                          <span className="font-mono muted">{sink.kind}</span>
+                          <span className="text-rose-300">-{sink.burned.toLocaleString()}p</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6">

@@ -18,6 +18,13 @@ type ActivityEventRow = {
   meta: Json | null;
 };
 
+type PointEventRow = {
+  discord_user_id: string;
+  kind: string;
+  amount: number;
+  created_at: string;
+};
+
 type PeriodPoint = {
   key: string;
   label: string;
@@ -61,6 +68,45 @@ type PeriodComparison = {
   leavesPct: number;
   chatMessagesPct: number;
   voiceHoursPct: number;
+};
+
+type EconomyPoint = {
+  key: string;
+  label: string;
+  issued: number;
+  burned: number;
+  net: number;
+  cumulative: number;
+  activeUsers: number;
+};
+
+type EconomyTotals = {
+  issued: number;
+  burned: number;
+  net: number;
+  cumulative: number;
+  activeUsers: number;
+};
+
+type EconomyComparison = {
+  issuedPct: number;
+  burnedPct: number;
+  netPct: number;
+};
+
+type EconomyKindTotal = {
+  kind: string;
+  issued: number;
+  burned: number;
+  net: number;
+};
+
+type EconomyPayload = {
+  points: EconomyPoint[];
+  totals: EconomyTotals;
+  comparison: EconomyComparison;
+  topSources: EconomyKindTotal[];
+  topSinks: EconomyKindTotal[];
 };
 
 const PERIOD_BUCKET_COUNT: Record<Period, number> = {
@@ -162,6 +208,31 @@ const fetchActivityEvents = async (guildId: string, startIso: string) => {
     }
 
     const rows = (data ?? []) as ActivityEventRow[];
+    events.push(...rows);
+    if (rows.length < pageSize) break;
+  }
+
+  return events;
+};
+
+const fetchPointEvents = async (startIso: string) => {
+  const supabase = createSupabaseAdminClient();
+  const pageSize = 1000;
+  const events: PointEventRow[] = [];
+
+  for (let from = 0; from < 200_000; from += pageSize) {
+    const { data, error } = await supabase
+      .from('point_events')
+      .select('discord_user_id, kind, amount, created_at')
+      .gte('created_at', startIso)
+      .order('created_at', { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const rows = (data ?? []) as PointEventRow[];
     events.push(...rows);
     if (rows.length < pageSize) break;
   }
@@ -283,6 +354,118 @@ const aggregatePeriod = (
   };
 };
 
+const aggregateEconomyPeriod = (
+  period: Period,
+  events: PointEventRow[],
+  now: Date,
+): EconomyPayload => {
+  const { starts } = buildBuckets(period, now);
+  const points: EconomyPoint[] = starts.map((start) => ({
+    key: period === 'month' ? monthKey(start) : dayKey(start),
+    label: bucketLabel(period, start),
+    issued: 0,
+    burned: 0,
+    net: 0,
+    cumulative: 0,
+    activeUsers: 0,
+  }));
+  const pointByKey = new Map(points.map((point) => [point.key, point]));
+
+  const activeUsersByKey = new Map<string, Set<string>>();
+  const periodActiveUsers = new Set<string>();
+  const kindTotals = new Map<string, EconomyKindTotal>();
+
+  for (const event of events) {
+    const createdAt = new Date(event.created_at);
+    if (Number.isNaN(createdAt.getTime())) continue;
+
+    const key = bucketKey(period, createdAt);
+    const point = pointByKey.get(key);
+    if (!point) continue;
+
+    const amount = Number.isFinite(event.amount) ? Math.trunc(event.amount) : 0;
+    const issued = amount > 0 ? amount : 0;
+    const burned = amount < 0 ? -amount : 0;
+
+    point.issued += issued;
+    point.burned += burned;
+    point.net += amount;
+
+    if (event.discord_user_id && amount !== 0) {
+      const users = activeUsersByKey.get(key) ?? new Set<string>();
+      users.add(event.discord_user_id);
+      activeUsersByKey.set(key, users);
+      periodActiveUsers.add(event.discord_user_id);
+    }
+
+    if (amount !== 0) {
+      const totals = kindTotals.get(event.kind) ?? {
+        kind: event.kind,
+        issued: 0,
+        burned: 0,
+        net: 0,
+      };
+      totals.issued += issued;
+      totals.burned += burned;
+      totals.net += amount;
+      kindTotals.set(event.kind, totals);
+    }
+  }
+
+  let runningCumulative = 0;
+  const normalizedPoints = points.map((point) => {
+    runningCumulative += point.net;
+    return {
+      ...point,
+      cumulative: runningCumulative,
+      activeUsers: activeUsersByKey.get(point.key)?.size ?? 0,
+    };
+  });
+
+  const totals = normalizedPoints.reduce(
+    (acc, point) => {
+      acc.issued += point.issued;
+      acc.burned += point.burned;
+      acc.net += point.net;
+      acc.cumulative = point.cumulative;
+      return acc;
+    },
+    {
+      issued: 0,
+      burned: 0,
+      net: 0,
+      cumulative: 0,
+      activeUsers: periodActiveUsers.size,
+    }
+  );
+
+  const latest = normalizedPoints.at(-1);
+  const previous = normalizedPoints.at(-2);
+  const comparison: EconomyComparison = {
+    issuedPct: Number(comparePct(latest?.issued ?? 0, previous?.issued ?? 0).toFixed(2)),
+    burnedPct: Number(comparePct(latest?.burned ?? 0, previous?.burned ?? 0).toFixed(2)),
+    netPct: Number(comparePct(latest?.net ?? 0, previous?.net ?? 0).toFixed(2)),
+  };
+
+  const kindTotalsArray = Array.from(kindTotals.values());
+  const topSources = kindTotalsArray
+    .filter((value) => value.issued > 0)
+    .sort((a, b) => b.issued - a.issued)
+    .slice(0, 5);
+  const topSinks = kindTotalsArray
+    .filter((value) => value.burned > 0)
+    .sort((a, b) => b.burned - a.burned)
+    .slice(0, 5);
+
+  return {
+    points: normalizedPoints,
+    totals,
+    comparison,
+    topSources,
+    topSinks,
+  };
+};
+
 const resolveTopUsers = async (
   topUsers: TopUserAggregate[],
   usersById: Map<string, { username: string; avatarUrl: string | null }>
@@ -334,8 +517,15 @@ export async function GET(request: Request) {
   const earliestDay = addUtcDays(startOfUtcDay(now), -rangeDays);
 
   let events: ActivityEventRow[] = [];
+  let pointEvents: PointEventRow[] = [];
   try {
-    events = await fetchActivityEvents(env.NYARU_GUILD_ID, earliestDay.toISOString());
+    const startIso = earliestDay.toISOString();
+    const [activityRows, pointRows] = await Promise.all([
+      fetchActivityEvents(env.NYARU_GUILD_ID, startIso),
+      fetchPointEvents(startIso),
+    ]);
+    events = activityRows;
+    pointEvents = pointRows;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to load activity events';
     return NextResponse.json({ error: message }, { status: 500 });
@@ -371,6 +561,9 @@ export async function GET(request: Request) {
   const dayBase = aggregatePeriod('day', filteredEvents, now);
   const weekBase = aggregatePeriod('week', filteredEvents, now);
   const monthBase = aggregatePeriod('month', filteredEvents, now);
+  const dayEconomy = aggregateEconomyPeriod('day', pointEvents, now);
+  const weekEconomy = aggregateEconomyPeriod('week', pointEvents, now);
+  const monthEconomy = aggregateEconomyPeriod('month', pointEvents, now);
 
   const topUserIds = Array.from(new Set([
     ...dayBase.topUsers.map((user) => user.userId),
@@ -410,18 +603,21 @@ export async function GET(request: Request) {
         topUsers: dayTopUsers,
         totals: dayBase.totals,
         comparison: dayBase.comparison,
+        economy: dayEconomy,
       },
       week: {
         points: weekBase.points,
         topUsers: weekTopUsers,
         totals: weekBase.totals,
         comparison: weekBase.comparison,
+        economy: weekEconomy,
       },
       month: {
         points: monthBase.points,
         topUsers: monthTopUsers,
         totals: monthBase.totals,
         comparison: monthBase.comparison,
+        economy: monthEconomy,
       },
     },
   });
