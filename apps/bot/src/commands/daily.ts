@@ -54,6 +54,14 @@ const formatNextAvailable = (value: string): string => {
   }).format(date);
 };
 
+const toDiscordRelativeTime = (value: string): string | null => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return `<t:${Math.floor(date.getTime() / 1000)}:R>`;
+};
+
 export const dailyCommand: SlashCommand = {
   name: 'daily',
   json: new SlashCommandBuilder()
@@ -94,10 +102,14 @@ export const dailyCommand: SlashCommand = {
 
       if (row.out_already_claimed) {
         const nextAt = formatNextAvailable(row.out_next_available_at);
+        const nextAtRelative = toDiscordRelativeTime(row.out_next_available_at);
+        const nextLine = nextAtRelative
+          ? `다음 보물상자 오픈 가능 시간: **${nextAt} (KST)** (${nextAtRelative})`
+          : `다음 보물상자 오픈 가능 시간: **${nextAt} (KST)**`;
         const alreadyEmbed = new EmbedBuilder()
           .setColor(0x64748b)
           .setTitle('🕒 오늘의 보물상자는 이미 열었어!')
-          .setDescription(`다음 보물상자 오픈 가능 시간: **${nextAt} (KST)**`)
+          .setDescription(nextLine)
           .addFields({ name: '현재 포인트', value: `${row.out_new_balance.toLocaleString('ko-KR')} p`, inline: true });
 
         await interaction.editReply({ embeds: [alreadyEmbed] });
@@ -114,6 +126,7 @@ export const dailyCommand: SlashCommand = {
       const itemLine = row.out_reward_item_name
         ? `🎁 아이템: **${row.out_reward_item_name}**${row.out_reward_item_rarity ? ` (${row.out_reward_item_rarity})` : ''}`
         : '🎁 아이템: 없음';
+      const nextAtRelative = toDiscordRelativeTime(row.out_next_available_at);
 
       const rewardEmbed = new EmbedBuilder()
         .setColor(TIER_COLORS[tier])
@@ -123,7 +136,8 @@ export const dailyCommand: SlashCommand = {
             `⭐ 등급: **${TIER_LABELS[tier]}**`,
             `💰 포인트: **+${row.out_reward_points.toLocaleString('ko-KR')} p**`,
             itemLine,
-            `🪙 현재 잔액: **${row.out_new_balance.toLocaleString('ko-KR')} p**`
+            `🪙 현재 잔액: **${row.out_new_balance.toLocaleString('ko-KR')} p**`,
+            nextAtRelative ? `⏱️ 다음 상자: ${nextAtRelative}` : '⏱️ 다음 상자: 내일'
           ].join('\n')
         )
         .setImage('attachment://treasure-open.gif')

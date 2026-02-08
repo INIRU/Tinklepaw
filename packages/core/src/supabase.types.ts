@@ -193,6 +193,8 @@ export type Database = {
         Row: {
           discord_user_id: string;
           balance: number;
+          daily_chest_streak: number;
+          daily_chest_last_claim_date: string | null;
           updated_at: string;
         };
         Insert: Partial<Database['nyang']['Tables']['point_balances']['Row']> & { discord_user_id: string };
