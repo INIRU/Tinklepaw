@@ -178,7 +178,7 @@ export const generateDailyChestGif = async (params: DailyChestGifParams): Promis
     encoder.writeFrame(index, WIDTH, HEIGHT, {
       palette,
       delay: FRAME_DELAY_MS,
-      repeat: frame === 0 ? 0 : undefined
+      repeat: frame === 0 ? -1 : undefined
     });
   }
 
