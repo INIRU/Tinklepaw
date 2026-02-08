@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowLeft, ChartColumnBig, MessageCircle, UserPlus, UserMinus, Phone } from 'lucide-react';
@@ -420,6 +420,7 @@ export default function AdminAnalyticsClient() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const reloadRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -456,8 +457,8 @@ export default function AdminAnalyticsClient() {
         setRefreshing(true);
       } else {
         setLoading(true);
-        setError(null);
       }
+      setError(null);
 
       try {
         const params = new URLSearchParams();
@@ -492,15 +493,15 @@ export default function AdminAnalyticsClient() {
       }
     };
 
+    reloadRef.current = async () => {
+      await load(true);
+    };
+
     void load(false);
-    const timer = window.setInterval(() => {
-      void load(true);
-    }, 180_000);
 
     return () => {
       cancelled = true;
       activeController?.abort();
-      window.clearInterval(timer);
     };
   }, [channelId, rangeDays]);
 
@@ -574,12 +575,21 @@ export default function AdminAnalyticsClient() {
               />
             </div>
 
+            <button
+              type="button"
+              onClick={() => {
+                void reloadRef.current?.();
+              }}
+              disabled={refreshing}
+              className="inline-flex items-center justify-center rounded-xl border border-[color:var(--border)] px-4 py-2 text-sm font-semibold hover:bg-[color:var(--chip)]/60 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {refreshing ? '새로고침 중...' : '새로고침'}
+            </button>
+
           </div>
           <div className="mt-3 text-xs muted">
             집계 단위: {PERIOD_LABEL[period]} · 채널: {channelId === 'all' ? '전체' : `#${channels.find((channel) => channel.id === channelId)?.name ?? channelId}`} · 마지막 업데이트:{' '}
             {data?.generatedAt ? new Date(data.generatedAt).toLocaleString() : '-'}
-            {refreshing ? <span className="ml-2 text-[color:var(--accent-mint)]">백그라운드 갱신 중...</span> : null}
-            {loading && data ? <span className="ml-2 text-[color:var(--accent-mint)]">새 필터 적용 중...</span> : null}
           </div>
         </div>
 
@@ -662,7 +672,7 @@ export default function AdminAnalyticsClient() {
             <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6 space-y-5">
               <div>
                 <h2 className="text-lg font-semibold">경제 리포트</h2>
-                <p className="mt-1 text-sm muted">포인트 발행/소각/순증감/누적 추이를 자동 집계합니다. (3분 주기 백그라운드 갱신)</p>
+                <p className="mt-1 text-sm muted">포인트 발행/소각/순증감/누적 추이를 자동 집계합니다. (수동 새로고침)</p>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
