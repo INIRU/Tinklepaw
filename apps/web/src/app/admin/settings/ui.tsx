@@ -23,6 +23,18 @@ type AppConfig = {
   voice_reward_interval_seconds: number;
   voice_reward_daily_cap_points: number | null;
   booster_voice_bonus_points: number;
+  daily_chest_legendary_rate_pct: number;
+  daily_chest_epic_rate_pct: number;
+  daily_chest_rare_rate_pct: number;
+  daily_chest_common_min_points: number;
+  daily_chest_common_max_points: number;
+  daily_chest_rare_min_points: number;
+  daily_chest_rare_max_points: number;
+  daily_chest_epic_min_points: number;
+  daily_chest_epic_max_points: number;
+  daily_chest_legendary_min_points: number;
+  daily_chest_legendary_max_points: number;
+  daily_chest_item_drop_rate_pct: number;
 };
 
 type DiscordChannel = { id: string; name: string };
@@ -914,6 +926,141 @@ export default function SettingsClient() {
               type="number"
               value={cfg.booster_voice_bonus_points}
               onChange={(e) => setCfg({ ...cfg, booster_voice_bonus_points: Number(e.target.value) })}
+            />
+          </label>
+        </div>
+      </section>
+
+      <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+        <h2 className="text-lg font-semibold">일일 보물상자 보상</h2>
+        <p className="mt-2 text-xs muted">/daily 보상 확률과 포인트 범위를 설정합니다.</p>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm">
+            레전더리 확률(%)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              step="0.1"
+              min={0}
+              max={100}
+              value={cfg.daily_chest_legendary_rate_pct}
+              onChange={(e) => setCfg({ ...cfg, daily_chest_legendary_rate_pct: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            에픽 확률(%)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              step="0.1"
+              min={0}
+              max={100}
+              value={cfg.daily_chest_epic_rate_pct}
+              onChange={(e) => setCfg({ ...cfg, daily_chest_epic_rate_pct: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            레어 확률(%)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              step="0.1"
+              min={0}
+              max={100}
+              value={cfg.daily_chest_rare_rate_pct}
+              onChange={(e) => setCfg({ ...cfg, daily_chest_rare_rate_pct: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            아이템 드롭 확률(%)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              step="0.1"
+              min={0}
+              max={100}
+              value={cfg.daily_chest_item_drop_rate_pct}
+              onChange={(e) => setCfg({ ...cfg, daily_chest_item_drop_rate_pct: Number(e.target.value) })}
+            />
+          </label>
+        </div>
+
+        <p className="mt-2 text-xs muted-2">
+          커먼 확률은 자동 계산됩니다: {Math.max(0, 100 - cfg.daily_chest_legendary_rate_pct - cfg.daily_chest_epic_rate_pct - cfg.daily_chest_rare_rate_pct).toFixed(1)}%
+        </p>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm">
+            커먼 최소 포인트
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              value={cfg.daily_chest_common_min_points}
+              onChange={(e) => setCfg({ ...cfg, daily_chest_common_min_points: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            커먼 최대 포인트
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              value={cfg.daily_chest_common_max_points}
+              onChange={(e) => setCfg({ ...cfg, daily_chest_common_max_points: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            레어 최소 포인트
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              value={cfg.daily_chest_rare_min_points}
+              onChange={(e) => setCfg({ ...cfg, daily_chest_rare_min_points: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            레어 최대 포인트
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              value={cfg.daily_chest_rare_max_points}
+              onChange={(e) => setCfg({ ...cfg, daily_chest_rare_max_points: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            에픽 최소 포인트
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              value={cfg.daily_chest_epic_min_points}
+              onChange={(e) => setCfg({ ...cfg, daily_chest_epic_min_points: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            에픽 최대 포인트
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              value={cfg.daily_chest_epic_max_points}
+              onChange={(e) => setCfg({ ...cfg, daily_chest_epic_max_points: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            레전더리 최소 포인트
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              value={cfg.daily_chest_legendary_min_points}
+              onChange={(e) => setCfg({ ...cfg, daily_chest_legendary_min_points: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            레전더리 최대 포인트
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              value={cfg.daily_chest_legendary_max_points}
+              onChange={(e) => setCfg({ ...cfg, daily_chest_legendary_max_points: Number(e.target.value) })}
             />
           </label>
         </div>

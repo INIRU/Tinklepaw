@@ -42,6 +42,18 @@ export async function PUT(req: Request) {
     voice_reward_daily_cap_points?: number | null;
     booster_chat_bonus_points?: number;
     booster_voice_bonus_points?: number;
+    daily_chest_legendary_rate_pct?: number;
+    daily_chest_epic_rate_pct?: number;
+    daily_chest_rare_rate_pct?: number;
+    daily_chest_common_min_points?: number;
+    daily_chest_common_max_points?: number;
+    daily_chest_rare_min_points?: number;
+    daily_chest_rare_max_points?: number;
+    daily_chest_epic_min_points?: number;
+    daily_chest_epic_max_points?: number;
+    daily_chest_legendary_min_points?: number;
+    daily_chest_legendary_max_points?: number;
+    daily_chest_item_drop_rate_pct?: number;
   };
 
   const patch: Record<string, unknown> = {};
@@ -63,6 +75,18 @@ export async function PUT(req: Request) {
   if (body.voice_reward_daily_cap_points !== undefined) patch.voice_reward_daily_cap_points = body.voice_reward_daily_cap_points ?? null;
   if (body.booster_chat_bonus_points !== undefined) patch.booster_chat_bonus_points = body.booster_chat_bonus_points;
   if (body.booster_voice_bonus_points !== undefined) patch.booster_voice_bonus_points = body.booster_voice_bonus_points;
+  if (body.daily_chest_legendary_rate_pct !== undefined) patch.daily_chest_legendary_rate_pct = body.daily_chest_legendary_rate_pct;
+  if (body.daily_chest_epic_rate_pct !== undefined) patch.daily_chest_epic_rate_pct = body.daily_chest_epic_rate_pct;
+  if (body.daily_chest_rare_rate_pct !== undefined) patch.daily_chest_rare_rate_pct = body.daily_chest_rare_rate_pct;
+  if (body.daily_chest_common_min_points !== undefined) patch.daily_chest_common_min_points = body.daily_chest_common_min_points;
+  if (body.daily_chest_common_max_points !== undefined) patch.daily_chest_common_max_points = body.daily_chest_common_max_points;
+  if (body.daily_chest_rare_min_points !== undefined) patch.daily_chest_rare_min_points = body.daily_chest_rare_min_points;
+  if (body.daily_chest_rare_max_points !== undefined) patch.daily_chest_rare_max_points = body.daily_chest_rare_max_points;
+  if (body.daily_chest_epic_min_points !== undefined) patch.daily_chest_epic_min_points = body.daily_chest_epic_min_points;
+  if (body.daily_chest_epic_max_points !== undefined) patch.daily_chest_epic_max_points = body.daily_chest_epic_max_points;
+  if (body.daily_chest_legendary_min_points !== undefined) patch.daily_chest_legendary_min_points = body.daily_chest_legendary_min_points;
+  if (body.daily_chest_legendary_max_points !== undefined) patch.daily_chest_legendary_max_points = body.daily_chest_legendary_max_points;
+  if (body.daily_chest_item_drop_rate_pct !== undefined) patch.daily_chest_item_drop_rate_pct = body.daily_chest_item_drop_rate_pct;
 
     const supabase = createSupabaseAdminClient();
 

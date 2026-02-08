@@ -53,6 +53,18 @@ export type Database = {
           voice_reward_interval_seconds: number;
           voice_reward_daily_cap_points: number | null;
           booster_voice_bonus_points: number;
+          daily_chest_legendary_rate_pct: number;
+          daily_chest_epic_rate_pct: number;
+          daily_chest_rare_rate_pct: number;
+          daily_chest_common_min_points: number;
+          daily_chest_common_max_points: number;
+          daily_chest_rare_min_points: number;
+          daily_chest_rare_max_points: number;
+          daily_chest_epic_min_points: number;
+          daily_chest_epic_max_points: number;
+          daily_chest_legendary_min_points: number;
+          daily_chest_legendary_max_points: number;
+          daily_chest_item_drop_rate_pct: number;
           server_intro: string | null;
           banner_image_url: string | null;
           icon_image_url: string | null;

@@ -31,6 +31,18 @@ export async function getOrInitAppConfig() {
       voice_reward_daily_cap_points: null,
       booster_chat_bonus_points: 0,
       booster_voice_bonus_points: 0,
+      daily_chest_legendary_rate_pct: 3,
+      daily_chest_epic_rate_pct: 15,
+      daily_chest_rare_rate_pct: 30,
+      daily_chest_common_min_points: 40,
+      daily_chest_common_max_points: 110,
+      daily_chest_rare_min_points: 90,
+      daily_chest_rare_max_points: 200,
+      daily_chest_epic_min_points: 180,
+      daily_chest_epic_max_points: 360,
+      daily_chest_legendary_min_points: 340,
+      daily_chest_legendary_max_points: 620,
+      daily_chest_item_drop_rate_pct: 12,
     })
     .select('*')
     .single();
