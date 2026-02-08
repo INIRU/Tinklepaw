@@ -123,6 +123,48 @@ type EconomyPayload = {
   sinkCategories: EconomyCategoryTotal[];
 };
 
+type AnalyticsResponsePayload = {
+  generatedAt: string;
+  filters: {
+    rangeDays: number;
+    channelId: string | null;
+  };
+  periods: Record<
+    Period,
+    {
+      points: PeriodPoint[];
+      topUsers: TopUser[];
+      totals: PeriodTotals;
+      comparison: PeriodComparison;
+      economy: EconomyPayload;
+    }
+  >;
+};
+
+type CachedUserProfile = {
+  username: string;
+  avatarUrl: string | null;
+};
+
+const ANALYTICS_CACHE_TTL_MS = 120_000;
+const USER_PROFILE_CACHE_TTL_MS = 1_800_000;
+
+const analyticsCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    payload: AnalyticsResponsePayload;
+  }
+>();
+
+const userProfileCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    profile: CachedUserProfile;
+  }
+>();
+
 const ECONOMY_KIND_CATEGORY_MAP: Record<string, string> = {
   chat_grant: 'engagement_reward',
   voice_grant: 'engagement_reward',
@@ -146,6 +188,40 @@ const ECONOMY_CATEGORY_LABELS: Record<string, string> = {
   admin_adjustment: '관리자 조정',
   other_source: '기타 발행',
   other_sink: '기타 소각',
+};
+
+const buildAnalyticsCacheKey = (rangeDays: number, channelId: string | null) => `${rangeDays}:${channelId ?? 'all'}`;
+
+const pruneExpiredCaches = (nowMs: number) => {
+  for (const [key, entry] of analyticsCache.entries()) {
+    if (entry.expiresAt <= nowMs) analyticsCache.delete(key);
+  }
+  for (const [key, entry] of userProfileCache.entries()) {
+    if (entry.expiresAt <= nowMs) userProfileCache.delete(key);
+  }
+};
+
+const getCachedUserProfile = async (userId: string): Promise<CachedUserProfile | null> => {
+  const nowMs = Date.now();
+  const cached = userProfileCache.get(userId);
+  if (cached && cached.expiresAt > nowMs) {
+    return cached.profile;
+  }
+
+  const summary = await fetchMemberUserSummary(userId).catch(() => null);
+  if (!summary) {
+    return null;
+  }
+
+  const profile: CachedUserProfile = {
+    username: summary.name,
+    avatarUrl: summary.avatarUrl,
+  };
+  userProfileCache.set(userId, {
+    expiresAt: nowMs + USER_PROFILE_CACHE_TTL_MS,
+    profile,
+  });
+  return profile;
 };
 
 const PERIOD_BUCKET_COUNT: Record<Period, number> = {
@@ -593,11 +669,11 @@ const resolveTopUsers = async (
   if (unresolvedIds.length > 0) {
     await Promise.all(
       unresolvedIds.map(async (userId) => {
-        const summary = await fetchMemberUserSummary(userId).catch(() => null);
-        if (summary) {
+        const profile = await getCachedUserProfile(userId);
+        if (profile) {
           usersById.set(userId, {
-            username: summary.name,
-            avatarUrl: summary.avatarUrl,
+            username: profile.username,
+            avatarUrl: profile.avatarUrl,
           });
         }
       })
@@ -628,6 +704,14 @@ export async function GET(request: Request) {
   const rangeDays = Math.max(30, Math.min(Number.isFinite(rangeDaysRaw) ? Math.floor(rangeDaysRaw) : 365, 365));
   const channelIdFilter = (url.searchParams.get('channelId') ?? '').trim() || null;
 
+  const nowMs = Date.now();
+  pruneExpiredCaches(nowMs);
+  const cacheKey = buildAnalyticsCacheKey(rangeDays, channelIdFilter);
+  const cached = analyticsCache.get(cacheKey);
+  if (cached && cached.expiresAt > nowMs) {
+    return NextResponse.json(cached.payload);
+  }
+
   const env = getServerEnv();
   const now = new Date();
   const earliestDay = addUtcDays(startOfUtcDay(now), -rangeDays);
@@ -656,23 +740,7 @@ export async function GET(request: Request) {
       })
     : events;
 
-  const allUserIds = Array.from(new Set(filteredEvents.map((event) => event.user_id).filter((value): value is string => Boolean(value))));
   const usersById = new Map<string, { username: string; avatarUrl: string | null }>();
-
-  if (allUserIds.length > 0) {
-    const supabase = createSupabaseAdminClient();
-    const { data } = await supabase
-      .from('users')
-      .select('discord_user_id, username, avatar_url')
-      .in('discord_user_id', allUserIds);
-
-    for (const user of data ?? []) {
-      usersById.set(user.discord_user_id, {
-        username: user.username ?? user.discord_user_id,
-        avatarUrl: user.avatar_url,
-      });
-    }
-  }
 
   const dayBase = aggregatePeriod('day', filteredEvents, now);
   const weekBase = aggregatePeriod('week', filteredEvents, now);
@@ -688,17 +756,18 @@ export async function GET(request: Request) {
   ]));
 
   if (topUserIds.length > 0) {
-    await Promise.all(
-      topUserIds.map(async (userId) => {
-        const summary = await fetchMemberUserSummary(userId).catch(() => null);
-        if (summary) {
-          usersById.set(userId, {
-            username: summary.name,
-            avatarUrl: summary.avatarUrl,
-          });
-        }
-      })
-    );
+    const supabase = createSupabaseAdminClient();
+    const { data } = await supabase
+      .from('users')
+      .select('discord_user_id, username, avatar_url')
+      .in('discord_user_id', topUserIds);
+
+    for (const user of data ?? []) {
+      usersById.set(user.discord_user_id, {
+        username: user.username ?? user.discord_user_id,
+        avatarUrl: user.avatar_url,
+      });
+    }
   }
 
   const [dayTopUsers, weekTopUsers, monthTopUsers] = await Promise.all([
@@ -707,7 +776,7 @@ export async function GET(request: Request) {
     resolveTopUsers(monthBase.topUsers, usersById),
   ]);
 
-  return NextResponse.json({
+  const payload: AnalyticsResponsePayload = {
     generatedAt: now.toISOString(),
     filters: {
       rangeDays,
@@ -736,5 +805,12 @@ export async function GET(request: Request) {
         economy: monthEconomy,
       },
     },
+  };
+
+  analyticsCache.set(cacheKey, {
+    expiresAt: nowMs + ANALYTICS_CACHE_TTL_MS,
+    payload,
   });
+
+  return NextResponse.json(payload);
 }

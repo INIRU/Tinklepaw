@@ -418,6 +418,7 @@ export default function AdminAnalyticsClient() {
   const [channels, setChannels] = useState<ChannelOption[]>([]);
   const [data, setData] = useState<AnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -444,10 +445,20 @@ export default function AdminAnalyticsClient() {
 
   useEffect(() => {
     let cancelled = false;
+    let activeController: AbortController | null = null;
 
-    const load = async () => {
-      setLoading(true);
-      setError(null);
+    const load = async (silent = false) => {
+      activeController?.abort();
+      const controller = new AbortController();
+      activeController = controller;
+
+      if (silent) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+        setError(null);
+      }
+
       try {
         const params = new URLSearchParams();
         params.set('rangeDays', String(rangeDays));
@@ -455,7 +466,10 @@ export default function AdminAnalyticsClient() {
           params.set('channelId', channelId);
         }
 
-        const res = await fetch(`/api/admin/analytics?${params.toString()}`, { cache: 'no-store' });
+        const res = await fetch(`/api/admin/analytics?${params.toString()}`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
         if (!res.ok) {
           const body = await res.json().catch(() => null);
           throw new Error(body?.error ?? '통계를 불러오지 못했습니다.');
@@ -463,19 +477,29 @@ export default function AdminAnalyticsClient() {
         const body = (await res.json()) as AnalyticsResponse;
         if (!cancelled) setData(body);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : '통계를 불러오지 못했습니다.');
+        if (cancelled) return;
+        if (err instanceof Error && err.name === 'AbortError') return;
+        if (!silent) {
+          setError(err instanceof Error ? err.message : '통계를 불러오지 못했습니다.');
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (cancelled) return;
+        if (silent) {
+          setRefreshing(false);
+        } else {
+          setLoading(false);
+        }
       }
     };
 
-    void load();
+    void load(false);
     const timer = window.setInterval(() => {
-      void load();
-    }, 60_000);
+      void load(true);
+    }, 180_000);
 
     return () => {
       cancelled = true;
+      activeController?.abort();
       window.clearInterval(timer);
     };
   }, [channelId, rangeDays]);
@@ -554,15 +578,23 @@ export default function AdminAnalyticsClient() {
           <div className="mt-3 text-xs muted">
             집계 단위: {PERIOD_LABEL[period]} · 채널: {channelId === 'all' ? '전체' : `#${channels.find((channel) => channel.id === channelId)?.name ?? channelId}`} · 마지막 업데이트:{' '}
             {data?.generatedAt ? new Date(data.generatedAt).toLocaleString() : '-'}
+            {refreshing ? <span className="ml-2 text-[color:var(--accent-mint)]">백그라운드 갱신 중...</span> : null}
+            {loading && data ? <span className="ml-2 text-[color:var(--accent-mint)]">새 필터 적용 중...</span> : null}
           </div>
         </div>
 
-        {loading ? (
+        {loading && !data ? (
           <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-10 text-center muted">통계를 불러오는 중...</div>
-        ) : error ? (
+        ) : error && !data ? (
           <div className="rounded-3xl border border-rose-400/40 bg-rose-500/10 p-6 text-rose-300">{error}</div>
         ) : (
           <>
+            {error ? (
+              <div className="rounded-2xl border border-amber-300/35 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">
+                최신 통계 갱신 실패: {error}
+              </div>
+            ) : null}
+
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
                 <div className="text-xs uppercase tracking-[0.12em] muted">총 입장</div>
@@ -630,7 +662,7 @@ export default function AdminAnalyticsClient() {
             <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6 space-y-5">
               <div>
                 <h2 className="text-lg font-semibold">경제 리포트</h2>
-                <p className="mt-1 text-sm muted">포인트 발행/소각/순증감/누적 추이를 자동 집계합니다. (1분 주기 갱신)</p>
+                <p className="mt-1 text-sm muted">포인트 발행/소각/순증감/누적 추이를 자동 집계합니다. (3분 주기 백그라운드 갱신)</p>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
