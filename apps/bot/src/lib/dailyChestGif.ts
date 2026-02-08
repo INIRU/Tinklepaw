@@ -1,7 +1,9 @@
 import { createCanvas } from 'canvas';
 import type { CanvasRenderingContext2D } from 'canvas';
 import { AttachmentBuilder } from 'discord.js';
-import { GIFEncoder, applyPalette, quantize } from 'gifenc';
+import gifenc from 'gifenc';
+
+const { GIFEncoder, applyPalette, quantize } = gifenc;
 
 type DailyChestGifParams = {
   tier: 'common' | 'rare' | 'epic' | 'legendary';

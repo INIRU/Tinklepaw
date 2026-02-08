@@ -44,4 +44,13 @@ declare module 'gifenc' {
     palette: Palette,
     format?: 'rgb565' | 'rgb444' | 'rgba4444'
   ): Uint8Array;
+
+  export type GifencDefault = {
+    GIFEncoder: typeof GIFEncoder;
+    quantize: typeof quantize;
+    applyPalette: typeof applyPalette;
+  };
+
+  const gifenc: GifencDefault;
+  export default gifenc;
 }
