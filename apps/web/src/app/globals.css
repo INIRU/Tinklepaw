@@ -19,21 +19,21 @@
 }
 
 html[data-theme='dark'] {
-  --bg: #0c1324;
+  --bg: #0b1322;
   --fg: #f8fbff;
-  --muted: rgba(248, 251, 255, 0.68);
-  --muted-2: rgba(248, 251, 255, 0.52);
-  --card: rgba(18, 25, 44, 0.62);
-  --border: rgba(248, 251, 255, 0.10);
-  --chip: rgba(18, 25, 44, 0.70);
-  --shadow: 0 12px 34px rgba(0, 0, 0, 0.35);
+  --muted: rgba(248, 251, 255, 0.70);
+  --muted-2: rgba(248, 251, 255, 0.56);
+  --card: rgba(16, 24, 44, 0.74);
+  --border: rgba(203, 213, 225, 0.20);
+  --chip: rgba(22, 31, 56, 0.78);
+  --shadow: 0 8px 20px rgba(0, 0, 0, 0.30);
 
-  --accent-pink: #ff5fa2;
-  --accent-pink-2: #ff8bc2;
-  --accent-lavender: #9b84ff;
-  --accent-sky: #78b7ff;
-  --accent-lemon: #ffd36a;
-  --accent-mint: #2fc7a9;
+  --accent-pink: #ff79b5;
+  --accent-pink-2: #f4a2cf;
+  --accent-lavender: #a996ff;
+  --accent-sky: #7dc7ff;
+  --accent-lemon: #ffd67a;
+  --accent-mint: #47d8ba;
 }
 
 @theme inline {
@@ -98,6 +98,18 @@ body {
   transform: translateY(-1px);
 }
 
+html[data-theme='dark'] .card-glass {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, white 10%, transparent), transparent 56%),
+    var(--card);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.30);
+}
+
+html[data-theme='dark'] .card-glass:hover {
+  transform: none;
+  filter: brightness(1.02);
+}
+
 .btn-bangul {
   background: linear-gradient(135deg, color-mix(in srgb, var(--accent-pink-2) 30%, var(--chip)), color-mix(in srgb, var(--accent-lavender) 24%, var(--chip)));
   border: 1px solid color-mix(in srgb, var(--accent-pink) 28%, var(--border));
@@ -110,6 +122,18 @@ body {
   box-shadow: 0 14px 28px rgba(22, 18, 40, 0.17);
   filter: brightness(1.03);
   transform: translateY(-1px);
+}
+
+html[data-theme='dark'] .btn-bangul {
+  background: linear-gradient(135deg, rgba(255, 121, 181, 0.20), rgba(125, 199, 255, 0.16));
+  border-color: rgba(255, 220, 236, 0.30);
+  box-shadow: none;
+}
+
+html[data-theme='dark'] .btn-bangul:hover {
+  transform: none;
+  box-shadow: none;
+  filter: brightness(1.02);
 }
 
 .btn-soft {
@@ -134,6 +158,19 @@ body {
   filter: brightness(1.02);
   box-shadow: 0 12px 24px rgba(22, 18, 40, 0.12);
   transform: translateY(-1px);
+}
+
+html[data-theme='dark'] .btn-soft {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(21, 31, 56, 0.86));
+  border-color: rgba(203, 213, 225, 0.24);
+  box-shadow: none;
+}
+
+html[data-theme='dark'] .btn-soft:hover {
+  transform: none;
+  box-shadow: none;
+  filter: brightness(1.03);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(24, 35, 64, 0.90));
 }
 
 a,

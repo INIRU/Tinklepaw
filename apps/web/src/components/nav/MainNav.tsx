@@ -53,7 +53,7 @@ export default function MainNav(props: {
   return (
     <nav>
       <m.div
-        className="sticky top-0 z-30 border-b border-[color:var(--border)] bg-[color:var(--bg)]/72 backdrop-blur-xl supports-[backdrop-filter]:bg-[color:var(--bg)]/64 shadow-[0_8px_24px_rgba(9,12,24,0.08)]"
+        className="sticky top-0 z-30 border-b border-[color:var(--border)] bg-[color:var(--bg)]/72 backdrop-blur-xl supports-[backdrop-filter]:bg-[color:var(--bg)]/64 shadow-[0_8px_24px_rgba(9,12,24,0.08)] dark:shadow-none"
         initial={{ y: -10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
@@ -76,7 +76,7 @@ export default function MainNav(props: {
                     key={link.href}
                     className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${
                       isLinkActive(link.href)
-                        ? 'bg-[color:var(--accent-pink)]/18 border border-[color:var(--accent-pink)]/40 text-[color:var(--fg)] shadow-[0_6px_16px_rgba(255,95,162,0.16)]'
+                        ? 'bg-[color:var(--accent-pink)]/18 border border-[color:var(--accent-pink)]/40 text-[color:var(--fg)] shadow-[0_6px_16px_rgba(255,95,162,0.16)] dark:shadow-none dark:bg-white/10 dark:border-white/22'
                         : 'btn-soft'
                     }`}
                     href={link.href}
@@ -93,7 +93,7 @@ export default function MainNav(props: {
               target="_blank"
               rel="noreferrer"
               className="hidden rounded-full btn-soft px-4 py-2 text-xs font-semibold sm:inline-flex"
-              whileHover={{ y: -1 }}
+              whileHover={{ scale: 1.01 }}
               whileTap={{ scale: 0.98 }}
               transition={{ type: 'spring', stiffness: 420, damping: 28 }}
             >
@@ -145,7 +145,7 @@ export default function MainNav(props: {
             ) : (
               <m.div
                 className="hidden sm:block"
-                whileHover={{ y: -1 }}
+                whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.98 }}
                 transition={{ type: 'spring', stiffness: 420, damping: 28 }}
               >

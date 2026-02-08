@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 
 import { supabaseBrowser } from '@/lib/supabase-browser';
+import { HoverStatusPopup } from '@/components/ui/HoverStatusPopup';
 import FeedbackModal from './FeedbackModal';
 
 type MusicTrack = {
@@ -149,9 +150,16 @@ const ServiceStatusCard = ({ title, samples }: { title: string; samples: Monitor
           <p className="text-xs uppercase tracking-[0.12em] muted">Service</p>
           <h3 className="text-sm font-semibold">{title}</h3>
         </div>
-        <span className={`inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-semibold ${STATUS_BADGE[status]}`}>
-          {STATUS_LABEL[status]}
-        </span>
+        <HoverStatusPopup
+          title={`${title} 연결 상태`}
+          statusLabel={STATUS_LABEL[status]}
+          timestamp={latest?.created_at}
+          description="최근 샘플 기준 연결 상태입니다."
+        >
+          <span className={`inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-semibold ${STATUS_BADGE[status]}`}>
+            {STATUS_LABEL[status]}
+          </span>
+        </HoverStatusPopup>
       </div>
 
       <div className="flex items-center gap-1.5">
@@ -161,11 +169,16 @@ const ServiceStatusCard = ({ title, samples }: { title: string; samples: Monitor
           bars.map((sample, index) => {
             const sampleStatus = normalizeStatus(sample.status);
             return (
-              <span
+              <HoverStatusPopup
                 key={`${sample.created_at}-${index}`}
-                title={`${new Date(sample.created_at).toLocaleString()} · ${STATUS_LABEL[sampleStatus]}`}
-                className={`h-2.5 flex-1 rounded-full ${STATUS_DOT[sampleStatus]}`}
-              />
+                title={`${title} 히스토리`}
+                statusLabel={STATUS_LABEL[sampleStatus]}
+                timestamp={sample.created_at}
+                description="샘플 시점의 연결 상태입니다."
+                className="flex-1"
+              >
+                <span className={`block h-2.5 w-full rounded-full ${STATUS_DOT[sampleStatus]}`} />
+              </HoverStatusPopup>
             );
           })
         )}

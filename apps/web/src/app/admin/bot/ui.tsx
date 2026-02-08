@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useToast } from '@/components/toast/ToastProvider';
+import { HoverStatusPopup } from '@/components/ui/HoverStatusPopup';
 import { ChevronLeft, Bot, Check, ChevronDown } from 'lucide-react';
 
 type BotConfig = {
@@ -70,13 +71,20 @@ function StatusBars({ label, samples, count = 60 }: { label: string; samples: St
         <span className="text-[color:var(--muted)]">{STATUS_LABELS[latest]}</span>
       </div>
       <div className="flex items-end gap-[2px] h-10">
-        {bars.map((sample, idx) => (
-          <span
-            key={`${label}-${idx}`}
-            className={`h-full w-[6px] rounded-[2px] ${STATUS_COLORS[sample.status]}`}
-            title={sample.created_at ? `${new Date(sample.created_at).toLocaleString()} · ${STATUS_LABELS[sample.status]}` : STATUS_LABELS[sample.status]}
-          />
-        ))}
+        {bars.map((sample, idx) => {
+          const timestamp = sample.created_at || undefined;
+          return (
+            <HoverStatusPopup
+              key={`${label}-${idx}`}
+              title={`${label} 히스토리`}
+              statusLabel={STATUS_LABELS[sample.status]}
+              timestamp={timestamp}
+              description={timestamp ? '해당 시점의 상태 샘플입니다.' : '아직 수집되지 않은 구간입니다.'}
+            >
+              <span className={`block h-10 w-[6px] rounded-[2px] ${STATUS_COLORS[sample.status]}`} />
+            </HoverStatusPopup>
+          );
+        })}
       </div>
     </div>
   );
