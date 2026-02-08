@@ -174,6 +174,8 @@ const ECONOMY_KIND_CATEGORY_MAP: Record<string, string> = {
   gacha_reward: 'gacha_reward',
   duplicate_refund: 'refund',
   gacha_spend: 'gacha_spend',
+  sword_forge_enhance: 'forge_spend',
+  sword_forge_sell: 'forge_reward',
   admin_adjust: 'admin_adjustment',
 };
 
@@ -185,6 +187,8 @@ const ECONOMY_CATEGORY_LABELS: Record<string, string> = {
   gacha_reward: '가챠 보상',
   refund: '환급/보정',
   gacha_spend: '가챠 소모',
+  forge_spend: '강화 소모',
+  forge_reward: '강화 판매 보상',
   admin_adjustment: '관리자 조정',
   other_source: '기타 발행',
   other_sink: '기타 소각',

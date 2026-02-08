@@ -55,6 +55,36 @@ const STATUS_COLORS: Record<StatusLevel, string> = {
   unknown: 'bg-zinc-400'
 };
 
+const LOG_KIND_LABELS: Record<string, string> = {
+  chat_grant: '채팅 보상',
+  voice_grant: '음성 보상',
+  daily_chest_claim: '일일 상자 보상',
+  lottery_ticket_purchase: '복권 구매',
+  lottery_ticket_payout: '복권 당첨금',
+  gacha_spend: '가챠 소모',
+  gacha_cost: '가챠 소모',
+  gacha_reward: '가챠 보상',
+  duplicate_refund: '중복 환급',
+  sword_forge_enhance: '참치캔 강화',
+  sword_forge_sell: '강화 판매',
+  admin_adjust: '관리자 조정',
+};
+
+const LOG_KIND_BADGE_CLASS: Record<string, string> = {
+  chat_grant: 'bg-green-500/10 text-green-500 border-green-500/20',
+  voice_grant: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
+  daily_chest_claim: 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20',
+  lottery_ticket_purchase: 'bg-red-500/10 text-red-500 border-red-500/20',
+  lottery_ticket_payout: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+  gacha_spend: 'bg-rose-500/10 text-rose-500 border-rose-500/20',
+  gacha_cost: 'bg-rose-500/10 text-rose-500 border-rose-500/20',
+  gacha_reward: 'bg-sky-500/10 text-sky-500 border-sky-500/20',
+  duplicate_refund: 'bg-lime-500/10 text-lime-500 border-lime-500/20',
+  sword_forge_enhance: 'bg-red-500/10 text-red-500 border-red-500/20',
+  sword_forge_sell: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+  admin_adjust: 'bg-violet-500/10 text-violet-500 border-violet-500/20',
+};
+
 function StatusBars({ label, samples, count = 60 }: { label: string; samples: StatusSample[]; count?: number }) {
   const recent = samples.slice(-count);
   const missing = Math.max(0, count - recent.length);
@@ -1121,7 +1151,10 @@ export default function BotSettingsClient() {
                         </td>
                       </tr>
                     ) : (
-                      logs.map((log) => (
+                      logs.map((log) => {
+                        const kindLabel = LOG_KIND_LABELS[log.kind] ?? log.kind;
+                        const kindBadgeClass = LOG_KIND_BADGE_CLASS[log.kind] ?? 'bg-gray-500/10 text-gray-500 border-gray-500/20';
+                        return (
                         <tr key={log.id} className="hover:bg-[color:var(--chip)]/50 transition-colors">
                           <td className="px-4 py-3 text-xs muted whitespace-nowrap">
                             {new Date(log.created_at).toLocaleString()}
@@ -1151,19 +1184,16 @@ export default function BotSettingsClient() {
                             </div>
                           </td>
                           <td className="px-4 py-3">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] border ${
-                              log.kind === 'chat_grant' ? 'bg-green-500/10 text-green-500 border-green-500/20' :
-                              log.kind === 'gacha_cost' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
-                              'bg-gray-500/10 text-gray-500 border-gray-500/20'
-                            }`}>
-                              {log.kind}
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] border ${kindBadgeClass}`}>
+                              {kindLabel}
                             </span>
                           </td>
                           <td className={`px-4 py-3 text-right font-mono ${log.amount > 0 ? 'text-green-500' : 'text-red-500'}`}>
                             {log.amount > 0 ? '+' : ''}{log.amount}
                           </td>
                         </tr>
-                      ))
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
