@@ -277,7 +277,12 @@ export function registerMessageCreate(client: Client) {
       if ('sendTyping' in message.channel) {
         await message.channel.sendTyping();
       }
-      const intent = await inferIntentFromGemini({ userId: message.author.id, text });
+      const intent = await inferIntentFromGemini({
+        guildId,
+        channelId: message.channelId,
+        userId: message.author.id,
+        text
+      });
       if (intent) {
         switch (intent.action) {
           case 'game_rps':

@@ -33,18 +33,125 @@ const schema: Schema = {
   required: ['action']
 };
 
-const lastCallByUser = new Map<string, number>();
-const conversationHistory = new Map<string, Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }>>();
+type ConversationMessage = {
+  role: 'user' | 'model';
+  parts: Array<{ text: string }>;
+};
 
-export async function inferIntentFromGemini(params: { userId: string; text: string }): Promise<Intent | null> {
+type ConversationSession = {
+  history: ConversationMessage[];
+  summary: string;
+  lastAccessAt: number;
+};
+
+const SESSION_TTL_MS = 30 * 60 * 1000;
+const SESSION_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+const MAX_CONTEXT_TOKENS = 2800;
+const MAX_HISTORY_MESSAGES = 24;
+const SUMMARY_MAX_CHARS = 1800;
+const SUMMARY_LINE_MAX_CHARS = 120;
+
+const lastCallBySession = new Map<string, number>();
+const conversationSessions = new Map<string, ConversationSession>();
+let cleanupTimerStarted = false;
+
+const estimateTokens = (value: string) => Math.ceil(value.length / 4);
+
+const normalizeText = (value: string) => value.replace(/\s+/g, ' ').trim();
+
+const summarizeLine = (message: ConversationMessage) => {
+  const text = normalizeText(message.parts[0]?.text ?? '');
+  const clipped = text.length > SUMMARY_LINE_MAX_CHARS ? `${text.slice(0, SUMMARY_LINE_MAX_CHARS - 1)}…` : text;
+  const prefix = message.role === 'user' ? '사용자' : '쿠로';
+  return `${prefix}: ${clipped || '(내용 없음)'}`;
+};
+
+const appendToSummary = (session: ConversationSession, foldedMessages: ConversationMessage[]) => {
+  if (foldedMessages.length < 1) return;
+  const nextChunk = foldedMessages.map(summarizeLine).join('\n');
+  const merged = session.summary ? `${session.summary}\n${nextChunk}` : nextChunk;
+  session.summary = merged.length > SUMMARY_MAX_CHARS ? merged.slice(-SUMMARY_MAX_CHARS) : merged;
+};
+
+const estimateSessionTokens = (session: ConversationSession) => {
+  const historyTokens = session.history.reduce((sum, message) => sum + estimateTokens(message.parts[0]?.text ?? ''), 0);
+  return historyTokens + estimateTokens(session.summary);
+};
+
+const enforceSessionBudget = (session: ConversationSession) => {
+  while (
+    session.history.length > MAX_HISTORY_MESSAGES ||
+    (session.history.length > 2 && estimateSessionTokens(session) > MAX_CONTEXT_TOKENS)
+  ) {
+    const folded = session.history.splice(0, Math.min(4, session.history.length));
+    appendToSummary(session, folded);
+  }
+};
+
+const makeSessionKey = (params: { guildId: string; channelId: string; userId: string }) =>
+  `${params.guildId}:${params.channelId}:${params.userId}`;
+
+const ensureCleanupTimer = () => {
+  if (cleanupTimerStarted) return;
+  cleanupTimerStarted = true;
+
+  const timer = setInterval(() => {
+    const now = Date.now();
+    for (const [sessionKey, session] of conversationSessions.entries()) {
+      if (now - session.lastAccessAt > SESSION_TTL_MS) {
+        conversationSessions.delete(sessionKey);
+        lastCallBySession.delete(sessionKey);
+      }
+    }
+  }, SESSION_CLEANUP_INTERVAL_MS);
+
+  timer.unref?.();
+};
+
+const getSession = (sessionKey: string): ConversationSession => {
+  const now = Date.now();
+  const existing = conversationSessions.get(sessionKey);
+  if (existing && now - existing.lastAccessAt <= SESSION_TTL_MS) {
+    existing.lastAccessAt = now;
+    enforceSessionBudget(existing);
+    return existing;
+  }
+
+  const created: ConversationSession = {
+    history: [],
+    summary: '',
+    lastAccessAt: now
+  };
+  conversationSessions.set(sessionKey, created);
+  return created;
+};
+
+const sessionMemoryNote = (session: ConversationSession) => {
+  if (!session.summary) return '';
+  return `\n\nConversation summary for this session:\n${session.summary}\n`;
+};
+
+type InferIntentParams = {
+  guildId: string;
+  channelId: string;
+  userId: string;
+  text: string;
+};
+
+export async function inferIntentFromGemini(params: InferIntentParams): Promise<Intent | null> {
   const ctx = getBotContext();
   const apiKey = ctx.env.GEMINI_API_KEY;
   if (!apiKey) return null;
 
+  ensureCleanupTimer();
+
+  const sessionKey = makeSessionKey(params);
+  const session = getSession(sessionKey);
+
   const now = Date.now();
-  const last = lastCallByUser.get(params.userId) ?? 0;
+  const last = lastCallBySession.get(sessionKey) ?? 0;
   if (now - last < 1500) return { action: 'chat', reply: '잠깐만. 너무 빨라.' };
-  lastCallByUser.set(params.userId, now);
+  lastCallBySession.set(sessionKey, now);
 
   let personaPrompt = `You are "쿠로", a Discord bot for the "방울냥" (Bangulnyang) server.
 Your role:
@@ -64,9 +171,6 @@ Your role:
   }
 
   const ai = new GoogleGenAI({ apiKey });
-  const history = conversationHistory.get(params.userId) ?? [];
-  
-  if (history.length > 20) history.splice(0, history.length - 20);
 
   const systemInstruction = `${personaPrompt}
 
@@ -80,14 +184,14 @@ Decide if the user is asking to:
  - check their points/currency balance (action: points)
  Otherwise, respond naturally as "Kuro" (action: chat, reply: string).
 
-Return JSON with the schema.`;
+Return JSON with the schema.${sessionMemoryNote(session)}`;
 
   let response: Awaited<ReturnType<typeof ai.models.generateContent>>;
   try {
     response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-lite',
       contents: [
-        ...history,
+        ...session.history,
         { role: 'user', parts: [{ text: params.text }] }
       ],
       config: {
@@ -114,12 +218,17 @@ Return JSON with the schema.`;
       reply?: string;
       query?: string;
     };
-    
-    if (parsed.action === 'chat' && parsed.reply) {
-      history.push({ role: 'user', parts: [{ text: params.text }] });
-      history.push({ role: 'model', parts: [{ text: parsed.reply }] });
-      conversationHistory.set(params.userId, history);
-    }
+
+    const modelMemoryText =
+      parsed.action === 'chat'
+        ? parsed.reply ?? '그래.'
+        : `intent:${parsed.action}${parsed.itemName ? `:${parsed.itemName}` : ''}`;
+
+    session.history.push({ role: 'user', parts: [{ text: params.text }] });
+    session.history.push({ role: 'model', parts: [{ text: modelMemoryText }] });
+    enforceSessionBudget(session);
+    session.lastAccessAt = Date.now();
+    conversationSessions.set(sessionKey, session);
 
     switch (parsed.action) {
       case 'draw':

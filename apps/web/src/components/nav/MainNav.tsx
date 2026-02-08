@@ -3,6 +3,7 @@
 import { m, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { Menu, X as CloseIcon, LogOut, Package, Dices, MessageCircle, Settings, User, Bell, Music } from 'lucide-react';
 import { signOut } from 'next-auth/react';
@@ -20,6 +21,7 @@ export default function MainNav(props: {
   showAdmin?: boolean;
   iconUrl?: string | null;
 }) {
+  const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const inviteUrl = process.env.NEXT_PUBLIC_DISCORD_INVITE_URL ?? 'https://discord.gg/tinklepaw';
@@ -43,10 +45,15 @@ export default function MainNav(props: {
     ...(props.showAdmin ? [{ label: '관리자', href: '/admin', icon: Settings }] : [])
   ];
 
+  const isLinkActive = (href: string) => {
+    if (href === '/') return pathname === '/';
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
+
   return (
     <nav>
       <m.div
-        className="sticky top-0 z-30 border-b border-[color:var(--border)] bg-[color:var(--bg)]/70 backdrop-blur"
+        className="sticky top-0 z-30 border-b border-[color:var(--border)] bg-[color:var(--bg)]/72 backdrop-blur-xl supports-[backdrop-filter]:bg-[color:var(--bg)]/64 shadow-[0_8px_24px_rgba(9,12,24,0.08)]"
         initial={{ y: -10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
@@ -63,14 +70,18 @@ export default function MainNav(props: {
               </div>
             </Link>
 
-            <div className="ml-3 hidden items-center gap-1 lg:flex">
-              {navLinks.filter(link => link.href !== '/notifications').map((link) => (
-                <Link
-                  key={link.href}
-                  className="rounded-full btn-soft px-3 py-1.5 text-xs font-semibold"
-                  href={link.href}
-                >
-                  {link.label}
+              <div className="ml-3 hidden items-center gap-1 lg:flex">
+                {navLinks.filter(link => link.href !== '/notifications').map((link) => (
+                  <Link
+                    key={link.href}
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${
+                      isLinkActive(link.href)
+                        ? 'bg-[color:var(--accent-pink)]/18 border border-[color:var(--accent-pink)]/40 text-[color:var(--fg)] shadow-[0_6px_16px_rgba(255,95,162,0.16)]'
+                        : 'btn-soft'
+                    }`}
+                    href={link.href}
+                  >
+                    {link.label}
                 </Link>
               ))}
             </div>
@@ -177,7 +188,11 @@ export default function MainNav(props: {
                   key={link.href}
                   href={link.href}
                   onClick={() => setIsMenuOpen(false)}
-                  className="flex items-center gap-3 rounded-2xl border border-transparent px-4 py-3 text-sm font-semibold text-[color:var(--fg)] hover:bg-[color:var(--chip)] hover:border-[color:var(--border)] transition-all relative"
+                  className={`relative flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold transition-all ${
+                    isLinkActive(link.href)
+                      ? 'border-[color:var(--accent-pink)]/40 bg-[color:var(--accent-pink)]/14 text-[color:var(--fg)]'
+                      : 'border-transparent text-[color:var(--fg)] hover:bg-[color:var(--chip)] hover:border-[color:var(--border)]'
+                  }`}
                 >
                   <link.icon className="h-5 w-5 text-[color:var(--muted)]" />
                   {link.label}
