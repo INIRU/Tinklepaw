@@ -374,6 +374,21 @@ export type Database = {
         };
         Returns: Json;
       };
+      claim_daily_chest: {
+        Args: {
+          p_discord_user_id: string;
+        };
+        Returns: Array<{
+          out_already_claimed: boolean;
+          out_reward_points: number;
+          out_reward_item_id: string | null;
+          out_reward_item_name: string | null;
+          out_reward_item_rarity: Database['nyang']['Enums']['gacha_rarity'] | null;
+          out_reward_tier: string;
+          out_new_balance: number;
+          out_next_available_at: string;
+        }>;
+      };
       ensure_user: {
         Args: { p_discord_user_id: string };
         Returns: undefined;

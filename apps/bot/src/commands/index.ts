@@ -1,6 +1,7 @@
 import type { RESTPostAPIApplicationCommandsJSONBody } from 'discord-api-types/v10';
 
 import { drawCommand } from './draw.js';
+import { dailyCommand } from './daily.js';
 import { equipCommand } from './equip.js';
 import { inventoryCommand } from './inventory.js';
 import { unequipCommand } from './unequip.js';
@@ -12,6 +13,7 @@ import type { SlashCommand } from './types.js';
 
 export const commands: SlashCommand[] = [
   drawCommand, 
+  dailyCommand,
   inventoryCommand, 
   equipCommand, 
   unequipCommand, 

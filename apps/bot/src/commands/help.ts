@@ -32,6 +32,7 @@ export const helpCommand: SlashCommand = {
     // Default fields if not configured
     const defaultFields = [
       { name: '/뽑기', value: '가챠를 돌려 역할을 뽑아봐!\n💡 더 멋진 연출은 [웹사이트](https://tinklepaw.vercel.app/draw)에서!', inline: true },
+      { name: '/일일상자', value: '하루 1번 보물상자를 열고 포인트 보상을 받아!', inline: true },
       { name: '/가방', value: '보유한 아이템 목록을 확인해.', inline: true },
       { name: '/음악', value: '노래를 재생하고 대기열을 관리해.', inline: true },
       { name: '/장착 [이름]', value: '아이템을 장착하고 역할을 받아.', inline: false },
