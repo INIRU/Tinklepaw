@@ -9,6 +9,7 @@ import { getBotContext } from '../context.js';
 import { buildMusicPanelImage } from '../lib/musicPanelImage.js';
 import { buildMusicSetupEmbed, buildMusicSetupRows } from '../lib/musicSetupUi.js';
 import { getAppConfig } from './config.js';
+import { searchTracksWithFallback } from './musicSearch.js';
 
 type RequesterLike = {
   id?: unknown;
@@ -27,6 +28,24 @@ type RequesterState = {
   source: string | null;
 };
 
+type StoredTrackState = {
+  id?: unknown;
+  title?: unknown;
+  author?: unknown;
+  uri?: unknown;
+  requester?: unknown;
+};
+
+type StoredMusicStateRow = {
+  current_track: Json | null;
+  queue: Json | null;
+  voice_channel_id: string | null;
+  text_channel_id: string | null;
+  autoplay_enabled: boolean | null;
+  filter_preset: string | null;
+  volume: number | null;
+};
+
 export type MusicFilterPreset = 'off' | 'bass_boost' | 'nightcore' | 'vaporwave' | 'karaoke';
 
 export const MUSIC_FILTER_LABELS: Record<MusicFilterPreset, string> = {
@@ -41,6 +60,11 @@ let musicInstance: Kazagumo | null = null;
 let musicClient: Client | null = null;
 
 const asString = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
+
+const asStoredTrack = (value: unknown): StoredTrackState | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as StoredTrackState;
+};
 
 const mapRequesterState = (requester: unknown): RequesterState | null => {
   if (!requester || typeof requester !== 'object') return null;
@@ -72,6 +96,13 @@ const getMusicFilterPreset = (player: { data?: Map<string, unknown> }): MusicFil
   return 'off';
 };
 
+const parseMusicFilterPreset = (value: unknown): MusicFilterPreset => {
+  if (value === 'bass_boost' || value === 'nightcore' || value === 'vaporwave' || value === 'karaoke') {
+    return value;
+  }
+  return 'off';
+};
+
 const isMusicAutoplayEnabled = (player: { data?: Map<string, unknown> }) => player.data?.get('music_autoplay') !== false;
 
 const setMusicRuntimeDefaults = (player: { data?: Map<string, unknown> }) => {
@@ -82,6 +113,60 @@ const setMusicRuntimeDefaults = (player: { data?: Map<string, unknown> }) => {
   if (!player.data.has('music_filter_preset')) {
     player.data.set('music_filter_preset', 'off');
   }
+};
+
+const normalizeVolume = (value: unknown): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 60;
+  return Math.max(1, Math.min(150, Math.floor(value)));
+};
+
+const buildRestoreRequester = (requester: unknown, fallbackId: string) => {
+  const mapped = mapRequesterState(requester);
+  return {
+    id: mapped?.id ?? fallbackId,
+    username: mapped?.username ?? mapped?.displayName ?? 'restore',
+    displayName: mapped?.displayName ?? mapped?.username ?? '세션 복구',
+    avatarUrl: mapped?.avatarUrl ?? undefined,
+    source: mapped?.source ?? 'restore'
+  };
+};
+
+const buildRestoreQuery = (track: StoredTrackState): string | null => {
+  const uri = asString(track.uri);
+  if (uri) return uri;
+
+  const title = asString(track.title);
+  const author = asString(track.author);
+  if (title && author) return `${title} ${author}`;
+  if (title) return title;
+  return null;
+};
+
+const resolveRestoredTrack = async (
+  music: Kazagumo,
+  track: StoredTrackState,
+  index: number,
+): Promise<KazagumoTrack | null> => {
+  const query = buildRestoreQuery(track);
+  if (!query) return null;
+
+  const requester = buildRestoreRequester(track.requester, `restore-${index}`);
+  const result = await searchTracksWithFallback(music, query, requester);
+  if (!result.result.tracks.length) return null;
+
+  const storedId = asString(track.id);
+  const storedUri = asString(track.uri);
+  if (storedId) {
+    const exact = result.result.tracks.find((candidate) => candidate.track === storedId);
+    if (exact) return exact;
+  }
+
+  if (storedUri) {
+    const byUri = result.result.tracks.find((candidate) => candidate.uri === storedUri);
+    if (byUri) return byUri;
+  }
+
+  return result.result.tracks[0] ?? null;
 };
 
 export const applyMusicFilterPreset = async (
@@ -266,6 +351,10 @@ const mapTrackState = (track: KazagumoTrack) => ({
 
 export const updateMusicState = async (player: {
   guildId: string;
+  voiceId?: string | null;
+  textId?: string | null;
+  volume?: number;
+  data?: Map<string, unknown>;
   playing?: boolean;
   paused?: boolean;
   queue: { current?: KazagumoTrack | null; slice: (start?: number, end?: number) => KazagumoTrack[] };
@@ -279,6 +368,11 @@ export const updateMusicState = async (player: {
     guild_id: player.guildId,
     current_track: current,
     queue,
+    voice_channel_id: player.voiceId ?? null,
+    text_channel_id: player.textId ?? null,
+    autoplay_enabled: isMusicAutoplayEnabled(player),
+    filter_preset: getMusicFilterPreset(player),
+    volume: normalizeVolume(player.volume),
     updated_at: new Date().toISOString()
   });
 };
@@ -289,7 +383,106 @@ export const clearMusicState = async (guildId: string) => {
     guild_id: guildId,
     current_track: null,
     queue: [],
+    voice_channel_id: null,
+    text_channel_id: null,
+    autoplay_enabled: true,
+    filter_preset: 'off',
+    volume: 60,
     updated_at: new Date().toISOString()
+  });
+};
+
+export const restoreMusicSession = async (client: Client): Promise<void> => {
+  const ctx = getBotContext();
+  const music = getMusic();
+
+  const { data, error } = await ctx.supabase
+    .from('music_state')
+    .select('current_track, queue, voice_channel_id, text_channel_id, autoplay_enabled, filter_preset, volume')
+    .eq('guild_id', ctx.env.NYARU_GUILD_ID)
+    .maybeSingle();
+
+  if (error) {
+    console.warn('[Music] failed to load state for restore', error);
+    return;
+  }
+
+  const state = (data ?? null) as StoredMusicStateRow | null;
+  if (!state?.current_track) {
+    return;
+  }
+
+  const voiceChannelId = asString(state.voice_channel_id);
+  const textChannelId = asString(state.text_channel_id);
+  if (!voiceChannelId || !textChannelId) {
+    return;
+  }
+
+  const voiceChannel = await client.channels.fetch(voiceChannelId).catch(() => null);
+  if (!voiceChannel || !voiceChannel.isVoiceBased()) {
+    return;
+  }
+
+  const listeners = voiceChannel.members.filter((member) => !member.user.bot).size;
+  if (listeners < 1) {
+    return;
+  }
+
+  const current = asStoredTrack(state.current_track);
+  const queue = Array.isArray(state.queue)
+    ? state.queue.map((item) => asStoredTrack(item)).filter((item): item is StoredTrackState => item !== null)
+    : [];
+  const persistedTracks = [current, ...queue].filter((item): item is StoredTrackState => item !== null).slice(0, 25);
+  if (persistedTracks.length < 1) {
+    return;
+  }
+
+  const player = await music.createPlayer({
+    guildId: ctx.env.NYARU_GUILD_ID,
+    textId: textChannelId,
+    voiceId: voiceChannelId,
+    volume: normalizeVolume(state.volume),
+  });
+
+  player.data.set('music_autoplay', state.autoplay_enabled !== false);
+  const preset = parseMusicFilterPreset(state.filter_preset);
+  await applyMusicFilterPreset(player, preset).catch((applyError) => {
+    console.warn('[Music] failed to apply restored filter preset', applyError);
+  });
+
+  player.queue.clear();
+  const restoredTracks: KazagumoTrack[] = [];
+  for (let index = 0; index < persistedTracks.length; index += 1) {
+    const restored = await resolveRestoredTrack(music, persistedTracks[index], index).catch(() => null);
+    if (restored) {
+      restoredTracks.push(restored);
+    }
+  }
+
+  if (restoredTracks.length < 1) {
+    console.warn('[Music] no tracks restored from persisted state');
+    return;
+  }
+
+  player.queue.add(restoredTracks);
+  if (!player.playing && !player.paused) {
+    await player.play();
+  }
+
+  await updateMusicSetupMessage(player, player.queue.current ?? restoredTracks[0]).catch(() => {});
+  await updateMusicState(player).catch(() => {});
+  await ctx.supabase.from('music_control_logs').insert({
+    guild_id: ctx.env.NYARU_GUILD_ID,
+    action: 'restore_session',
+    status: 'success',
+    message: `${restoredTracks.length}곡 복구 완료`,
+    payload: {
+      restored_count: restoredTracks.length,
+      filter_preset: preset,
+      autoplay_enabled: state.autoplay_enabled !== false,
+      voice_channel_id: voiceChannelId,
+    },
+    requested_by: null,
   });
 };
 

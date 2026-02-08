@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { ArrowLeft, ChartColumnBig, MessageCircle, UserPlus, UserMinus, Phone } from 'lucide-react';
+import { ArrowLeft, ChartColumnBig, MessageCircle, UserPlus, UserMinus, Phone, Download } from 'lucide-react';
 
 type Period = 'day' | 'week' | 'month';
 
@@ -29,9 +29,39 @@ type TopUser = {
   score: number;
 };
 
+type PeriodTotals = {
+  joins: number;
+  leaves: number;
+  chatMessages: number;
+  voiceHours: number;
+};
+
+type PeriodComparison = {
+  joinsPct: number;
+  leavesPct: number;
+  chatMessagesPct: number;
+  voiceHoursPct: number;
+};
+
+type PeriodPayload = {
+  points: PeriodPoint[];
+  topUsers: TopUser[];
+  totals: PeriodTotals;
+  comparison: PeriodComparison;
+};
+
+type ChannelOption = {
+  id: string;
+  name: string;
+};
+
 type AnalyticsResponse = {
   generatedAt: string;
-  periods: Record<Period, { points: PeriodPoint[]; topUsers: TopUser[] }>;
+  filters: {
+    rangeDays: number;
+    channelId: string | null;
+  };
+  periods: Record<Period, PeriodPayload>;
 };
 
 type MetricKey = keyof Pick<PeriodPoint, 'joins' | 'leaves' | 'chatMessages' | 'voiceHours' | 'joinRatePct' | 'churnRatePct'>;
@@ -41,6 +71,12 @@ const PERIOD_LABEL: Record<Period, string> = {
   week: '주별',
   month: '월별'
 };
+
+const RANGE_OPTIONS = [
+  { value: 30, label: '최근 30일' },
+  { value: 90, label: '최근 90일' },
+  { value: 365, label: '최근 1년' },
+];
 
 const METRICS: Array<{
   key: MetricKey;
@@ -150,9 +186,34 @@ function MetricChart({
 
 export default function AdminAnalyticsClient() {
   const [period, setPeriod] = useState<Period>('day');
+  const [rangeDays, setRangeDays] = useState(365);
+  const [channelId, setChannelId] = useState('all');
+  const [channels, setChannels] = useState<ChannelOption[]>([]);
   const [data, setData] = useState<AnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadChannels = async () => {
+      try {
+        const res = await fetch('/api/admin/discord/channels', { cache: 'no-store' });
+        if (!res.ok) return;
+        const body = (await res.json().catch(() => null)) as { channels?: ChannelOption[] } | null;
+        if (!cancelled) {
+          setChannels((body?.channels ?? []).map((channel) => ({ id: channel.id, name: channel.name })));
+        }
+      } catch {
+        // ignore channel list failure
+      }
+    };
+
+    void loadChannels();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,7 +222,13 @@ export default function AdminAnalyticsClient() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch('/api/admin/analytics', { cache: 'no-store' });
+        const params = new URLSearchParams();
+        params.set('rangeDays', String(rangeDays));
+        if (channelId !== 'all') {
+          params.set('channelId', channelId);
+        }
+
+        const res = await fetch(`/api/admin/analytics?${params.toString()}`, { cache: 'no-store' });
         if (!res.ok) {
           const body = await res.json().catch(() => null);
           throw new Error(body?.error ?? '통계를 불러오지 못했습니다.');
@@ -184,22 +251,44 @@ export default function AdminAnalyticsClient() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [channelId, rangeDays]);
 
-  const selected = useMemo(() => data?.periods[period] ?? { points: [], topUsers: [] }, [data, period]);
-
-  const totals = useMemo(() => {
-    return selected.points.reduce(
-      (acc, point) => {
-        acc.joins += point.joins;
-        acc.leaves += point.leaves;
-        acc.chatMessages += point.chatMessages;
-        acc.voiceHours += point.voiceHours;
-        return acc;
+  const selected = useMemo(
+    () =>
+      data?.periods[period] ?? {
+        points: [],
+        topUsers: [],
+        totals: { joins: 0, leaves: 0, chatMessages: 0, voiceHours: 0 },
+        comparison: { joinsPct: 0, leavesPct: 0, chatMessagesPct: 0, voiceHoursPct: 0 },
       },
-      { joins: 0, leaves: 0, chatMessages: 0, voiceHours: 0 }
-    );
-  }, [selected.points]);
+    [data, period]
+  );
+
+  const downloadCsv = () => {
+    if (selected.points.length < 1) return;
+
+    const rows = selected.points.map((point) => [
+      point.label,
+      point.joins,
+      point.leaves,
+      point.chatMessages,
+      point.voiceHours.toFixed(2),
+      point.joinRatePct.toFixed(2),
+      point.churnRatePct.toFixed(2),
+    ]);
+    const header = ['label', 'joins', 'leaves', 'chat_messages', 'voice_hours', 'join_rate_pct', 'churn_rate_pct'];
+    const csv = [header, ...rows]
+      .map((line) => line.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `analytics-${period}-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <main className="p-6 pb-20">
@@ -217,7 +306,7 @@ export default function AdminAnalyticsClient() {
         </div>
 
         <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {(['day', 'week', 'month'] as const).map((item) => (
               <button
                 key={item}
@@ -232,9 +321,43 @@ export default function AdminAnalyticsClient() {
                 {PERIOD_LABEL[item]}
               </button>
             ))}
+
+            <select
+              value={rangeDays}
+              onChange={(event) => setRangeDays(Number(event.target.value) || 365)}
+              className="ml-auto rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm"
+            >
+              {RANGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={channelId}
+              onChange={(event) => setChannelId(event.target.value)}
+              className="rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm min-w-[160px]"
+            >
+              <option value="all">전체 채널</option>
+              {channels.map((channel) => (
+                <option key={channel.id} value={channel.id}>
+                  #{channel.name}
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              onClick={downloadCsv}
+              className="rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm font-semibold hover:bg-[color:var(--chip)]/70 inline-flex items-center gap-1"
+            >
+              <Download className="w-4 h-4" />
+              CSV
+            </button>
           </div>
           <div className="mt-3 text-xs muted">
-            집계 단위: {PERIOD_LABEL[period]} · 마지막 업데이트:{' '}
+            집계 단위: {PERIOD_LABEL[period]} · 채널: {channelId === 'all' ? '전체' : `#${channels.find((channel) => channel.id === channelId)?.name ?? channelId}`} · 마지막 업데이트:{' '}
             {data?.generatedAt ? new Date(data.generatedAt).toLocaleString() : '-'}
           </div>
         </div>
@@ -248,19 +371,50 @@ export default function AdminAnalyticsClient() {
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
                 <div className="text-xs uppercase tracking-[0.12em] muted">총 입장</div>
-                <div className="mt-1 text-xl font-bold">{totals.joins.toLocaleString()}명</div>
+                <div className="mt-1 text-xl font-bold">{selected.totals.joins.toLocaleString()}명</div>
               </div>
               <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
                 <div className="text-xs uppercase tracking-[0.12em] muted">총 이탈</div>
-                <div className="mt-1 text-xl font-bold">{totals.leaves.toLocaleString()}명</div>
+                <div className="mt-1 text-xl font-bold">{selected.totals.leaves.toLocaleString()}명</div>
               </div>
               <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
                 <div className="text-xs uppercase tracking-[0.12em] muted">총 채팅</div>
-                <div className="mt-1 text-xl font-bold">{totals.chatMessages.toLocaleString()}개</div>
+                <div className="mt-1 text-xl font-bold">{selected.totals.chatMessages.toLocaleString()}개</div>
               </div>
               <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
                 <div className="text-xs uppercase tracking-[0.12em] muted">총 통화 시간</div>
-                <div className="mt-1 text-xl font-bold">{totals.voiceHours.toFixed(1)}시간</div>
+                <div className="mt-1 text-xl font-bold">{selected.totals.voiceHours.toFixed(1)}시간</div>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+                <div className="text-xs uppercase tracking-[0.12em] muted">입장 증감</div>
+                <div className={`mt-1 text-lg font-semibold ${selected.comparison.joinsPct >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                  {selected.comparison.joinsPct >= 0 ? '+' : ''}
+                  {selected.comparison.joinsPct.toFixed(1)}%
+                </div>
+              </div>
+              <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+                <div className="text-xs uppercase tracking-[0.12em] muted">이탈 증감</div>
+                <div className={`mt-1 text-lg font-semibold ${selected.comparison.leavesPct >= 0 ? 'text-rose-300' : 'text-emerald-300'}`}>
+                  {selected.comparison.leavesPct >= 0 ? '+' : ''}
+                  {selected.comparison.leavesPct.toFixed(1)}%
+                </div>
+              </div>
+              <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+                <div className="text-xs uppercase tracking-[0.12em] muted">채팅 증감</div>
+                <div className={`mt-1 text-lg font-semibold ${selected.comparison.chatMessagesPct >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                  {selected.comparison.chatMessagesPct >= 0 ? '+' : ''}
+                  {selected.comparison.chatMessagesPct.toFixed(1)}%
+                </div>
+              </div>
+              <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+                <div className="text-xs uppercase tracking-[0.12em] muted">통화 증감</div>
+                <div className={`mt-1 text-lg font-semibold ${selected.comparison.voiceHoursPct >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                  {selected.comparison.voiceHoursPct >= 0 ? '+' : ''}
+                  {selected.comparison.voiceHoursPct.toFixed(1)}%
+                </div>
               </div>
             </div>
 

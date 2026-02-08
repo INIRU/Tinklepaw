@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type { Json } from '@nyaru/core';
 
 import { isResponse, requireAdminApi } from '@/lib/server/guards-api';
 import { fetchMemberUserSummary } from '@/lib/server/discord';
@@ -14,6 +15,7 @@ type ActivityEventRow = {
   event_type: string;
   value: number;
   created_at: string;
+  meta: Json | null;
 };
 
 type PeriodPoint = {
@@ -45,6 +47,20 @@ type TopUserAggregate = {
   joins: number;
   leaves: number;
   score: number;
+};
+
+type PeriodTotals = {
+  joins: number;
+  leaves: number;
+  chatMessages: number;
+  voiceHours: number;
+};
+
+type PeriodComparison = {
+  joinsPct: number;
+  leavesPct: number;
+  chatMessagesPct: number;
+  voiceHoursPct: number;
 };
 
 const PERIOD_BUCKET_COUNT: Record<Period, number> = {
@@ -135,7 +151,7 @@ const fetchActivityEvents = async (guildId: string, startIso: string) => {
   for (let from = 0; from < 200_000; from += pageSize) {
     const { data, error } = await supabase
       .from('activity_events')
-      .select('user_id, event_type, value, created_at')
+      .select('user_id, event_type, value, created_at, meta')
       .eq('guild_id', guildId)
       .gte('created_at', startIso)
       .order('created_at', { ascending: true })
@@ -151,6 +167,19 @@ const fetchActivityEvents = async (guildId: string, startIso: string) => {
   }
 
   return events;
+};
+
+const parseChannelIdFromMeta = (meta: Json | null) => {
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return null;
+  const value = meta as Record<string, Json>;
+  return typeof value.channel_id === 'string' ? value.channel_id : null;
+};
+
+const comparePct = (current: number, previous: number) => {
+  if (previous === 0) {
+    return current === 0 ? 0 : 100;
+  }
+  return ((current - previous) / previous) * 100;
 };
 
 const aggregatePeriod = (
@@ -221,9 +250,36 @@ const aggregatePeriod = (
     .sort((a, b) => b.score - a.score)
     .slice(0, 15);
 
+  const totals: PeriodTotals = normalizedPoints.reduce(
+    (acc, point) => {
+      acc.joins += point.joins;
+      acc.leaves += point.leaves;
+      acc.chatMessages += point.chatMessages;
+      acc.voiceHours += point.voiceHours;
+      return acc;
+    },
+    { joins: 0, leaves: 0, chatMessages: 0, voiceHours: 0 }
+  );
+
+  const latest = normalizedPoints.at(-1);
+  const previous = normalizedPoints.at(-2);
+  const comparison: PeriodComparison = {
+    joinsPct: Number(comparePct(latest?.joins ?? 0, previous?.joins ?? 0).toFixed(2)),
+    leavesPct: Number(comparePct(latest?.leaves ?? 0, previous?.leaves ?? 0).toFixed(2)),
+    chatMessagesPct: Number(comparePct(latest?.chatMessages ?? 0, previous?.chatMessages ?? 0).toFixed(2)),
+    voiceHoursPct: Number(comparePct(latest?.voiceHours ?? 0, previous?.voiceHours ?? 0).toFixed(2)),
+  };
+
   return {
     points: normalizedPoints,
     topUsers,
+    totals: {
+      joins: totals.joins,
+      leaves: totals.leaves,
+      chatMessages: totals.chatMessages,
+      voiceHours: Number(totals.voiceHours.toFixed(2)),
+    },
+    comparison,
   };
 };
 
@@ -264,13 +320,18 @@ const resolveTopUsers = async (
   });
 };
 
-export async function GET() {
+export async function GET(request: Request) {
   const ctx = await requireAdminApi();
   if (isResponse(ctx)) return ctx;
 
+  const url = new URL(request.url);
+  const rangeDaysRaw = Number(url.searchParams.get('rangeDays') ?? '365');
+  const rangeDays = Math.max(30, Math.min(Number.isFinite(rangeDaysRaw) ? Math.floor(rangeDaysRaw) : 365, 365));
+  const channelIdFilter = (url.searchParams.get('channelId') ?? '').trim() || null;
+
   const env = getServerEnv();
   const now = new Date();
-  const earliestDay = addUtcDays(startOfUtcDay(now), -365);
+  const earliestDay = addUtcDays(startOfUtcDay(now), -rangeDays);
 
   let events: ActivityEventRow[] = [];
   try {
@@ -280,7 +341,16 @@ export async function GET() {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 
-  const allUserIds = Array.from(new Set(events.map((event) => event.user_id).filter((value): value is string => Boolean(value))));
+  const filteredEvents = channelIdFilter
+    ? events.filter((event) => {
+        if (event.event_type === 'chat_message' || event.event_type === 'voice_seconds') {
+          return parseChannelIdFromMeta(event.meta) === channelIdFilter;
+        }
+        return true;
+      })
+    : events;
+
+  const allUserIds = Array.from(new Set(filteredEvents.map((event) => event.user_id).filter((value): value is string => Boolean(value))));
   const usersById = new Map<string, { username: string; avatarUrl: string | null }>();
 
   if (allUserIds.length > 0) {
@@ -298,9 +368,9 @@ export async function GET() {
     }
   }
 
-  const dayBase = aggregatePeriod('day', events, now);
-  const weekBase = aggregatePeriod('week', events, now);
-  const monthBase = aggregatePeriod('month', events, now);
+  const dayBase = aggregatePeriod('day', filteredEvents, now);
+  const weekBase = aggregatePeriod('week', filteredEvents, now);
+  const monthBase = aggregatePeriod('month', filteredEvents, now);
 
   const topUserIds = Array.from(new Set([
     ...dayBase.topUsers.map((user) => user.userId),
@@ -330,18 +400,28 @@ export async function GET() {
 
   return NextResponse.json({
     generatedAt: now.toISOString(),
+    filters: {
+      rangeDays,
+      channelId: channelIdFilter,
+    },
     periods: {
       day: {
         points: dayBase.points,
         topUsers: dayTopUsers,
+        totals: dayBase.totals,
+        comparison: dayBase.comparison,
       },
       week: {
         points: weekBase.points,
         topUsers: weekTopUsers,
+        totals: weekBase.totals,
+        comparison: weekBase.comparison,
       },
       month: {
         points: monthBase.points,
         topUsers: monthTopUsers,
+        totals: monthBase.totals,
+        comparison: monthBase.comparison,
       },
     },
   });

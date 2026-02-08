@@ -18,7 +18,7 @@ import { registerMessageCreate } from './events/messageCreate.js';
 import { startRoleSyncWorker } from './workers/roleSyncWorker.js';
 import { startMusicControlWorker } from './workers/musicControlWorker.js';
 import { startVoiceRewardWorker } from './workers/voiceRewardWorker.js';
-import { initMusic } from './services/music.js';
+import { initMusic, restoreMusicSession } from './services/music.js';
 import { primeChannelCache } from './services/channelCache.js';
 
 const env = assertEnv(process.env);
@@ -44,6 +44,9 @@ client.once('ready', async () => {
   // eslint-disable-next-line no-console
   console.log(`Bot ready as ${client.user?.tag ?? 'unknown'}`);
   await primeChannelCache(client, env.NYARU_GUILD_ID);
+  await restoreMusicSession(client).catch((error) => {
+    console.warn('[Music] session restore failed', error);
+  });
 });
 
 registerInteractionCreate(client);

@@ -143,6 +143,11 @@ export type Database = {
           guild_id: string;
           current_track: Json | null;
           queue: Json | null;
+          voice_channel_id: string | null;
+          text_channel_id: string | null;
+          autoplay_enabled: boolean;
+          filter_preset: string;
+          volume: number;
           updated_at: string;
         };
         Insert: Partial<Database['nyang']['Tables']['music_state']['Row']> & { guild_id: string };
