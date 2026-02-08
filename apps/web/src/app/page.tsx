@@ -20,6 +20,7 @@ export default async function Home() {
   if (!session?.user?.id) {
     return (
       <main className="mx-auto max-w-5xl px-6 py-10">
+        <h1 className="sr-only">방울냥</h1>
         <div className="rounded-3xl card-glass p-3">
           <div className="relative overflow-hidden rounded-2xl border border-[color:var(--border)]">
             <Image src={bannerSrc} alt="동글동글 방울냥 배너" width={1600} height={600} className="h-auto w-full" priority />
@@ -47,6 +48,7 @@ export default async function Home() {
   const admin = await isAdmin({ userId, member });
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
+      <h1 className="sr-only">방울냥</h1>
       <div className="rounded-3xl card-glass p-3">
         <div className="relative overflow-hidden rounded-2xl border border-[color:var(--border)]">
           <Image src={bannerSrc} alt="동글동글 방울냥 배너" width={1600} height={600} className="h-auto w-full" priority />

@@ -7,8 +7,8 @@ export type PublicAppConfig = {
 };
 
 export async function fetchPublicAppConfig(): Promise<PublicAppConfig> {
-  const supabase = createSupabaseAdminClient();
   try {
+    const supabase = createSupabaseAdminClient();
     const { data } = await supabase
       .from('app_config')
       .select('server_intro,banner_image_url,icon_image_url')

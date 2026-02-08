@@ -4,6 +4,8 @@ import Discord from 'next-auth/providers/discord';
 const discordClientId = process.env.DISCORD_CLIENT_ID;
 const discordClientSecret = process.env.DISCORD_CLIENT_SECRET;
 const authSecret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+const isProduction = process.env.NODE_ENV === 'production';
+const resolvedAuthSecret = authSecret ?? (isProduction ? undefined : 'nyaru-dev-auth-secret');
 
 if (!discordClientId || !discordClientSecret || !authSecret) {
   const missing: string[] = [];
@@ -13,8 +15,12 @@ if (!discordClientId || !discordClientSecret || !authSecret) {
   console.warn(`[auth] Missing env: ${missing.join(', ')}`);
 }
 
+if (!authSecret && !isProduction) {
+  console.warn('[auth] Using development fallback secret');
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  secret: authSecret,
+  secret: resolvedAuthSecret,
   // Fixes "UntrustedHost" during local dev or proxy setups.
   trustHost:
     process.env.AUTH_TRUST_HOST === 'true' ||
