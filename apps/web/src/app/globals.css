@@ -160,10 +160,34 @@ html[data-theme='dark'] .btn-bangul:hover {
   transform: translateY(-1px);
 }
 
+.nav-pill-active {
+  background: color-mix(in srgb, var(--accent-pink) 20%, white);
+  border: 1px solid color-mix(in srgb, var(--accent-pink) 52%, white);
+  color: color-mix(in srgb, var(--accent-pink) 45%, #3d1d3d);
+  box-shadow: 0 6px 16px rgba(255, 95, 162, 0.18);
+}
+
+.nav-pill-active:hover {
+  filter: brightness(1.02);
+}
+
 html[data-theme='dark'] .btn-soft {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(21, 31, 56, 0.86));
   border-color: rgba(203, 213, 225, 0.24);
   box-shadow: none;
+}
+
+html[data-theme='dark'] .nav-pill-active {
+  background: linear-gradient(135deg, rgba(71, 216, 186, 0.22), rgba(125, 199, 255, 0.20));
+  border-color: rgba(147, 255, 232, 0.62);
+  color: #f2fffb;
+  box-shadow:
+    inset 0 0 0 1px rgba(147, 255, 232, 0.24),
+    0 8px 18px rgba(19, 173, 157, 0.24);
+}
+
+html[data-theme='dark'] .nav-pill-active:hover {
+  filter: brightness(1.03);
 }
 
 html[data-theme='dark'] .btn-soft:hover {

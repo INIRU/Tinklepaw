@@ -76,7 +76,7 @@ export default function MainNav(props: {
                     key={link.href}
                     className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${
                       isLinkActive(link.href)
-                        ? 'bg-[color:var(--accent-pink)]/18 border border-[color:var(--accent-pink)]/40 text-[color:var(--fg)] shadow-[0_6px_16px_rgba(255,95,162,0.16)] dark:shadow-none dark:bg-white/10 dark:border-white/22'
+                        ? 'nav-pill-active'
                         : 'btn-soft'
                     }`}
                     href={link.href}
@@ -183,26 +183,29 @@ export default function MainNav(props: {
             className="fixed inset-x-0 top-[61px] z-20 border-b border-[color:var(--border)] bg-[color:var(--bg)]/95 p-4 backdrop-blur-lg md:hidden"
           >
             <div className="flex flex-col gap-2">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  onClick={() => setIsMenuOpen(false)}
-                  className={`relative flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold transition-all ${
-                    isLinkActive(link.href)
-                      ? 'border-[color:var(--accent-pink)]/40 bg-[color:var(--accent-pink)]/14 text-[color:var(--fg)]'
-                      : 'border-transparent text-[color:var(--fg)] hover:bg-[color:var(--chip)] hover:border-[color:var(--border)]'
-                  }`}
-                >
-                  <link.icon className="h-5 w-5 text-[color:var(--muted)]" />
-                  {link.label}
-                  {link.badge && (
-                    <span className="ml-auto flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
-                      {unreadCount}
-                    </span>
-                  )}
-                </Link>
-              ))}
+              {navLinks.map((link) => {
+                const active = isLinkActive(link.href);
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    onClick={() => setIsMenuOpen(false)}
+                    className={`relative flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold transition-all ${
+                      active
+                        ? 'nav-pill-active'
+                        : 'border-transparent text-[color:var(--fg)] hover:bg-[color:var(--chip)] hover:border-[color:var(--border)]'
+                    }`}
+                  >
+                    <link.icon className={`h-5 w-5 ${active ? 'text-[color:var(--fg)]' : 'text-[color:var(--muted)]'}`} />
+                    {link.label}
+                    {link.badge && (
+                      <span className="ml-auto flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                        {unreadCount}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
 
               <div className="my-2 h-px bg-[color:var(--border)] opacity-50" />
 
