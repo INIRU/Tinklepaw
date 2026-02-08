@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { ArrowLeft, ChartColumnBig, MessageCircle, UserPlus, UserMinus, Phone, Download } from 'lucide-react';
+import { ArrowLeft, ChartColumnBig, MessageCircle, UserPlus, UserMinus, Phone } from 'lucide-react';
+
+import { CustomSelect } from '@/components/ui/CustomSelect';
 
 type Period = 'day' | 'week' | 'month';
 
@@ -264,32 +266,6 @@ export default function AdminAnalyticsClient() {
     [data, period]
   );
 
-  const downloadCsv = () => {
-    if (selected.points.length < 1) return;
-
-    const rows = selected.points.map((point) => [
-      point.label,
-      point.joins,
-      point.leaves,
-      point.chatMessages,
-      point.voiceHours.toFixed(2),
-      point.joinRatePct.toFixed(2),
-      point.churnRatePct.toFixed(2),
-    ]);
-    const header = ['label', 'joins', 'leaves', 'chat_messages', 'voice_hours', 'join_rate_pct', 'churn_rate_pct'];
-    const csv = [header, ...rows]
-      .map((line) => line.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `analytics-${period}-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <main className="p-6 pb-20">
       <div className="mx-auto max-w-6xl space-y-6">
@@ -322,39 +298,24 @@ export default function AdminAnalyticsClient() {
               </button>
             ))}
 
-            <select
-              value={rangeDays}
-              onChange={(event) => setRangeDays(Number(event.target.value) || 365)}
-              className="ml-auto rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm"
-            >
-              {RANGE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <div className="ml-auto w-[170px]">
+              <CustomSelect
+                value={String(rangeDays)}
+                onChange={(value) => setRangeDays(Number(value) || 365)}
+                options={RANGE_OPTIONS.map((option) => ({ value: String(option.value), label: option.label }))}
+                label="기간"
+              />
+            </div>
 
-            <select
-              value={channelId}
-              onChange={(event) => setChannelId(event.target.value)}
-              className="rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm min-w-[160px]"
-            >
-              <option value="all">전체 채널</option>
-              {channels.map((channel) => (
-                <option key={channel.id} value={channel.id}>
-                  #{channel.name}
-                </option>
-              ))}
-            </select>
+            <div className="w-[200px]">
+              <CustomSelect
+                value={channelId}
+                onChange={setChannelId}
+                options={[{ value: 'all', label: '전체 채널' }, ...channels.map((channel) => ({ value: channel.id, label: `#${channel.name}` }))]}
+                label="채널"
+              />
+            </div>
 
-            <button
-              type="button"
-              onClick={downloadCsv}
-              className="rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm font-semibold hover:bg-[color:var(--chip)]/70 inline-flex items-center gap-1"
-            >
-              <Download className="w-4 h-4" />
-              CSV
-            </button>
           </div>
           <div className="mt-3 text-xs muted">
             집계 단위: {PERIOD_LABEL[period]} · 채널: {channelId === 'all' ? '전체' : `#${channels.find((channel) => channel.id === channelId)?.name ?? channelId}`} · 마지막 업데이트:{' '}
