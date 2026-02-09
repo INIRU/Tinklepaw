@@ -116,7 +116,7 @@ begin
     0,
     jsonb_build_object(
       'source_kind', new.kind,
-      'source_event_id', new.event_id,
+      'source_event_id', new.id,
       'item_id', v_item_id,
       'rarity', v_rarity::text,
       'energy_delta', v_gain
