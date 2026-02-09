@@ -574,6 +574,11 @@ export function registerInteractionCreate(client: Client) {
 
         if (action === 'create') {
           const member = interaction.member as GuildMember | null;
+          const guild = interaction.guild;
+          if (!guild) {
+            await interaction.reply({ content: '서버에서만 사용할 수 있어요.', ephemeral: true });
+            return;
+          }
           const baseChannel = getMemberVoiceChannel(interaction);
           const config = await getAppConfig().catch(() => null);
           const limit = value === '1' ? 1 : value === '2' ? 2 : 0;
@@ -582,7 +587,7 @@ export function registerInteractionCreate(client: Client) {
           const template = await getVoiceRoomTemplate(interaction.user.id, `${displayName}-${roomLabel}`);
           const parentId = config?.voice_interface_category_id ?? baseChannel?.parentId ?? undefined;
 
-          const created = await interaction.guild.channels.create({
+          const created = await guild.channels.create({
             name: template.roomName,
             type: ChannelType.GuildVoice,
             userLimit: limit,
@@ -603,6 +608,33 @@ export function registerInteractionCreate(client: Client) {
             }
 
             await rememberVoiceAutoRoom(created.id, interaction.user.id, created.parentId ?? null);
+
+            setTimeout(async () => {
+              try {
+                const tracked = await getVoiceAutoRoom(created.id).catch(() => null);
+                if (!tracked) return;
+
+                const current = await guild.channels.fetch(created.id).catch(() => null);
+                if (!current) {
+                  await forgetVoiceAutoRoom(created.id).catch(() => null);
+                  return;
+                }
+
+                if (current.type !== ChannelType.GuildVoice) {
+                  await forgetVoiceAutoRoom(created.id).catch(() => null);
+                  return;
+                }
+
+                const nonBotMembers = current.members.filter((m) => !m.user.bot);
+                if (nonBotMembers.size > 0) return;
+
+                await saveVoiceRoomTemplateFromChannel(tracked.ownerUserId, current);
+                await forgetVoiceAutoRoom(created.id).catch(() => null);
+                await current.delete('voice interface no-join timeout cleanup (120s)').catch(() => null);
+              } catch {
+                // ignore timer cleanup failures
+              }
+            }, 120_000);
           }
 
           if (member?.voice?.channelId) {
