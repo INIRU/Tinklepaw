@@ -47,6 +47,15 @@ const ENHANCE_RESULT_HOLD_MS = 2400;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
+const computeEnhanceCost = (level: number) => {
+  const normalizedLevel = Math.max(0, Math.floor(level));
+  const baseCost = 300 + normalizedLevel * 140 + normalizedLevel * normalizedLevel * 12;
+  if (normalizedLevel < 7) return baseCost;
+
+  const extraLevel = normalizedLevel - 6;
+  return baseCost + extraLevel * 180 + extraLevel * extraLevel * 26;
+};
+
 export default function ForgeClient() {
   const [status, setStatus] = useState<ForgeStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -160,7 +169,7 @@ export default function ForgeClient() {
           ? {
               ...prev,
               level: result.level,
-              enhanceCost: 300 + result.level * 140 + result.level * result.level * 12,
+              enhanceCost: computeEnhanceCost(result.level),
               sellPrice: result.sellPrice,
               successRatePct: result.successRatePct,
               balance: result.balance,
