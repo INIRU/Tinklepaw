@@ -119,13 +119,9 @@ export const dailyCommand: SlashCommand = {
       const tier = toDailyChestTier(row.out_reward_tier);
       const attachment = await generateDailyChestGif({
         tier,
-        points: row.out_reward_points,
-        itemName: row.out_reward_item_name
+        points: row.out_reward_points
       });
 
-      const itemLine = row.out_reward_item_name
-        ? `🎁 아이템: **${row.out_reward_item_name}**${row.out_reward_item_rarity ? ` (${row.out_reward_item_rarity})` : ''}`
-        : '🎁 아이템: 없음';
       const nextAtRelative = toDiscordRelativeTime(row.out_next_available_at);
 
       const rewardEmbed = new EmbedBuilder()
@@ -135,7 +131,6 @@ export const dailyCommand: SlashCommand = {
           [
             `⭐ 등급: **${TIER_LABELS[tier]}**`,
             `💰 포인트: **+${row.out_reward_points.toLocaleString('ko-KR')} p**`,
-            itemLine,
             `🪙 현재 잔액: **${row.out_new_balance.toLocaleString('ko-KR')} p**`,
             nextAtRelative ? `⏱️ 다음 상자: ${nextAtRelative}` : '⏱️ 다음 상자: 내일'
           ].join('\n')

@@ -50,6 +50,7 @@ function useIsDarkTheme() {
 function TunaCanModel({ phase, level, isDark }: TunaCanModelProps) {
   const { size } = useThree();
   const groupRef = useRef<THREE.Group>(null);
+  const glowMeshRef = useRef<THREE.Mesh>(null);
   const bodyMatRef = useRef<THREE.MeshStandardMaterial>(null);
   const lidMatRef = useRef<THREE.MeshStandardMaterial>(null);
   const bandMatRef = useRef<THREE.MeshStandardMaterial>(null);
@@ -155,65 +156,109 @@ function TunaCanModel({ phase, level, isDark }: TunaCanModelProps) {
 
   useEffect(() => {
     timelineRef.current?.kill();
-    const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
+    const tl = gsap.timeline({ defaults: { ease: 'power2.out' } });
 
     if (phase === 'charging') {
       tl.to(motion.current, {
-        duration: 0.62,
-        spinBoost: 0.78,
-        shake: 0.52,
-        glow: 0.86,
-        flash: 0.24,
-        particlePull: 1,
+        duration: 0.42,
+        spinBoost: 0.42,
+        shake: 0.08,
+        glow: 0.42,
+        flash: 0.06,
+        particlePull: 0.58,
+        lift: 0.04,
         tintMix: 0,
-      }).to(
-        motion.current,
-        {
-          duration: 0.72,
-          shake: 0.14,
-          flash: 0.38,
-          repeat: -1,
-          yoyo: true,
-          ease: 'sine.inOut',
-        },
-        0.62
-      );
-    } else if (phase === 'success' || phase === 'downgrade' || phase === 'destroy' || phase === 'error') {
-      const isFailure = phase === 'downgrade' || phase === 'destroy' || phase === 'error';
-      tl.to(motion.current, {
-        duration: 0.28,
-        flash: 1.05,
-        glow: 1.2,
-        spinBoost: 0.88,
-        shake: 0.65,
-        lift: 0.2,
-        tintMix: 0,
+        ease: 'sine.out',
       })
         .to(motion.current, {
-          duration: 0.95,
-          flash: 0,
-          glow: phase === 'success' ? 0.7 : 0.84,
-          spinBoost: 0.16,
-          shake: 0.03,
-          lift: 0,
-          particlePull: 0.08,
-          tintMix: 1,
-          ease: 'power2.out',
+          duration: 0.58,
+          spinBoost: 0.92,
+          shake: 0.28,
+          glow: 0.96,
+          flash: 0.2,
+          particlePull: 1,
+          lift: 0.09,
+          ease: 'expo.out',
         })
+        .to(
+          motion.current,
+          {
+            duration: 0.9,
+            shake: 0.1,
+            flash: 0.34,
+            glow: 0.82,
+            spinBoost: 0.74,
+            repeat: -1,
+            yoyo: true,
+            ease: 'sine.inOut',
+          },
+          '>-0.08'
+        );
+    } else if (phase === 'success' || phase === 'downgrade' || phase === 'destroy' || phase === 'error') {
+      const isSuccess = phase === 'success';
+      const isDowngrade = phase === 'downgrade';
+      const impactFlash = isSuccess ? 1.16 : isDowngrade ? 0.98 : 1.02;
+      const impactGlow = isSuccess ? 1.24 : isDowngrade ? 1.06 : 1.1;
+      const impactShake = isSuccess ? 0.3 : isDowngrade ? 0.38 : 0.52;
+      const settleGlow = isSuccess ? 1.0 : isDowngrade ? 0.86 : 0.94;
+      const settleSpin = isSuccess ? 0.42 : isDowngrade ? 0.28 : 0.24;
+      const settleLift = isSuccess ? 0.11 : isDowngrade ? 0.07 : 0.04;
+      const fadeDuration = isSuccess ? 0.86 : isDowngrade ? 0.98 : 1.12;
+      tl.to(motion.current, {
+        duration: 0.18,
+        flash: impactFlash,
+        glow: impactGlow,
+        spinBoost: 1.04,
+        shake: impactShake,
+        lift: 0.17,
+        particlePull: 1,
+        tintMix: 0,
+        ease: 'power2.in',
+      })
         .to(motion.current, {
-          duration: isFailure ? 0.98 : 0.72,
+          duration: 0.34,
+          flash: 0.06,
+          glow: settleGlow,
+          spinBoost: settleSpin,
+          shake: 0.06,
+          lift: settleLift,
+          particlePull: 0.2,
+          tintMix: 1,
+          ease: 'power3.out',
+        })
+        .to(
+          motion.current,
+          isSuccess
+            ? {
+                duration: 0.36,
+                glow: 0.78,
+                flash: 0.08,
+                shake: 0.02,
+                yoyo: true,
+                repeat: 1,
+                ease: 'sine.inOut',
+              }
+            : {
+                duration: 0.26,
+                glow: settleGlow * 0.9,
+                flash: 0,
+                ease: 'sine.out',
+              }
+        )
+        .to(motion.current, {
+          duration: fadeDuration,
           flash: 0,
-          glow: 0.46,
+          glow: 0.32,
           spinBoost: 0.12,
           shake: 0,
           lift: 0,
           particlePull: 0,
           tintMix: 0,
-          ease: 'power2.out',
+          ease: 'sine.out',
         });
     } else {
       tl.to(motion.current, {
-        duration: 0.42,
+        duration: 0.46,
         spinBoost: 0.12,
         shake: 0,
         glow: 0.22,
@@ -221,6 +266,7 @@ function TunaCanModel({ phase, level, isDark }: TunaCanModelProps) {
         lift: 0,
         particlePull: 0,
         tintMix: 0,
+        ease: 'sine.out',
       });
     }
 
@@ -233,6 +279,7 @@ function TunaCanModel({ phase, level, isDark }: TunaCanModelProps) {
 
   useFrame((state, delta) => {
     const group = groupRef.current;
+    const glowMesh = glowMeshRef.current;
     const bodyMat = bodyMatRef.current;
     const lidMat = lidMatRef.current;
     const bandMat = bandMatRef.current;
@@ -242,9 +289,15 @@ function TunaCanModel({ phase, level, isDark }: TunaCanModelProps) {
     if (!group || !bodyMat || !lidMat || !bandMat || !tabMat || !glowMat || !particleMat) return;
 
     const phaseBoost =
-      phase === 'charging' || phase === 'success' || phase === 'downgrade' || phase === 'destroy' || phase === 'error'
-        ? 0.84
-        : 1;
+      phase === 'success'
+        ? 0.94
+        : phase === 'destroy' || phase === 'error'
+          ? 0.86
+          : phase === 'downgrade'
+            ? 0.82
+            : phase === 'charging'
+              ? 0.84
+              : 1;
     const glowScale = (isDark ? 0.66 : 0.4) * phaseBoost;
     const targetScale = responsiveScale.current;
 
@@ -255,8 +308,13 @@ function TunaCanModel({ phase, level, isDark }: TunaCanModelProps) {
     group.rotation.y += delta * (0.22 + motion.current.spinBoost * 0.55);
     group.rotation.z = Math.sin(t * 1.25) * 0.02 + Math.sin(t * 34) * motion.current.shake * 0.022;
     group.rotation.x = Math.sin(t * 0.82) * 0.025;
-    group.position.y = Math.sin(t * 1.55) * 0.07 + motion.current.lift;
+    group.position.y = Math.sin(t * 1.55) * 0.07 + motion.current.lift + Math.sin(t * 8.8) * motion.current.flash * 0.008;
     group.position.x = Math.sin(t * 30) * motion.current.shake * 0.02;
+
+    if (glowMesh) {
+      const orbScale = 1 + motion.current.glow * 0.18 + motion.current.flash * 0.08;
+      glowMesh.scale.setScalar(orbScale);
+    }
 
     const outcomeColor =
       phase === 'success' ? outcomePalette.success : phase === 'downgrade' || phase === 'destroy' || phase === 'error' ? outcomePalette.fail : outcomePalette.neutral;
@@ -287,6 +345,7 @@ function TunaCanModel({ phase, level, isDark }: TunaCanModelProps) {
 
     particleMat.color.copy(tintColor.current);
     particleMat.opacity = (0.2 + motion.current.glow * 0.24 + motion.current.flash * 0.14) * (isDark ? 0.78 : 0.58);
+    particleMat.size = 0.042 + motion.current.glow * 0.011 + motion.current.flash * 0.004;
 
     const pull = motion.current.particlePull;
 
@@ -358,7 +417,7 @@ function TunaCanModel({ phase, level, isDark }: TunaCanModelProps) {
             <meshStandardMaterial color="#d8e1eb" metalness={0.9} roughness={0.24} />
           </mesh>
 
-          <mesh position={[0, 0, 0.26]}>
+          <mesh ref={glowMeshRef} position={[0, 0, 0.26]}>
             <sphereGeometry args={[0.58, 32, 24]} />
             <meshBasicMaterial
               ref={glowMatRef}
@@ -381,15 +440,25 @@ export default function ForgeScene({ phase, level }: ForgeSceneProps) {
 
   const bloomBase =
     phase === 'success'
-      ? 1.5
+      ? 1.7
       : phase === 'destroy' || phase === 'error'
-        ? 1.62
+        ? 1.45
         : phase === 'downgrade'
-          ? 1.34
+          ? 1.22
           : phase === 'charging'
             ? 1.18
             : 0.52;
   const bloomIntensity = bloomBase * (isDark ? 0.72 : 0.48);
+  const phaseLightBoost =
+    phase === 'success'
+      ? 1.16
+      : phase === 'destroy' || phase === 'error'
+        ? 1.03
+        : phase === 'downgrade'
+          ? 0.92
+          : phase === 'charging'
+            ? 0.98
+            : 0.86;
 
   return (
     <div className="h-full w-full">
@@ -398,7 +467,7 @@ export default function ForgeScene({ phase, level }: ForgeSceneProps) {
         <directionalLight position={[2.8, 3.4, 2.2]} intensity={isDark ? 0.84 : 0.54} />
         <pointLight
           position={[-2.2, 1.1, 2.4]}
-          intensity={isDark ? 0.5 : 0.32}
+          intensity={(isDark ? 0.5 : 0.32) * phaseLightBoost}
           color={
             phase === 'success'
               ? '#facc15'
