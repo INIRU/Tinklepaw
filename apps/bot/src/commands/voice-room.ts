@@ -10,6 +10,7 @@ import {
 
 import type { SlashCommand } from './types.js';
 import { getBotContext } from '../context.js';
+import { generateVoiceInterfaceLegendImage } from '../lib/voiceInterfaceImage.js';
 
 export const interfaceCommand: SlashCommand = {
   name: 'interface',
@@ -40,37 +41,31 @@ export const interfaceCommand: SlashCommand = {
 
     const embed = new EmbedBuilder()
       .setTitle('🎛️ VOICE INTERFACE')
-      .setDescription('관리자 전용 통화방 패널입니다. 버튼으로 통화방 생성/설정을 즉시 수행합니다.\n설정 버튼은 **현재 접속 중인 음성채널** 기준으로 동작합니다.')
-      .addFields(
-        { name: 'CREATE', value: 'SOLO / DUO / PARTY', inline: true },
-        { name: 'CONTROL', value: 'NAME / LIMIT / PRIVACY / INVITE / REGION', inline: true },
-      )
+      .setDescription('관리자 전용 통화방 패널입니다. 버튼은 이모지 전용이며, 아래 이미지에서 기능명을 확인해 주세요.')
+      .setImage('attachment://voice-interface-guide.png')
       .setColor(0x38bdf8);
+
+    const guideImage = await generateVoiceInterfaceLegendImage();
 
     const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setCustomId('voice_if:rename_open')
-        .setLabel('NAME')
         .setEmoji('🔤')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('voice_if:limit:1')
-        .setLabel('LIMIT 1')
         .setEmoji('1️⃣')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('voice_if:limit:2')
-        .setLabel('LIMIT 2')
         .setEmoji('2️⃣')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('voice_if:lock')
-        .setLabel('PRIVACY')
         .setEmoji('🔒')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('voice_if:unlock')
-        .setLabel('UNLOCK')
         .setEmoji('🔓')
         .setStyle(ButtonStyle.Secondary),
     );
@@ -78,27 +73,22 @@ export const interfaceCommand: SlashCommand = {
     const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setCustomId('voice_if:create:1')
-        .setLabel('SOLO')
         .setEmoji('🎙️')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('voice_if:create:2')
-        .setLabel('DUO')
         .setEmoji('🎧')
         .setStyle(ButtonStyle.Primary),
       new ButtonBuilder()
         .setCustomId('voice_if:create:0')
-        .setLabel('PARTY')
         .setEmoji('🗣️')
         .setStyle(ButtonStyle.Success),
       new ButtonBuilder()
         .setCustomId('voice_if:invite')
-        .setLabel('INVITE')
         .setEmoji('📨')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('voice_if:region:auto')
-        .setLabel('REGION')
         .setEmoji('🌐')
         .setStyle(ButtonStyle.Secondary),
     );
@@ -106,12 +96,10 @@ export const interfaceCommand: SlashCommand = {
     const row3 = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setCustomId('voice_if:limit:0')
-        .setLabel('UNLIMIT')
         .setEmoji('♾️')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('voice_if:delete')
-        .setLabel('DELETE')
         .setEmoji('🗑️')
         .setStyle(ButtonStyle.Danger),
     );
@@ -119,6 +107,7 @@ export const interfaceCommand: SlashCommand = {
     await interaction.reply({
       embeds: [embed],
       components: [row1, row2, row3],
+      files: [guideImage],
     });
   },
 };
