@@ -56,6 +56,8 @@ export async function PUT(req: Request) {
     daily_chest_item_drop_rate_pct?: number;
     duplicate_ss_tuna_energy?: number;
     duplicate_sss_tuna_energy?: number;
+    voice_interface_trigger_channel_id?: string | null;
+    voice_interface_category_id?: string | null;
     lottery_jackpot_rate_pct?: number;
     lottery_gold_rate_pct?: number;
     lottery_silver_rate_pct?: number;
@@ -96,6 +98,8 @@ export async function PUT(req: Request) {
   if (body.daily_chest_item_drop_rate_pct !== undefined) patch.daily_chest_item_drop_rate_pct = body.daily_chest_item_drop_rate_pct;
   if (body.duplicate_ss_tuna_energy !== undefined) patch.duplicate_ss_tuna_energy = body.duplicate_ss_tuna_energy;
   if (body.duplicate_sss_tuna_energy !== undefined) patch.duplicate_sss_tuna_energy = body.duplicate_sss_tuna_energy;
+  if (body.voice_interface_trigger_channel_id !== undefined) patch.voice_interface_trigger_channel_id = body.voice_interface_trigger_channel_id ?? null;
+  if (body.voice_interface_category_id !== undefined) patch.voice_interface_category_id = body.voice_interface_category_id ?? null;
   if (body.lottery_jackpot_rate_pct !== undefined) patch.lottery_jackpot_rate_pct = body.lottery_jackpot_rate_pct;
   if (body.lottery_gold_rate_pct !== undefined) patch.lottery_gold_rate_pct = body.lottery_gold_rate_pct;
   if (body.lottery_silver_rate_pct !== undefined) patch.lottery_silver_rate_pct = body.lottery_silver_rate_pct;

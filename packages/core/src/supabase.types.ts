@@ -67,6 +67,8 @@ export type Database = {
           daily_chest_item_drop_rate_pct: number;
           duplicate_ss_tuna_energy: number;
           duplicate_sss_tuna_energy: number;
+          voice_interface_trigger_channel_id: string | null;
+          voice_interface_category_id: string | null;
           lottery_jackpot_rate_pct: number;
           lottery_gold_rate_pct: number;
           lottery_silver_rate_pct: number;
@@ -240,6 +242,36 @@ export type Database = {
           amount: number;
         };
         Update: Partial<Database['nyang']['Tables']['point_events']['Row']>;
+        Relationships: [];
+      };
+      voice_room_templates: {
+        Row: {
+          discord_user_id: string;
+          room_name: string;
+          user_limit: number;
+          rtc_region: string | null;
+          is_locked: boolean;
+          updated_at: string;
+        };
+        Insert: Partial<Database['nyang']['Tables']['voice_room_templates']['Row']> & {
+          discord_user_id: string;
+          room_name: string;
+        };
+        Update: Partial<Database['nyang']['Tables']['voice_room_templates']['Row']>;
+        Relationships: [];
+      };
+      voice_auto_rooms: {
+        Row: {
+          channel_id: string;
+          owner_discord_user_id: string;
+          category_id: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database['nyang']['Tables']['voice_auto_rooms']['Row']> & {
+          channel_id: string;
+          owner_discord_user_id: string;
+        };
+        Update: Partial<Database['nyang']['Tables']['voice_auto_rooms']['Row']>;
         Relationships: [];
       };
       items: {

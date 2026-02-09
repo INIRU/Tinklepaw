@@ -14,6 +14,8 @@ type AppConfig = {
   icon_image_url?: string | null;
   join_message_template: string | null;
   join_message_channel_id: string | null;
+  voice_interface_trigger_channel_id: string | null;
+  voice_interface_category_id: string | null;
   reward_points_per_interval: number;
   reward_interval_seconds: number;
   reward_daily_cap_points: number | null;
@@ -44,7 +46,7 @@ type AppConfig = {
   lottery_ticket_cooldown_seconds: number;
 };
 
-type DiscordChannel = { id: string; name: string };
+type DiscordChannel = { id: string; name: string; type: number; parent_id?: string | null };
 
 type AssetKey = 'banner' | 'icon';
 type StagedAsset = { stagedPath: string; publicUrl: string };
@@ -325,6 +327,13 @@ export default function SettingsClient() {
 
   const rewardChannelSet = useMemo(() => new Set(rewardChannels), [rewardChannels]);
   const rewardChannelSavedSet = useMemo(() => new Set(rewardChannelsSaved), [rewardChannelsSaved]);
+  const textChannels = useMemo(() => channels.filter((c) => c.type === 0 || c.type === 5), [channels]);
+  const voiceChannels = useMemo(() => channels.filter((c) => c.type === 2), [channels]);
+  const categoryChannels = useMemo(() => channels.filter((c) => c.type === 4), [channels]);
+  const categoryNameById = useMemo(
+    () => new Map(categoryChannels.map((c) => [c.id, c.name])),
+    [categoryChannels]
+  );
 
   const loadAll = useCallback(async () => {
     const cfgRes = await fetch('/api/admin/config');
@@ -409,15 +418,15 @@ export default function SettingsClient() {
   const filteredRewardChannels = useMemo(() => {
     const q = rewardSearch.trim().toLowerCase();
     const base = q
-      ? channels.filter((c) => c.name.toLowerCase().includes(q) || c.id.includes(q))
-      : channels;
+      ? textChannels.filter((c) => c.name.toLowerCase().includes(q) || c.id.includes(q))
+      : textChannels;
     return [...base].sort((a, b) => {
       const aOn = rewardChannelSet.has(a.id);
       const bOn = rewardChannelSet.has(b.id);
       if (aOn !== bOn) return aOn ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
-  }, [channels, rewardChannelSet, rewardSearch]);
+  }, [rewardChannelSet, rewardSearch, textChannels]);
 
   const rewardDirty = useMemo(() => {
     if (rewardChannels.length !== rewardChannelsSaved.length) return true;
@@ -811,7 +820,7 @@ export default function SettingsClient() {
             onChange={(e) => setCfg({ ...cfg, join_message_channel_id: e.target.value || null })}
           >
             <option value="">(사용 안 함)</option>
-            {channels.map((c) => (
+            {textChannels.map((c) => (
               <option key={c.id} value={c.id}>
                 #{c.name}
               </option>
@@ -832,6 +841,58 @@ export default function SettingsClient() {
           placeholder="{user}님, 방울냥 서버에 오신 걸 환영해!"
         />
         <p className="mt-2 text-xs muted-2">사용 가능: {'{user}'} {'{username}'} {'{server}'}</p>
+      </section>
+
+      <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+        <h2 className="text-lg font-semibold">음성방 자동 생성</h2>
+        <p className="mt-2 text-xs muted">
+          지정된 트리거 음성채널에 유저가 입장하면, 저장된 개인 설정으로 새 통화방을 자동 생성해 이동시킵니다.
+        </p>
+
+        <label className="mt-3 block text-sm muted">음성방 생성 트리거 채널</label>
+        <div className="relative mt-1">
+          <select
+            className="w-full appearance-none rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 pr-10 text-sm text-[color:var(--fg)]"
+            value={cfg.voice_interface_trigger_channel_id ?? ''}
+            onChange={(e) => setCfg({ ...cfg, voice_interface_trigger_channel_id: e.target.value || null })}
+          >
+            <option value="">(사용 안 함)</option>
+            {voiceChannels.map((c) => {
+              const parent = c.parent_id ? categoryNameById.get(c.parent_id) : null;
+              return (
+                <option key={c.id} value={c.id}>
+                  {parent ? `${parent} / ` : ''}{c.name}
+                </option>
+              );
+            })}
+          </select>
+          <ChevronDown
+            className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--muted-2)]"
+            aria-hidden="true"
+            strokeWidth={2}
+          />
+        </div>
+
+        <label className="mt-3 block text-sm muted">생성 카테고리</label>
+        <div className="relative mt-1">
+          <select
+            className="w-full appearance-none rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 pr-10 text-sm text-[color:var(--fg)]"
+            value={cfg.voice_interface_category_id ?? ''}
+            onChange={(e) => setCfg({ ...cfg, voice_interface_category_id: e.target.value || null })}
+          >
+            <option value="">(트리거 채널 카테고리 사용)</option>
+            {categoryChannels.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--muted-2)]"
+            aria-hidden="true"
+            strokeWidth={2}
+          />
+        </div>
       </section>
 
       <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
@@ -1185,7 +1246,7 @@ export default function SettingsClient() {
             />
           </label>
           <div className="text-xs muted">
-            선택: {rewardChannels.length}개 / 전체: {channels.length}개
+            선택: {rewardChannels.length}개 / 전체: {textChannels.length}개
           </div>
         </div>
 

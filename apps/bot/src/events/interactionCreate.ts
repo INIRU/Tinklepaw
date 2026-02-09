@@ -6,6 +6,7 @@ import { commands } from '../commands/index.js';
 import { handleError } from '../errorHandler.js';
 import { getBotContext } from '../context.js';
 import { getAppConfig } from '../services/config.js';
+import { forgetVoiceAutoRoom, getVoiceRoomTemplate, rememberVoiceAutoRoom, saveVoiceRoomTemplateFromChannel, setVoiceRoomLock } from '../services/voice-interface.js';
 import { isSpotifyQuery, normalizeMusicQuery, searchTracksWithFallback } from '../services/musicSearch.js';
 import { applyMusicFilterPreset, clearMusicState, formatDuration, getMusic, getNodeStatus, MUSIC_FILTER_LABELS, updateMusicSetupMessage, updateMusicState } from '../services/music.js';
 import type { MusicFilterPreset } from '../services/music.js';
@@ -330,35 +331,36 @@ export function registerInteractionCreate(client: Client) {
     } else if (interaction.isModalSubmit()) {
       if (interaction.customId === 'voice_if:rename_modal') {
         if (!interaction.guild) {
-          await interaction.reply({ content: '서버에서만 사용할 수 있어요.', ephemeral: true });
+          await interaction.reply({ content: '서버에서만 사용할 수 있어요.' });
           return;
         }
 
         if (!hasVoiceInterfacePermission(interaction)) {
-          await interaction.reply({ content: '채널 관리 권한이 필요해요.', ephemeral: true });
+          await interaction.reply({ content: '채널 관리 권한이 필요해요.' });
           return;
         }
 
         const channel = getMemberVoiceChannel(interaction);
         if (!channel) {
-          await interaction.reply({ content: '먼저 대상 음성 채널에 접속해 주세요.', ephemeral: true });
+          await interaction.reply({ content: '먼저 대상 음성 채널에 접속해 주세요.' });
           return;
         }
 
         if (!channel.manageable) {
-          await interaction.reply({ content: '이 채널은 봇이 수정할 수 없어요.', ephemeral: true });
+          await interaction.reply({ content: '이 채널은 봇이 수정할 수 없어요.' });
           return;
         }
 
         const rawName = interaction.fields.getTextInputValue('voice_if:new_name').trim();
         if (!rawName) {
-          await interaction.reply({ content: '변경할 통화방 이름을 입력해 주세요.', ephemeral: true });
+          await interaction.reply({ content: '변경할 통화방 이름을 입력해 주세요.' });
           return;
         }
 
         const nextName = rawName.slice(0, 90);
         await channel.setName(nextName, 'voice interface rename');
-        await interaction.reply({ content: `통화방 이름을 **${nextName}** 으로 변경했어요.`, ephemeral: true });
+        await saveVoiceRoomTemplateFromChannel(interaction.user.id, channel);
+        await interaction.reply({ content: `통화방 이름을 **${nextName}** 으로 변경했어요.` });
         return;
       }
 
@@ -556,12 +558,12 @@ export function registerInteractionCreate(client: Client) {
     } else if (interaction.isButton()) {
       if (interaction.customId.startsWith('voice_if:')) {
         if (!interaction.guild) {
-          await interaction.reply({ content: '서버에서만 사용할 수 있어요.', ephemeral: true });
+          await interaction.reply({ content: '서버에서만 사용할 수 있어요.' });
           return;
         }
 
         if (!hasVoiceInterfacePermission(interaction)) {
-          await interaction.reply({ content: '채널 관리 권한이 필요해요.', ephemeral: true });
+          await interaction.reply({ content: '채널 관리 권한이 필요해요.' });
           return;
         }
 
@@ -570,18 +572,35 @@ export function registerInteractionCreate(client: Client) {
         if (action === 'create') {
           const member = interaction.member as GuildMember | null;
           const baseChannel = getMemberVoiceChannel(interaction);
+          const config = await getAppConfig().catch(() => null);
           const limit = value === '1' ? 1 : value === '2' ? 2 : 0;
           const roomLabel = limit === 1 ? '1인실' : limit === 2 ? '2인실' : '다인실';
           const displayName = member?.displayName ?? interaction.user.username;
-          const channelName = `${displayName}-${roomLabel}`.slice(0, 90);
+          const template = await getVoiceRoomTemplate(interaction.user.id, `${displayName}-${roomLabel}`);
+          const parentId = config?.voice_interface_category_id ?? baseChannel?.parentId ?? undefined;
 
           const created = await interaction.guild.channels.create({
-            name: channelName,
+            name: template.roomName,
             type: ChannelType.GuildVoice,
             userLimit: limit,
-            parent: baseChannel?.parentId ?? undefined,
+            parent: parentId ?? undefined,
+            rtcRegion: template.rtcRegion ?? undefined,
             reason: `voice interface create by ${interaction.user.tag}`,
           });
+
+          if (created.type === ChannelType.GuildVoice) {
+            if (template.isLocked) {
+              await setVoiceRoomLock(created, interaction.user.id, true, `voice interface lock restore by ${interaction.user.tag}`);
+            } else {
+              await created.permissionOverwrites.edit(interaction.user.id, {
+                Connect: true,
+                ManageChannels: true,
+                MoveMembers: true,
+              });
+            }
+
+            await rememberVoiceAutoRoom(created.id, interaction.user.id, created.parentId ?? null);
+          }
 
           if (member?.voice?.channelId) {
             await member.voice.setChannel(created).catch(() => {});
@@ -589,7 +608,6 @@ export function registerInteractionCreate(client: Client) {
 
           await interaction.reply({
             content: `생성 완료: <#${created.id}> (${roomLabel})`,
-            ephemeral: true,
           });
           return;
         }
@@ -597,7 +615,7 @@ export function registerInteractionCreate(client: Client) {
         if (action === 'rename_open') {
           const channel = getMemberVoiceChannel(interaction);
           if (!channel) {
-            await interaction.reply({ content: '먼저 이름을 바꿀 음성 채널에 접속해 주세요.', ephemeral: true });
+            await interaction.reply({ content: '먼저 이름을 바꿀 음성 채널에 접속해 주세요.' });
             return;
           }
 
@@ -617,49 +635,75 @@ export function registerInteractionCreate(client: Client) {
           return;
         }
 
+        if (action === 'invite') {
+          const target = getMemberVoiceChannel(interaction);
+          if (!target) {
+            await interaction.reply({ content: '먼저 초대 링크를 만들 음성 채널에 접속해 주세요.' });
+            return;
+          }
+
+          const invite = await target.createInvite({
+            maxAge: 3600,
+            maxUses: 0,
+            temporary: false,
+            unique: true,
+            reason: `voice interface invite by ${interaction.user.tag}`,
+          });
+
+          await interaction.reply({ content: `초대 링크 생성 완료: ${invite.url}` });
+          return;
+        }
+
         const target = getMemberVoiceChannel(interaction);
         if (!target) {
-          await interaction.reply({ content: '먼저 대상 음성 채널에 접속해 주세요.', ephemeral: true });
+          await interaction.reply({ content: '먼저 대상 음성 채널에 접속해 주세요.' });
           return;
         }
 
         if (!target.manageable) {
-          await interaction.reply({ content: '이 채널은 봇이 수정할 수 없어요.', ephemeral: true });
+          await interaction.reply({ content: '이 채널은 봇이 수정할 수 없어요.' });
+          return;
+        }
+
+        if (action === 'region') {
+          const region = value === 'auto' ? null : value;
+          await target.setRTCRegion(region, `voice interface region by ${interaction.user.tag}`);
+          await saveVoiceRoomTemplateFromChannel(interaction.user.id, target);
+          await interaction.reply({ content: region ? `통화방 리전을 ${region}으로 변경했어요.` : '통화방 리전을 자동(AUTO)으로 설정했어요.' });
           return;
         }
 
         if (action === 'limit') {
           const nextLimit = value === '1' ? 1 : value === '2' ? 2 : 0;
           await target.setUserLimit(nextLimit, `voice interface limit by ${interaction.user.tag}`);
+          await saveVoiceRoomTemplateFromChannel(interaction.user.id, target);
           await interaction.reply({
             content: nextLimit > 0 ? `인원 제한을 ${nextLimit}명으로 설정했어요.` : '인원 제한을 해제했어요.',
-            ephemeral: true,
           });
           return;
         }
 
         if (action === 'lock' || action === 'unlock') {
-          await target.permissionOverwrites.edit(interaction.guild.roles.everyone, {
-            Connect: action === 'lock' ? false : null,
-          });
+          await setVoiceRoomLock(target, interaction.user.id, action === 'lock', `voice interface ${action} by ${interaction.user.tag}`);
+          await saveVoiceRoomTemplateFromChannel(interaction.user.id, target);
           await interaction.reply({
             content: action === 'lock' ? '통화방을 잠갔어요. (일반 유저 입장 제한)' : '통화방 잠금을 해제했어요.',
-            ephemeral: true,
           });
           return;
         }
 
         if (action === 'delete') {
           const roomName = target.name;
+          await saveVoiceRoomTemplateFromChannel(interaction.user.id, target);
+          await forgetVoiceAutoRoom(target.id).catch(() => null);
           await target.delete(`voice interface delete by ${interaction.user.tag}`);
           await interaction.reply({
             content: `통화방 **${roomName}** 을(를) 삭제했어요.`,
-            ephemeral: true,
           });
           return;
         }
 
-        await interaction.reply({ content: '알 수 없는 인터페이스 동작이에요.', ephemeral: true });
+        await interaction.reply({ content: '알 수 없는 인터페이스 동작이에요.' });
         return;
       }
 

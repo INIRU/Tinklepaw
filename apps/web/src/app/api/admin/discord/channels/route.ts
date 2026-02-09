@@ -16,10 +16,10 @@ export async function GET() {
   if (!res.ok) {
     return NextResponse.json({ error: `Discord API failed: ${res.status}` }, { status: 502 });
   }
-  const channels = (await res.json()) as Array<{ id: string; name: string; type: number }>; 
-  // 0=text, 5=announcement
+  const channels = (await res.json()) as Array<{ id: string; name: string; type: number; parent_id?: string | null }>;
+  // 0=text, 2=voice, 4=category, 5=announcement
   const filtered = channels
-    .filter((c) => c.type === 0 || c.type === 5)
-    .map((c) => ({ id: c.id, name: c.name, type: c.type }));
+    .filter((c) => c.type === 0 || c.type === 2 || c.type === 4 || c.type === 5)
+    .map((c) => ({ id: c.id, name: c.name, type: c.type, parent_id: c.parent_id ?? null }));
   return NextResponse.json({ channels: filtered });
 }

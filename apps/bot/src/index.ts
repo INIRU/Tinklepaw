@@ -15,6 +15,7 @@ import { registerInteractionCreate } from './events/interactionCreate.js';
 import { registerGuildMemberAdd } from './events/guildMemberAdd.js';
 import { registerGuildMemberRemove } from './events/guildMemberRemove.js';
 import { registerMessageCreate } from './events/messageCreate.js';
+import { registerVoiceStateUpdate } from './events/voiceStateUpdate.js';
 import { startRoleSyncWorker } from './workers/roleSyncWorker.js';
 import { startMusicControlWorker } from './workers/musicControlWorker.js';
 import { startVoiceRewardWorker } from './workers/voiceRewardWorker.js';
@@ -51,8 +52,9 @@ client.once('ready', async () => {
 
 registerInteractionCreate(client);
 registerGuildMemberAdd(client);
-registerGuildMemberRemove(client);
-registerMessageCreate(client);
+  registerGuildMemberRemove(client);
+  registerMessageCreate(client);
+  registerVoiceStateUpdate(client);
 
 client.once('ready', async () => {
   const rest = new REST({ version: '10' }).setToken(env.DISCORD_BOT_TOKEN);

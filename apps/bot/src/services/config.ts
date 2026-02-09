@@ -36,6 +36,8 @@ const AppConfigSchema = z.object({
   voice_reward_interval_seconds: z.number().default(60),
   voice_reward_daily_cap_points: z.number().nullable().optional(),
   booster_voice_bonus_points: z.number().default(0),
+  voice_interface_trigger_channel_id: z.string().nullable().optional(),
+  voice_interface_category_id: z.string().nullable().optional(),
   error_log_channel_id: z.string().nullable().optional(),
   show_traceback_to_user: z.boolean().default(true)
 });
@@ -51,7 +53,7 @@ export async function getAppConfig(): Promise<AppConfig> {
   const ctx = getBotContext();
   const { data, error } = await ctx.supabase
     .from('app_config')
-    .select('join_message_template, join_message_channel_id, music_command_channel_id, music_setup_embed_title, music_setup_embed_description, music_setup_embed_fields, music_setup_message_id, bot_avatar_url, bot_sync_interval_ms, gacha_embed_color, gacha_embed_title, gacha_embed_description, gacha_processing_title, gacha_processing_description, gacha_result_title, reward_points_per_interval, reward_interval_seconds, reward_daily_cap_points, reward_min_message_length, booster_chat_bonus_points, voice_reward_points_per_interval, voice_reward_interval_seconds, voice_reward_daily_cap_points, booster_voice_bonus_points, error_log_channel_id, show_traceback_to_user')
+    .select('join_message_template, join_message_channel_id, music_command_channel_id, music_setup_embed_title, music_setup_embed_description, music_setup_embed_fields, music_setup_message_id, bot_avatar_url, bot_sync_interval_ms, gacha_embed_color, gacha_embed_title, gacha_embed_description, gacha_processing_title, gacha_processing_description, gacha_result_title, reward_points_per_interval, reward_interval_seconds, reward_daily_cap_points, reward_min_message_length, booster_chat_bonus_points, voice_reward_points_per_interval, voice_reward_interval_seconds, voice_reward_daily_cap_points, booster_voice_bonus_points, voice_interface_trigger_channel_id, voice_interface_category_id, error_log_channel_id, show_traceback_to_user')
     .eq('id', 1)
     .maybeSingle();
 
@@ -74,6 +76,8 @@ export async function getAppConfig(): Promise<AppConfig> {
     voice_reward_interval_seconds: 60,
     voice_reward_daily_cap_points: null,
     booster_voice_bonus_points: 0,
+    voice_interface_trigger_channel_id: null,
+    voice_interface_category_id: null,
     music_command_channel_id: null,
     music_setup_embed_title: null,
     music_setup_embed_description: null,

@@ -45,6 +45,8 @@ export async function getOrInitAppConfig() {
       daily_chest_item_drop_rate_pct: 12,
       duplicate_ss_tuna_energy: 3,
       duplicate_sss_tuna_energy: 5,
+      voice_interface_trigger_channel_id: null,
+      voice_interface_category_id: null,
       lottery_jackpot_rate_pct: 0.3,
       lottery_gold_rate_pct: 1.5,
       lottery_silver_rate_pct: 8,
