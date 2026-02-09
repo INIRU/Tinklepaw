@@ -161,33 +161,33 @@ function TunaCanModel({ phase, level, isDark }: TunaCanModelProps) {
     if (phase === 'charging') {
       tl.to(motion.current, {
         duration: 0.42,
-        spinBoost: 0.42,
-        shake: 0.08,
-        glow: 0.42,
-        flash: 0.06,
-        particlePull: 0.58,
-        lift: 0.04,
+        spinBoost: 0.36,
+        shake: 0.04,
+        glow: 0.36,
+        flash: 0.02,
+        particlePull: 0.45,
+        lift: 0.03,
         tintMix: 0,
         ease: 'sine.out',
       })
         .to(motion.current, {
           duration: 0.58,
-          spinBoost: 0.92,
-          shake: 0.28,
-          glow: 0.96,
-          flash: 0.2,
+          spinBoost: 0.74,
+          shake: 0.14,
+          glow: 0.72,
+          flash: 0.1,
           particlePull: 1,
-          lift: 0.09,
+          lift: 0.06,
           ease: 'expo.out',
         })
         .to(
           motion.current,
           {
-            duration: 0.9,
-            shake: 0.1,
-            flash: 0.34,
-            glow: 0.82,
-            spinBoost: 0.74,
+            duration: 1.0,
+            shake: 0.05,
+            flash: 0.16,
+            glow: 0.68,
+            spinBoost: 0.62,
             repeat: -1,
             yoyo: true,
             ease: 'sine.inOut',
@@ -197,32 +197,32 @@ function TunaCanModel({ phase, level, isDark }: TunaCanModelProps) {
     } else if (phase === 'success' || phase === 'downgrade' || phase === 'destroy' || phase === 'error') {
       const isSuccess = phase === 'success';
       const isDowngrade = phase === 'downgrade';
-      const impactFlash = isSuccess ? 1.16 : isDowngrade ? 0.98 : 1.02;
-      const impactGlow = isSuccess ? 1.24 : isDowngrade ? 1.06 : 1.1;
-      const impactShake = isSuccess ? 0.3 : isDowngrade ? 0.38 : 0.52;
-      const settleGlow = isSuccess ? 1.0 : isDowngrade ? 0.86 : 0.94;
-      const settleSpin = isSuccess ? 0.42 : isDowngrade ? 0.28 : 0.24;
-      const settleLift = isSuccess ? 0.11 : isDowngrade ? 0.07 : 0.04;
-      const fadeDuration = isSuccess ? 0.86 : isDowngrade ? 0.98 : 1.12;
+      const impactFlash = isSuccess ? 0.82 : isDowngrade ? 0.68 : 0.74;
+      const impactGlow = isSuccess ? 1.02 : isDowngrade ? 0.78 : 0.86;
+      const impactShake = isSuccess ? 0.16 : isDowngrade ? 0.23 : 0.32;
+      const settleGlow = isSuccess ? 0.78 : isDowngrade ? 0.62 : 0.68;
+      const settleSpin = isSuccess ? 0.3 : isDowngrade ? 0.2 : 0.18;
+      const settleLift = isSuccess ? 0.08 : isDowngrade ? 0.04 : 0.02;
+      const fadeDuration = isSuccess ? 0.78 : isDowngrade ? 0.9 : 1.0;
       tl.to(motion.current, {
         duration: 0.18,
         flash: impactFlash,
         glow: impactGlow,
-        spinBoost: 1.04,
+        spinBoost: 0.78,
         shake: impactShake,
-        lift: 0.17,
+        lift: 0.13,
         particlePull: 1,
         tintMix: 0,
         ease: 'power2.in',
       })
         .to(motion.current, {
-          duration: 0.34,
+          duration: 0.32,
           flash: 0.06,
           glow: settleGlow,
           spinBoost: settleSpin,
-          shake: 0.06,
+          shake: 0.04,
           lift: settleLift,
-          particlePull: 0.2,
+          particlePull: 0.15,
           tintMix: 1,
           ease: 'power3.out',
         })
@@ -230,16 +230,16 @@ function TunaCanModel({ phase, level, isDark }: TunaCanModelProps) {
           motion.current,
           isSuccess
             ? {
-                duration: 0.36,
-                glow: 0.78,
-                flash: 0.08,
-                shake: 0.02,
+                duration: 0.32,
+                glow: 0.66,
+                flash: 0.05,
+                shake: 0.015,
                 yoyo: true,
                 repeat: 1,
                 ease: 'sine.inOut',
               }
             : {
-                duration: 0.26,
+                duration: 0.24,
                 glow: settleGlow * 0.9,
                 flash: 0,
                 ease: 'sine.out',
@@ -248,7 +248,7 @@ function TunaCanModel({ phase, level, isDark }: TunaCanModelProps) {
         .to(motion.current, {
           duration: fadeDuration,
           flash: 0,
-          glow: 0.32,
+          glow: 0.26,
           spinBoost: 0.12,
           shake: 0,
           lift: 0,
@@ -290,26 +290,26 @@ function TunaCanModel({ phase, level, isDark }: TunaCanModelProps) {
 
     const phaseBoost =
       phase === 'success'
-        ? 0.94
+        ? 0.78
         : phase === 'destroy' || phase === 'error'
-          ? 0.86
+          ? 0.7
           : phase === 'downgrade'
-            ? 0.82
+            ? 0.66
             : phase === 'charging'
-              ? 0.84
+              ? 0.7
               : 1;
-    const glowScale = (isDark ? 0.66 : 0.4) * phaseBoost;
+    const glowScale = (isDark ? 0.52 : 0.3) * phaseBoost;
     const targetScale = responsiveScale.current;
 
     const t = state.clock.getElapsedTime();
     group.scale.x += (targetScale - group.scale.x) * 0.12;
     group.scale.y += (targetScale - group.scale.y) * 0.12;
     group.scale.z += (targetScale - group.scale.z) * 0.12;
-    group.rotation.y += delta * (0.22 + motion.current.spinBoost * 0.55);
-    group.rotation.z = Math.sin(t * 1.25) * 0.02 + Math.sin(t * 34) * motion.current.shake * 0.022;
+    group.rotation.y += delta * (0.18 + motion.current.spinBoost * 0.44);
+    group.rotation.z = Math.sin(t * 1.1) * 0.016 + Math.sin(t * 20) * motion.current.shake * 0.012;
     group.rotation.x = Math.sin(t * 0.82) * 0.025;
-    group.position.y = Math.sin(t * 1.55) * 0.07 + motion.current.lift + Math.sin(t * 8.8) * motion.current.flash * 0.008;
-    group.position.x = Math.sin(t * 30) * motion.current.shake * 0.02;
+    group.position.y = Math.sin(t * 1.4) * 0.06 + motion.current.lift + Math.sin(t * 6.2) * motion.current.flash * 0.004;
+    group.position.x = Math.sin(t * 18) * motion.current.shake * 0.012;
 
     if (glowMesh) {
       const orbScale = 1 + motion.current.glow * 0.18 + motion.current.flash * 0.08;
@@ -322,30 +322,30 @@ function TunaCanModel({ phase, level, isDark }: TunaCanModelProps) {
 
     const emissiveColor = tempColor.current.copy(tintColor.current);
     if (motion.current.flash > 0.2) {
-      emissiveColor.lerp(whiteColor, Math.min(1, motion.current.flash * 0.18));
+      emissiveColor.lerp(whiteColor, Math.min(1, motion.current.flash * 0.1));
     }
 
     bodyMat.color.lerp(baseCanColor, 0.12);
     bodyMat.emissive.copy(emissiveColor);
-    bodyMat.emissiveIntensity = (0.05 + motion.current.glow * 0.26 + motion.current.flash * 0.38) * glowScale;
+    bodyMat.emissiveIntensity = (0.04 + motion.current.glow * 0.2 + motion.current.flash * 0.24) * glowScale;
 
     lidMat.color.set('#dbe5f0');
     lidMat.emissive.copy(emissiveColor);
-    lidMat.emissiveIntensity = (0.04 + motion.current.glow * 0.19 + motion.current.flash * 0.28) * glowScale;
+    lidMat.emissiveIntensity = (0.03 + motion.current.glow * 0.14 + motion.current.flash * 0.18) * glowScale;
 
     bandMat.color.lerp(bandBaseColor, 0.1);
     bandMat.emissive.copy(tintColor.current);
-    bandMat.emissiveIntensity = (0.1 + motion.current.glow * 0.24) * glowScale;
+    bandMat.emissiveIntensity = (0.08 + motion.current.glow * 0.18) * glowScale;
 
     tabMat.emissive.copy(emissiveColor);
-    tabMat.emissiveIntensity = (0.04 + motion.current.glow * 0.14 + motion.current.flash * 0.2) * glowScale;
+    tabMat.emissiveIntensity = (0.03 + motion.current.glow * 0.1 + motion.current.flash * 0.12) * glowScale;
 
     glowMat.color.copy(emissiveColor);
-    glowMat.opacity = (0.03 + motion.current.glow * 0.15 + motion.current.flash * 0.1) * glowScale;
+    glowMat.opacity = (0.02 + motion.current.glow * 0.11 + motion.current.flash * 0.06) * glowScale;
 
     particleMat.color.copy(tintColor.current);
-    particleMat.opacity = (0.2 + motion.current.glow * 0.24 + motion.current.flash * 0.14) * (isDark ? 0.78 : 0.58);
-    particleMat.size = 0.042 + motion.current.glow * 0.011 + motion.current.flash * 0.004;
+    particleMat.opacity = (0.16 + motion.current.glow * 0.18 + motion.current.flash * 0.08) * (isDark ? 0.66 : 0.46);
+    particleMat.size = 0.039 + motion.current.glow * 0.008 + motion.current.flash * 0.003;
 
     const pull = motion.current.particlePull;
 
@@ -440,34 +440,34 @@ export default function ForgeScene({ phase, level }: ForgeSceneProps) {
 
   const bloomBase =
     phase === 'success'
-      ? 1.7
+      ? 1.2
       : phase === 'destroy' || phase === 'error'
-        ? 1.45
+        ? 1.0
         : phase === 'downgrade'
-          ? 1.22
+          ? 0.88
           : phase === 'charging'
-            ? 1.18
-            : 0.52;
-  const bloomIntensity = bloomBase * (isDark ? 0.72 : 0.48);
+            ? 0.86
+            : 0.34;
+  const bloomIntensity = bloomBase * (isDark ? 0.58 : 0.38);
   const phaseLightBoost =
     phase === 'success'
-      ? 1.16
+      ? 1.04
       : phase === 'destroy' || phase === 'error'
-        ? 1.03
+        ? 0.9
         : phase === 'downgrade'
-          ? 0.92
+          ? 0.84
           : phase === 'charging'
-            ? 0.98
-            : 0.86;
+            ? 0.88
+            : 0.78;
 
   return (
     <div className="h-full w-full">
       <Canvas camera={{ position: [0, 0.12, 4.8], fov: 40 }} dpr={[1, 2]} gl={{ alpha: true, antialias: true }}>
-        <ambientLight intensity={isDark ? 0.5 : 0.34} />
-        <directionalLight position={[2.8, 3.4, 2.2]} intensity={isDark ? 0.84 : 0.54} />
+        <ambientLight intensity={isDark ? 0.42 : 0.28} />
+        <directionalLight position={[2.8, 3.4, 2.2]} intensity={isDark ? 0.68 : 0.44} />
         <pointLight
           position={[-2.2, 1.1, 2.4]}
-          intensity={(isDark ? 0.5 : 0.32) * phaseLightBoost}
+          intensity={(isDark ? 0.38 : 0.24) * phaseLightBoost}
           color={
             phase === 'success'
               ? '#facc15'
