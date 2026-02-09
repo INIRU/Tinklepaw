@@ -43,6 +43,8 @@ export async function getOrInitAppConfig() {
       daily_chest_legendary_min_points: 340,
       daily_chest_legendary_max_points: 620,
       daily_chest_item_drop_rate_pct: 12,
+      duplicate_ss_tuna_energy: 3,
+      duplicate_sss_tuna_energy: 5,
       lottery_jackpot_rate_pct: 0.3,
       lottery_gold_rate_pct: 1.5,
       lottery_silver_rate_pct: 8,

@@ -48,6 +48,7 @@ export async function POST() {
         level: row.out_new_level,
         cost: row.out_cost,
         balance: row.out_new_balance,
+        tunaEnergy: row.out_tuna_forge_energy,
         sellPrice: row.out_sell_price,
       },
       { status: 400 }
@@ -62,6 +63,7 @@ export async function POST() {
     successRatePct: row.out_success_rate_pct,
     sellPrice: row.out_sell_price,
     balance: row.out_new_balance,
+    tunaEnergy: row.out_tuna_forge_energy,
     enhanceAttempts: row.out_enhance_attempts,
     successCount: row.out_success_count,
   });

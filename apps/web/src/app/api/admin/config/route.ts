@@ -54,6 +54,8 @@ export async function PUT(req: Request) {
     daily_chest_legendary_min_points?: number;
     daily_chest_legendary_max_points?: number;
     daily_chest_item_drop_rate_pct?: number;
+    duplicate_ss_tuna_energy?: number;
+    duplicate_sss_tuna_energy?: number;
     lottery_jackpot_rate_pct?: number;
     lottery_gold_rate_pct?: number;
     lottery_silver_rate_pct?: number;
@@ -92,6 +94,8 @@ export async function PUT(req: Request) {
   if (body.daily_chest_legendary_min_points !== undefined) patch.daily_chest_legendary_min_points = body.daily_chest_legendary_min_points;
   if (body.daily_chest_legendary_max_points !== undefined) patch.daily_chest_legendary_max_points = body.daily_chest_legendary_max_points;
   if (body.daily_chest_item_drop_rate_pct !== undefined) patch.daily_chest_item_drop_rate_pct = body.daily_chest_item_drop_rate_pct;
+  if (body.duplicate_ss_tuna_energy !== undefined) patch.duplicate_ss_tuna_energy = body.duplicate_ss_tuna_energy;
+  if (body.duplicate_sss_tuna_energy !== undefined) patch.duplicate_sss_tuna_energy = body.duplicate_sss_tuna_energy;
   if (body.lottery_jackpot_rate_pct !== undefined) patch.lottery_jackpot_rate_pct = body.lottery_jackpot_rate_pct;
   if (body.lottery_gold_rate_pct !== undefined) patch.lottery_gold_rate_pct = body.lottery_gold_rate_pct;
   if (body.lottery_silver_rate_pct !== undefined) patch.lottery_silver_rate_pct = body.lottery_silver_rate_pct;

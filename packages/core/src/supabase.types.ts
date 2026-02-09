@@ -65,6 +65,8 @@ export type Database = {
           daily_chest_legendary_min_points: number;
           daily_chest_legendary_max_points: number;
           daily_chest_item_drop_rate_pct: number;
+          duplicate_ss_tuna_energy: number;
+          duplicate_sss_tuna_energy: number;
           lottery_jackpot_rate_pct: number;
           lottery_gold_rate_pct: number;
           lottery_silver_rate_pct: number;
@@ -198,6 +200,7 @@ export type Database = {
         Row: {
           discord_user_id: string;
           balance: number;
+          tuna_forge_energy: number;
           daily_chest_streak: number;
           daily_chest_last_claim_date: string | null;
           updated_at: string;
@@ -433,6 +436,7 @@ export type Database = {
           out_sell_price: number;
           out_success_rate_pct: number;
           out_balance: number;
+          out_tuna_forge_energy: number;
           out_enhance_attempts: number;
           out_success_count: number;
           out_sold_count: number;
@@ -452,6 +456,7 @@ export type Database = {
           out_success_rate_pct: number;
           out_sell_price: number;
           out_new_balance: number;
+          out_tuna_forge_energy: number;
           out_enhance_attempts: number;
           out_success_count: number;
         }>;

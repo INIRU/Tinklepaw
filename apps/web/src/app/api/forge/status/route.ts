@@ -46,6 +46,7 @@ export async function GET() {
     sellPrice: row.out_sell_price,
     successRatePct: row.out_success_rate_pct,
     balance: row.out_balance,
+    tunaEnergy: row.out_tuna_forge_energy,
     enhanceAttempts: row.out_enhance_attempts,
     successCount: row.out_success_count,
     soldCount: row.out_sold_count,

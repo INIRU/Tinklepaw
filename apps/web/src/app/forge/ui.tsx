@@ -1,7 +1,7 @@
 'use client';
 
 import gsap from 'gsap';
-import { Coins, Hammer } from 'lucide-react';
+import { Coins, Hammer, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import ForgeScene from './ForgeScene';
@@ -14,6 +14,7 @@ type ForgeStatus = {
   sellPrice: number;
   successRatePct: number;
   balance: number;
+  tunaEnergy: number;
   enhanceAttempts: number;
   successCount: number;
   soldCount: number;
@@ -27,6 +28,7 @@ type EnhanceResponse = {
   successRatePct: number;
   sellPrice: number;
   balance: number;
+  tunaEnergy: number;
   enhanceAttempts: number;
   successCount: number;
 };
@@ -173,21 +175,24 @@ export default function ForgeClient() {
               sellPrice: result.sellPrice,
               successRatePct: result.successRatePct,
               balance: result.balance,
+              tunaEnergy: result.tunaEnergy,
               enhanceAttempts: result.enhanceAttempts,
               successCount: result.successCount,
             }
           : prev
       );
 
+      const costPrefix = result.cost === 0 ? '기운 사용! ' : '';
+
       if (result.result === 'success') {
         setPhase('success');
-        setLastMessage('성공! 참치캔 강화가 한 단계 올랐어.');
+        setLastMessage(`${costPrefix}성공! 참치캔 강화가 한 단계 올랐어.`);
       } else if (result.result === 'downgrade') {
         setPhase('downgrade');
-        setLastMessage(`하락! +${result.previousLevel} → +${result.level}`);
+        setLastMessage(`${costPrefix}하락! +${result.previousLevel} → +${result.level}`);
       } else {
         setPhase('destroy');
-        setLastMessage('대실패! 캔이 터져서 +0으로 초기화됐어.');
+        setLastMessage(`${costPrefix}대실패! 캔이 터져서 +0으로 초기화됐어.`);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '강화 중 오류가 발생했습니다.';
@@ -264,6 +269,10 @@ export default function ForgeClient() {
               <Coins className="h-3.5 w-3.5" />
               {status?.balance?.toLocaleString('ko-KR') ?? 0}p
             </span>
+            <span className="inline-flex items-center gap-1 rounded-lg border border-[color:color-mix(in_srgb,var(--fg)_16%,transparent)] bg-[color:color-mix(in_srgb,var(--card)_78%,transparent)] px-2 py-1 text-[11px] text-[color:var(--muted)]">
+              <Sparkles className="h-3.5 w-3.5" />
+              기운 {status?.tunaEnergy?.toLocaleString('ko-KR') ?? 0}
+            </span>
           </div>
 
           <div className="pointer-events-none mb-2 flex flex-col items-center gap-3">
@@ -314,7 +323,7 @@ export default function ForgeClient() {
             </div>
 
             <p className="pointer-events-auto text-[11px] font-medium text-[color:var(--muted)]">
-              강화 비용 {status?.enhanceCost?.toLocaleString('ko-KR') ?? 0}p · 판매 예상 {status?.sellPrice?.toLocaleString('ko-KR') ?? 0}p
+              강화 비용 {status?.enhanceCost?.toLocaleString('ko-KR') ?? 0}p · 판매 예상 {status?.sellPrice?.toLocaleString('ko-KR') ?? 0}p · 기운 1개로 무료 강화
             </p>
           </div>
         </div>

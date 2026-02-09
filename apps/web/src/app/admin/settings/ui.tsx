@@ -35,6 +35,8 @@ type AppConfig = {
   daily_chest_legendary_min_points: number;
   daily_chest_legendary_max_points: number;
   daily_chest_item_drop_rate_pct: number;
+  duplicate_ss_tuna_energy: number;
+  duplicate_sss_tuna_energy: number;
   lottery_jackpot_rate_pct: number;
   lottery_gold_rate_pct: number;
   lottery_silver_rate_pct: number;
@@ -1066,6 +1068,34 @@ export default function SettingsClient() {
               type="number"
               value={cfg.daily_chest_legendary_max_points}
               onChange={(e) => setCfg({ ...cfg, daily_chest_legendary_max_points: Number(e.target.value) })}
+            />
+          </label>
+        </div>
+      </section>
+
+      <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+        <h2 className="text-lg font-semibold">참치캔의 기운 설정</h2>
+        <p className="mt-2 text-xs muted">가챠 중복에서 SS/SSS 등급이 나올 때 지급할 강화 무료 재화 수량입니다.</p>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm">
+            SS 중복 기운 지급량
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              min={0}
+              value={cfg.duplicate_ss_tuna_energy}
+              onChange={(e) => setCfg({ ...cfg, duplicate_ss_tuna_energy: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            SSS 중복 기운 지급량
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              min={0}
+              value={cfg.duplicate_sss_tuna_energy}
+              onChange={(e) => setCfg({ ...cfg, duplicate_sss_tuna_energy: Number(e.target.value) })}
             />
           </label>
         </div>
