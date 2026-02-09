@@ -6,7 +6,7 @@ import { commands } from '../commands/index.js';
 import { handleError } from '../errorHandler.js';
 import { getBotContext } from '../context.js';
 import { getAppConfig } from '../services/config.js';
-import { forgetVoiceAutoRoom, getVoiceRoomTemplate, rememberVoiceAutoRoom, saveVoiceRoomTemplateFromChannel, setVoiceRoomLock } from '../services/voice-interface.js';
+import { forgetVoiceAutoRoom, getVoiceAutoRoom, getVoiceRoomTemplate, rememberVoiceAutoRoom, saveVoiceRoomTemplateFromChannel, setVoiceRoomLock } from '../services/voice-interface.js';
 import { isSpotifyQuery, normalizeMusicQuery, searchTracksWithFallback } from '../services/musicSearch.js';
 import { applyMusicFilterPreset, clearMusicState, formatDuration, getMusic, getNodeStatus, MUSIC_FILTER_LABELS, updateMusicSetupMessage, updateMusicState } from '../services/music.js';
 import type { MusicFilterPreset } from '../services/music.js';
@@ -85,6 +85,13 @@ const getMemberVoiceChannel = (interaction: Interaction) => {
 const hasVoiceInterfacePermission = (interaction: Interaction) => {
   const member = interaction.member as GuildMember | null;
   return Boolean(member?.permissions?.has(PermissionFlagsBits.ManageChannels));
+};
+
+const canManageVoiceInterfaceChannel = async (interaction: Interaction, channelId: string) => {
+  if (hasVoiceInterfacePermission(interaction)) return true;
+
+  const tracked = await getVoiceAutoRoom(channelId).catch(() => null);
+  return tracked?.ownerUserId === interaction.user.id;
 };
 
 type MusicControlLogStatus = 'requested' | 'success' | 'failed';
@@ -335,14 +342,15 @@ export function registerInteractionCreate(client: Client) {
           return;
         }
 
-        if (!hasVoiceInterfacePermission(interaction)) {
-          await interaction.reply({ content: '채널 관리 권한이 필요해요.' });
-          return;
-        }
-
         const channel = getMemberVoiceChannel(interaction);
         if (!channel) {
           await interaction.reply({ content: '먼저 대상 음성 채널에 접속해 주세요.' });
+          return;
+        }
+
+        const manageableByUser = await canManageVoiceInterfaceChannel(interaction, channel.id);
+        if (!manageableByUser) {
+          await interaction.reply({ content: '자신이 만든 통화방(또는 관리자 권한)이 있어야 변경할 수 있어요.' });
           return;
         }
 
@@ -562,11 +570,6 @@ export function registerInteractionCreate(client: Client) {
           return;
         }
 
-        if (!hasVoiceInterfacePermission(interaction)) {
-          await interaction.reply({ content: '채널 관리 권한이 필요해요.' });
-          return;
-        }
-
         const [, action, value] = interaction.customId.split(':');
 
         if (action === 'create') {
@@ -619,6 +622,12 @@ export function registerInteractionCreate(client: Client) {
             return;
           }
 
+          const manageableByUser = await canManageVoiceInterfaceChannel(interaction, channel.id);
+          if (!manageableByUser) {
+            await interaction.reply({ content: '자신이 만든 통화방(또는 관리자 권한)만 이름을 바꿀 수 있어요.' });
+            return;
+          }
+
           const modal = new ModalBuilder()
             .setCustomId('voice_if:rename_modal')
             .setTitle('통화방 이름 변경');
@@ -642,6 +651,12 @@ export function registerInteractionCreate(client: Client) {
             return;
           }
 
+          const manageableByUser = await canManageVoiceInterfaceChannel(interaction, target.id);
+          if (!manageableByUser) {
+            await interaction.reply({ content: '자신이 만든 통화방(또는 관리자 권한)만 초대 링크를 만들 수 있어요.' });
+            return;
+          }
+
           const invite = await target.createInvite({
             maxAge: 3600,
             maxUses: 0,
@@ -657,6 +672,12 @@ export function registerInteractionCreate(client: Client) {
         const target = getMemberVoiceChannel(interaction);
         if (!target) {
           await interaction.reply({ content: '먼저 대상 음성 채널에 접속해 주세요.' });
+          return;
+        }
+
+        const manageableByUser = await canManageVoiceInterfaceChannel(interaction, target.id);
+        if (!manageableByUser) {
+          await interaction.reply({ content: '자신이 만든 통화방(또는 관리자 권한)만 관리할 수 있어요.' });
           return;
         }
 

@@ -4,7 +4,6 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  PermissionFlagsBits,
   type ChatInputCommandInteraction,
 } from 'discord.js';
 
@@ -16,8 +15,7 @@ export const interfaceCommand: SlashCommand = {
   json: new SlashCommandBuilder()
     .setName('interface')
     .setNameLocalizations({ ko: '인터페이스' })
-    .setDescription('관리자용 통화방 인터페이스를 엽니다.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
+    .setDescription('통화방 인터페이스를 엽니다.')
     .toJSON(),
   async execute(interaction: ChatInputCommandInteraction) {
     const ctx = getBotContext();
@@ -30,19 +28,11 @@ export const interfaceCommand: SlashCommand = {
       return;
     }
 
-    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageChannels)) {
-      await interaction.reply({
-        content: '관리자(채널 관리 권한)만 사용할 수 있어요.',
-        ephemeral: true,
-      });
-      return;
-    }
-
     const embed = new EmbedBuilder()
       .setTitle('🎛️ VOICE INTERFACE')
       .setDescription([
-        '## 관리자 명령 안내',
-        '- `Manage Channels` 권한이 있는 관리자만 사용할 수 있어요.',
+        '## 통화방 인터페이스',
+        '- 누구나 사용할 수 있어요. *(자기 통화방 기준)*',
         '- 버튼은 즉시 실행됩니다. *(현재 접속한 음성채널 기준)*',
         '',
         '**빠른 가이드**',
