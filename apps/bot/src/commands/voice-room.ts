@@ -36,7 +36,7 @@ export const interfaceCommand: SlashCommand = {
         '- 버튼은 즉시 실행됩니다. *(현재 접속한 음성채널 기준)*',
         '',
         '**빠른 가이드**',
-        '- 🔤 이름 변경  |  1️⃣/2️⃣/♾️ 인원 제한',
+        '- 🔤 이름 변경  |  👥 인원수 조정 *(0=제한 해제, 1~99=인원 제한)*',
         '- 🔒 잠금  |  🔓 잠금해제  |  📨 초대링크',
         '- 🌐 리전 자동  |  🗑️ 채널 삭제',
       ].join('\n'))
@@ -49,14 +49,9 @@ export const interfaceCommand: SlashCommand = {
         .setEmoji('🔤')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
-        .setCustomId('voice_if:limit:1')
-        .setLabel('1명 제한')
-        .setEmoji('1️⃣')
-        .setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId('voice_if:limit:2')
-        .setLabel('2명 제한')
-        .setEmoji('2️⃣')
+        .setCustomId('voice_if:limit_open')
+        .setLabel('인원수 조정')
+        .setEmoji('👥')
         .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('voice_if:lock')
@@ -99,11 +94,6 @@ export const interfaceCommand: SlashCommand = {
     );
 
     const row3 = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId('voice_if:limit:0')
-        .setLabel('인원 해제')
-        .setEmoji('♾️')
-        .setStyle(ButtonStyle.Secondary),
       new ButtonBuilder()
         .setCustomId('voice_if:delete')
         .setLabel('삭제')

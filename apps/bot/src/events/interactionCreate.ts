@@ -372,6 +372,46 @@ export function registerInteractionCreate(client: Client) {
         return;
       }
 
+      if (interaction.customId === 'voice_if:limit_modal') {
+        if (!interaction.guild) {
+          await interaction.reply({ content: '서버에서만 사용할 수 있어요.', ephemeral: true });
+          return;
+        }
+
+        const channel = getMemberVoiceChannel(interaction);
+        if (!channel) {
+          await interaction.reply({ content: '먼저 대상 음성 채널에 접속해 주세요.', ephemeral: true });
+          return;
+        }
+
+        const manageableByUser = await canManageVoiceInterfaceChannel(interaction, channel.id);
+        if (!manageableByUser) {
+          await interaction.reply({ content: '자신이 만든 통화방(또는 관리자 권한)만 인원수를 바꿀 수 있어요.', ephemeral: true });
+          return;
+        }
+
+        if (!channel.manageable) {
+          await interaction.reply({ content: '이 채널은 봇이 수정할 수 없어요.', ephemeral: true });
+          return;
+        }
+
+        const rawLimit = interaction.fields.getTextInputValue('voice_if:new_limit').trim();
+        const nextLimit = Number(rawLimit);
+        if (!Number.isInteger(nextLimit) || nextLimit < 0 || nextLimit > 99) {
+          await interaction.reply({ content: '인원수는 0~99 사이의 정수만 입력할 수 있어요. (0=제한 해제)', ephemeral: true });
+          return;
+        }
+
+        await channel.setUserLimit(nextLimit, `voice interface modal limit by ${interaction.user.tag}`);
+        await saveVoiceRoomTemplateFromChannel(interaction.user.id, channel);
+
+        await interaction.reply({
+          content: nextLimit === 0 ? '인원 제한을 해제했어요.' : `인원 제한을 ${nextLimit}명으로 설정했어요.`,
+          ephemeral: true,
+        });
+        return;
+      }
+
       if (interaction.customId !== 'music_search_modal') return;
 
       if (!interaction.guildId) {
@@ -671,6 +711,37 @@ export function registerInteractionCreate(client: Client) {
             .setStyle(TextInputStyle.Short)
             .setRequired(true)
             .setValue(channel.name.slice(0, 90));
+
+          modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input));
+          await interaction.showModal(modal);
+          return;
+        }
+
+        if (action === 'limit_open') {
+          const channel = getMemberVoiceChannel(interaction);
+          if (!channel) {
+            await interaction.reply({ content: '먼저 인원수를 바꿀 음성 채널에 접속해 주세요.', ephemeral: true });
+            return;
+          }
+
+          const manageableByUser = await canManageVoiceInterfaceChannel(interaction, channel.id);
+          if (!manageableByUser) {
+            await interaction.reply({ content: '자신이 만든 통화방(또는 관리자 권한)만 인원수를 바꿀 수 있어요.', ephemeral: true });
+            return;
+          }
+
+          const currentLimit = channel.userLimit > 0 ? channel.userLimit : 0;
+          const modal = new ModalBuilder()
+            .setCustomId('voice_if:limit_modal')
+            .setTitle('통화방 인원수 조정');
+
+          const input = new TextInputBuilder()
+            .setCustomId('voice_if:new_limit')
+            .setLabel('인원수 (0~99, 0은 제한 해제)')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setPlaceholder('0')
+            .setValue(String(currentLimit));
 
           modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input));
           await interaction.showModal(modal);
