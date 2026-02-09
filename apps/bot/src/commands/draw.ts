@@ -29,6 +29,29 @@ type GachaDrawResult = {
   out_new_balance: number;
 };
 
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+const isRetryableDrawError = (message: string) => {
+  const m = message.toUpperCase();
+  return (
+    m.includes('PAID_COOLDOWN') ||
+    m.includes('DEADLOCK') ||
+    m.includes('SERIALIZ') ||
+    m.includes('LOCK TIMEOUT') ||
+    m.includes('STATEMENT TIMEOUT') ||
+    m.includes('TIMEOUT')
+  );
+};
+
+const retryDelayMs = (message: string, retry: number) => {
+  const m = message.toUpperCase();
+  if (m.includes('PAID_COOLDOWN')) {
+    return Math.min(1600, 280 + retry * 140);
+  }
+  return Math.min(900, 120 + retry * 90);
+};
+
 export async function triggerGachaUI(
   context: ChatInputCommandInteraction | Message,
 ) {
@@ -335,35 +358,49 @@ export async function triggerGachaUI(
         const errors: string[] = [];
 
         for (let i = 0; i < drawCount; i++) {
-          const { data, error } = await ctx.supabase.rpc('perform_gacha_draw', {
-            p_discord_user_id: userId,
-            p_pool_id: selectedPool.pool_id,
-          });
+          let retry = 0;
+          let completedCurrentDraw = false;
 
-          if (error) {
-            let errorMsg = error.message || error.code || '알 수 없는 오류';
-            if (errorMsg.includes('INSUFFICIENT_POINTS')) {
-              errorMsg = `포인트 부족`;
+          while (!completedCurrentDraw) {
+            const { data, error } = await ctx.supabase.rpc('perform_gacha_draw', {
+              p_discord_user_id: userId,
+              p_pool_id: selectedPool.pool_id,
+            });
+
+            if (error) {
+              let errorMsg = (error.message || error.code || '알 수 없는 오류').trim();
+
+              if (errorMsg.includes('INSUFFICIENT_POINTS')) {
+                errors.push(`${i + 1}회: 포인트 부족`);
+                completedCurrentDraw = true;
+                break;
+              }
+              if (errorMsg.includes('NO_ACTIVE_POOL')) {
+                errors.push(`${i + 1}회: 활성화된 뽑기 풀이 없습니다.`);
+                completedCurrentDraw = true;
+                break;
+              }
+
+              if (isRetryableDrawError(errorMsg) && retry < 10) {
+                retry += 1;
+                await sleep(retryDelayMs(errorMsg, retry));
+                continue;
+              }
+
               errors.push(`${i + 1}회: ${errorMsg}`);
+              completedCurrentDraw = true;
               break;
-            } else if (errorMsg.includes('NO_ACTIVE_POOL')) {
-              errorMsg = '활성화된 뽑기 풀이 없습니다.';
-              errors.push(`${i + 1}회: ${errorMsg}`);
-              break;
-            } else if (errorMsg.includes('PAID_COOLDOWN')) {
-              errorMsg = '쿨다운 중';
-              errors.push(`${i + 1}회: ${errorMsg}`);
-              break;
-            } else {
-              errors.push(`${i + 1}회: ${errorMsg}`);
-              continue;
             }
-          }
 
-          const rawRow = Array.isArray(data) ? data[0] : data;
-          const row = rawRow as unknown as GachaDrawResult | undefined;
+            const rawRow = Array.isArray(data) ? data[0] : data;
+            const row = rawRow as unknown as GachaDrawResult | undefined;
 
-          if (row) {
+            if (!row) {
+              errors.push(`${i + 1}회: EMPTY_RESULT`);
+              completedCurrentDraw = true;
+              break;
+            }
+
             let displayName = row.out_name;
             if (row.out_discord_role_id && guild) {
               try {
@@ -377,6 +414,7 @@ export async function triggerGachaUI(
                 );
               }
             }
+
             results.push({
               name: displayName,
               rarity: row.out_rarity,
@@ -385,6 +423,11 @@ export async function triggerGachaUI(
               reward_points: row.out_reward_points ?? row.reward_points ?? 0,
               is_variant: Boolean(row.out_is_variant),
             });
+            completedCurrentDraw = true;
+          }
+
+          if (errors.length > 0 && results.length < i + 1) {
+            break;
           }
         }
 
@@ -440,11 +483,13 @@ export async function triggerGachaUI(
         );
         const resultTitle = botConfig.gacha_result_title.replace(
           '{drawCount}',
-          drawCount.toString(),
+          results.length.toString(),
         );
         const resultEmbed = new EmbedBuilder()
           .setTitle(resultTitle)
-          .setDescription(resultLines.join('\n\n') || '결과 없음')
+          .setDescription(
+            `${resultLines.join('\n\n') || '결과 없음'}${errors.length > 0 ? `\n\n⚠️ 일부 회차 실패: ${errors.join(', ')}` : ''}`,
+          )
           .setImage('attachment://gacha-result.png')
           .setColor(parseColor(botConfig.gacha_embed_color));
 

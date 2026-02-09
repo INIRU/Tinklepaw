@@ -622,13 +622,27 @@ export default function DrawClient() {
         const data = (await res.json()) as {
           results?: DrawResult[];
           itemId?: string;
+          partial?: boolean;
+          warning?: string | null;
+          requestedAmount?: number;
+          completedAmount?: number;
         };
+        let completedCount = 0;
         if (data.results) {
           setDrawResults(data.results);
+          completedCount = data.results.length;
         } else if (data.itemId) {
           setDrawResults([data as unknown as DrawResult]);
+          completedCount = 1;
         } else {
           throw new Error('Invalid response format');
+        }
+
+        if (data.partial || completedCount < amount) {
+          toast.error(
+            data.warning ??
+              `일시 오류로 ${completedCount}/${amount}회만 완료되었습니다. 잠시 후 다시 시도해주세요.`,
+          );
         }
 
         fetchStatus();
