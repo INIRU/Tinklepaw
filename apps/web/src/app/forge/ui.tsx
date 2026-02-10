@@ -347,7 +347,6 @@ export default function ForgeClient() {
                   <p className={`font-black ${canSell ? 'text-[#86efac]' : 'text-[color:var(--muted)]'}`}>
                     {(status?.sellPrice ?? 0).toLocaleString('ko-KR')}p
                   </p>
-                  <p className="text-[10px] text-[color:var(--muted)]">누적 강화비 {totalPaidCost.toLocaleString('ko-KR')}p</p>
                   <p
                     className={`text-[10px] font-semibold ${
                       sellProfit > 0 ? 'text-[#86efac]' : sellProfit < 0 ? 'text-[#f87171]' : 'text-[color:var(--muted)]'
@@ -355,7 +354,6 @@ export default function ForgeClient() {
                   >
                     예상 손익 {formatSignedPoints(sellProfit)}
                   </p>
-                  {!canSell ? <p className="text-[10px] text-[color:var(--muted)]">0p일 때 판매 불가</p> : null}
                 </div>
               </div>
             </div>
