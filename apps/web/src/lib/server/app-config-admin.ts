@@ -52,6 +52,12 @@ export async function getOrInitAppConfig() {
       lottery_silver_rate_pct: 8,
       lottery_bronze_rate_pct: 20,
       lottery_ticket_cooldown_seconds: 60,
+      lottery_ticket_price: 500,
+      lottery_jackpot_base_points: 20000,
+      lottery_gold_payout_points: 5000,
+      lottery_silver_payout_points: 1500,
+      lottery_bronze_payout_points: 700,
+      lottery_jackpot_pool_points: 0,
     })
     .select('*')
     .single();

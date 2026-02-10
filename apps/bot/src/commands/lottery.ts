@@ -77,7 +77,7 @@ export const lotteryCommand: SlashCommand = {
   json: new SlashCommandBuilder()
     .setName('lottery')
     .setNameLocalizations({ ko: '복권' })
-    .setDescription('즉석 복권을 구매해서 당첨금을 노려봐! (1장 500p)')
+    .setDescription('즉석 복권을 구매해서 당첨금을 노려봐!')
     .toJSON(),
   async execute(interaction: ChatInputCommandInteraction) {
     const ctx = getBotContext();
@@ -153,6 +153,40 @@ export const lotteryCommand: SlashCommand = {
       }
 
       const tier = toLotteryTier(row.out_tier);
+      let jackpotBreakdownLine: string | null = null;
+
+      if (tier === 'jackpot') {
+        const { data: configRow, error: configError } = await ctx.supabase
+          .from('app_config')
+          .select('lottery_jackpot_base_points')
+          .eq('id', 1)
+          .maybeSingle();
+
+        let jackpotBasePoints = 20000;
+
+        if (configError) {
+          console.warn('[Lottery] failed to load jackpot breakdown:', configError);
+        } else {
+          jackpotBasePoints = Math.max(0, Number(configRow?.lottery_jackpot_base_points ?? 20000));
+        }
+
+        const jackpotAccumulatedPoints = Math.max(0, row.out_payout - jackpotBasePoints);
+        jackpotBreakdownLine = `🧾 잭팟 내역: **기본 ${jackpotBasePoints.toLocaleString('ko-KR')} p + 누적금 ${jackpotAccumulatedPoints.toLocaleString('ko-KR')} p**`;
+      }
+
+      const resultLines = [
+        `🎟️ 티켓 번호: **#${row.out_ticket_number.toString().padStart(6, '0')}**`,
+        `🏷️ 결과 등급: **${TIER_LABELS[tier]}**`,
+        `💸 구매 비용: **-${row.out_ticket_price.toLocaleString('ko-KR')} p**`,
+        `💰 당첨금: **+${row.out_payout.toLocaleString('ko-KR')} p**`
+      ];
+
+      if (jackpotBreakdownLine) {
+        resultLines.push(jackpotBreakdownLine);
+      }
+
+      resultLines.push(`📈 순손익: **${signedP(row.out_net_change)}**`);
+
       const attachment = await generateLotteryTicketImage({
         tier,
         ticketNumber: row.out_ticket_number,
@@ -164,15 +198,7 @@ export const lotteryCommand: SlashCommand = {
       const resultEmbed = new EmbedBuilder()
         .setColor(TIER_COLORS[tier])
         .setTitle(TIER_TITLES[tier])
-        .setDescription(
-          [
-            `🎟️ 티켓 번호: **#${row.out_ticket_number.toString().padStart(6, '0')}**`,
-            `🏷️ 결과 등급: **${TIER_LABELS[tier]}**`,
-            `💸 구매 비용: **-${row.out_ticket_price.toLocaleString('ko-KR')} p**`,
-            `💰 당첨금: **+${row.out_payout.toLocaleString('ko-KR')} p**`,
-            `📈 순손익: **${signedP(row.out_net_change)}**`
-          ].join('\n')
-        )
+        .setDescription(resultLines.join('\n'))
         .setImage('attachment://lottery-result.png')
         .setFooter({ text: '다시 도전하려면 /lottery 를 한 번 더 입력해줘!' });
 

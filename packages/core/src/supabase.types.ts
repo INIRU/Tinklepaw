@@ -74,6 +74,12 @@ export type Database = {
           lottery_silver_rate_pct: number;
           lottery_bronze_rate_pct: number;
           lottery_ticket_cooldown_seconds: number;
+          lottery_ticket_price: number;
+          lottery_jackpot_base_points: number;
+          lottery_gold_payout_points: number;
+          lottery_silver_payout_points: number;
+          lottery_bronze_payout_points: number;
+          lottery_jackpot_pool_points: number;
           server_intro: string | null;
           banner_image_url: string | null;
           icon_image_url: string | null;

@@ -44,6 +44,12 @@ type AppConfig = {
   lottery_silver_rate_pct: number;
   lottery_bronze_rate_pct: number;
   lottery_ticket_cooldown_seconds: number;
+  lottery_ticket_price: number;
+  lottery_jackpot_base_points: number;
+  lottery_gold_payout_points: number;
+  lottery_silver_payout_points: number;
+  lottery_bronze_payout_points: number;
+  lottery_jackpot_pool_points: number;
 };
 
 type DiscordChannel = { id: string; name: string; type: number; parent_id?: string | null };
@@ -1164,9 +1170,72 @@ export default function SettingsClient() {
 
       <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
         <h2 className="text-lg font-semibold">복권 설정</h2>
-        <p className="mt-2 text-xs muted">/복권 확률과 쿨타임(초)을 조절합니다. 복권 가격은 500p 고정입니다.</p>
+        <p className="mt-2 text-xs muted">
+          /복권 확률, 티켓 가격, 등급별 보상, 쿨타임을 조절합니다. 꽝이 나오면 티켓 가격만큼 잭팟 풀에 누적되고, 잭팟 당첨 시 기본 잭팟 보상 +
+          잭팟 풀 누적치가 지급됩니다.
+        </p>
 
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm">
+            복권 가격(p)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              min={1}
+              value={cfg.lottery_ticket_price}
+              onChange={(e) => setCfg({ ...cfg, lottery_ticket_price: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            잭팟 기본 보상(p)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              min={0}
+              value={cfg.lottery_jackpot_base_points}
+              onChange={(e) => setCfg({ ...cfg, lottery_jackpot_base_points: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            골드 보상(p)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              min={0}
+              value={cfg.lottery_gold_payout_points}
+              onChange={(e) => setCfg({ ...cfg, lottery_gold_payout_points: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            실버 보상(p)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              min={0}
+              value={cfg.lottery_silver_payout_points}
+              onChange={(e) => setCfg({ ...cfg, lottery_silver_payout_points: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            브론즈 보상(p)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              min={0}
+              value={cfg.lottery_bronze_payout_points}
+              onChange={(e) => setCfg({ ...cfg, lottery_bronze_payout_points: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            현재 잭팟 풀(p)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              min={0}
+              value={cfg.lottery_jackpot_pool_points}
+              onChange={(e) => setCfg({ ...cfg, lottery_jackpot_pool_points: Number(e.target.value) })}
+            />
+          </label>
           <label className="text-sm">
             잭팟 확률(%)
             <input
