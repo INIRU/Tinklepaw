@@ -1136,7 +1136,7 @@ export default function SettingsClient() {
 
       <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
         <h2 className="text-lg font-semibold">참치캔의 기운 설정</h2>
-        <p className="mt-2 text-xs muted">가챠 중복에서 SS/SSS 등급이 나올 때 지급할 강화 무료 재화 수량입니다.</p>
+        <p className="mt-2 text-xs muted">가챠 중복에서 SS/SSS 등급이 나올 때 지급할 강화 기운 수량입니다. 기운 3개를 소모하면 강화 비용이 50% 할인됩니다.</p>
 
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <label className="text-sm">

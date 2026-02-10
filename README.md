@@ -39,6 +39,7 @@ NOTIFY pgrst, 'reload schema';
 Notes:
 - `005_seed_dev.sql` creates placeholder items/pool; you should replace them with real Discord role mappings in `items.discord_role_id`.
 - Activity rewards require `app_config` row with `id=1` and `reward_channels` whitelist entries.
+- Forge maintenance note (2026-02-10): economy analytics now map `sword_enhance_spend` and `sword_sell_reward` into forge categories, and forge energy copy reflects the current rule (`3 energy => 50% enhance-cost discount`).
 
 ## Dev
 - Web: `npm run dev:web`

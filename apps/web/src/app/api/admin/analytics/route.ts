@@ -174,6 +174,8 @@ const ECONOMY_KIND_CATEGORY_MAP: Record<string, string> = {
   gacha_reward: 'gacha_reward',
   duplicate_refund: 'refund',
   gacha_spend: 'gacha_spend',
+  sword_enhance_spend: 'forge_spend',
+  sword_sell_reward: 'forge_reward',
   sword_forge_enhance: 'forge_spend',
   sword_forge_sell: 'forge_reward',
   admin_adjust: 'admin_adjustment',
