@@ -28,6 +28,17 @@ const retryDelayMs = (message: string, retry: number) => {
   return Math.min(900, 120 + retry * 90);
 };
 
+const normalizeDrawAmount = (rawAmount: unknown) => {
+  const parsed = Number(rawAmount);
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.max(1, Math.min(10, Math.trunc(parsed)));
+};
+
+const isKnownClientDrawError = (message: string) => {
+  const m = message.toUpperCase();
+  return m.includes('INSUFFICIENT_POINTS') || m.includes('NO_ACTIVE_POOL');
+};
+
 export async function POST(req: Request) {
   const session = await auth();
   const userId = session?.user?.id;
@@ -35,13 +46,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
   }
 
-  const member = await fetchGuildMember({ userId });
+  let member = null;
+  try {
+    member = await fetchGuildMember({ userId });
+  } catch (error) {
+    const requestId = crypto.randomUUID();
+    console.error(`[GachaDraw] guild check failed [${requestId}]`, error);
+    return NextResponse.json({ error: 'Service unavailable', code: 'DISCORD_API_ERROR', requestId }, { status: 503 });
+  }
+
   if (!member) {
     return NextResponse.json({ error: 'NOT_IN_GUILD' }, { status: 403 });
   }
 
   const body = (await req.json().catch(() => null)) as { poolId?: string; amount?: number } | null;
-  const amount = Math.max(1, Math.min(10, body?.amount ?? 1)); // 1~10
+  const amount = normalizeDrawAmount(body?.amount);
 
   const supabase = createSupabaseAdminClient();
   const results = [];
@@ -71,7 +90,7 @@ export async function POST(req: Request) {
             continue;
           }
 
-          partialError = `${i + 1}회차 실패: ${errorMsg}`;
+          partialError = `${i + 1}회차 실패: TEMPORARY_DRAW_ERROR`;
           completedCurrentDraw = true;
           break;
         }
@@ -92,7 +111,7 @@ export async function POST(req: Request) {
         
         const row = (Array.isArray(data) ? data[0] : data) as unknown as GachaDrawResult | null;
         if (!row) {
-          partialError = `${i + 1}회차 실패: EMPTY_RESULT`;
+          partialError = `${i + 1}회차 실패: DRAW_RESULT_MISSING`;
           completedCurrentDraw = true;
           break;
         }
@@ -112,8 +131,12 @@ export async function POST(req: Request) {
     }
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Failed to draw';
-    console.error('[GachaDraw] POST failed:', error);
-    return NextResponse.json({ error: msg }, { status: 400 });
+    if (isKnownClientDrawError(msg)) {
+      return NextResponse.json({ error: msg }, { status: 400 });
+    }
+    const requestId = crypto.randomUUID();
+    console.error(`[GachaDraw] POST failed [${requestId}]`, error);
+    return NextResponse.json({ error: 'DRAW_FAILED', code: 'INTERNAL_DRAW_ERROR', requestId }, { status: 500 });
   }
 
   if (results.length === 0) {

@@ -26,8 +26,9 @@ export async function GET() {
     .maybeSingle();
 
   if (error) {
-    console.error('Bot config load error:', error);
-    return NextResponse.json({ error: error.message, details: error }, { status: 500 });
+    const requestId = crypto.randomUUID();
+    console.error(`[Bot config load error][${requestId}]`, error);
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR', code: 'APP_CONFIG_LOAD_FAILED', requestId }, { status: 500 });
   }
   
   // Check if config exists, if not create default
@@ -133,8 +134,9 @@ export async function PUT(req: Request) {
     .single();
 
   if (error) {
-    console.error('Bot config update error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const requestId = crypto.randomUUID();
+    console.error(`[Bot config update error][${requestId}]`, error);
+    return NextResponse.json({ error: 'INTERNAL_SERVER_ERROR', code: 'APP_CONFIG_UPDATE_FAILED', requestId }, { status: 500 });
   }
   return NextResponse.json(data);
 }

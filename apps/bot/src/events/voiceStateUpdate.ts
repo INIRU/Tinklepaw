@@ -5,6 +5,7 @@ import { getAppConfig } from '../services/config.js';
 import {
   forgetVoiceAutoRoom,
   getVoiceAutoRoom,
+  getLatestVoiceAutoRoomByOwner,
   getVoiceRoomTemplate,
   rememberVoiceAutoRoom,
   saveVoiceRoomTemplateFromChannel,
@@ -50,6 +51,16 @@ export function registerVoiceStateUpdate(client: Client) {
       try {
         const triggerChannel = newState.channel;
         if (!triggerChannel || triggerChannel.type !== ChannelType.GuildVoice) return;
+
+        const existing = await getLatestVoiceAutoRoomByOwner(userId).catch(() => null);
+        if (existing) {
+          const existingChannel = await guild.channels.fetch(existing.channelId).catch(() => null);
+          if (existingChannel && existingChannel.type === ChannelType.GuildVoice) {
+            await member.voice.setChannel(existingChannel).catch(() => null);
+            return;
+          }
+          await forgetVoiceAutoRoom(existing.channelId).catch(() => null);
+        }
 
         const displayName = member.displayName || member.user.username;
         const template = await getVoiceRoomTemplate(userId, `${displayName}의 통화방`);

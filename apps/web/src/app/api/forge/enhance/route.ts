@@ -18,8 +18,9 @@ export async function POST() {
   try {
     member = await fetchGuildMember({ userId });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Guild check failed';
-    return NextResponse.json({ error: message, code: 'DISCORD_API_ERROR' }, { status: 503 });
+    const requestId = crypto.randomUUID();
+    console.error(`[ForgeEnhance] guild check failed [${requestId}]`, error);
+    return NextResponse.json({ error: 'Service unavailable', code: 'DISCORD_API_ERROR', requestId }, { status: 503 });
   }
 
   if (!member) {
@@ -32,7 +33,9 @@ export async function POST() {
   });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    const requestId = crypto.randomUUID();
+    console.error(`[ForgeEnhance] rpc failed [${requestId}]`, error);
+    return NextResponse.json({ error: 'Enhancement failed', code: 'FORGE_ENHANCE_RPC_FAILED', requestId }, { status: 500 });
   }
 
   const row = Array.isArray(data) ? data[0] : null;

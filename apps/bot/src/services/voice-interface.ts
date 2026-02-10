@@ -111,6 +111,29 @@ export async function getVoiceAutoRoom(channelId: string): Promise<{ ownerUserId
   };
 }
 
+export async function getLatestVoiceAutoRoomByOwner(ownerUserId: string): Promise<{ channelId: string; categoryId: string | null } | null> {
+  const ctx = getBotContext();
+
+  const { data, error } = await ctx.supabase
+    .from('voice_auto_rooms')
+    .select('channel_id, category_id')
+    .eq('owner_discord_user_id', ownerUserId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) return null;
+
+  return {
+    channelId: data.channel_id,
+    categoryId: data.category_id,
+  };
+}
+
 export async function forgetVoiceAutoRoom(channelId: string): Promise<void> {
   const ctx = getBotContext();
   const { error } = await ctx.supabase.from('voice_auto_rooms').delete().eq('channel_id', channelId);
