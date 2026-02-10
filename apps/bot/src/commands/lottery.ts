@@ -154,24 +154,29 @@ export const lotteryCommand: SlashCommand = {
 
       const tier = toLotteryTier(row.out_tier);
       let jackpotBreakdownLine: string | null = null;
+      let jackpotPoolLine: string | null = null;
+
+      const { data: configRow, error: configError } = await ctx.supabase
+        .from('app_config')
+        .select('lottery_jackpot_base_points, lottery_jackpot_pool_points')
+        .eq('id', 1)
+        .maybeSingle();
+
+      let jackpotBasePoints = 20000;
+      let jackpotPoolPoints = 0;
+
+      if (configError) {
+        console.warn('[Lottery] failed to load jackpot config:', configError);
+      } else {
+        jackpotBasePoints = Math.max(0, Number(configRow?.lottery_jackpot_base_points ?? 20000));
+        jackpotPoolPoints = Math.max(0, Number(configRow?.lottery_jackpot_pool_points ?? 0));
+      }
 
       if (tier === 'jackpot') {
-        const { data: configRow, error: configError } = await ctx.supabase
-          .from('app_config')
-          .select('lottery_jackpot_base_points')
-          .eq('id', 1)
-          .maybeSingle();
-
-        let jackpotBasePoints = 20000;
-
-        if (configError) {
-          console.warn('[Lottery] failed to load jackpot breakdown:', configError);
-        } else {
-          jackpotBasePoints = Math.max(0, Number(configRow?.lottery_jackpot_base_points ?? 20000));
-        }
-
         const jackpotAccumulatedPoints = Math.max(0, row.out_payout - jackpotBasePoints);
         jackpotBreakdownLine = `🧾 잭팟 내역: **기본 ${jackpotBasePoints.toLocaleString('ko-KR')} p + 누적금 ${jackpotAccumulatedPoints.toLocaleString('ko-KR')} p**`;
+      } else {
+        jackpotPoolLine = `🏦 현재 잭팟 누적금: **${jackpotPoolPoints.toLocaleString('ko-KR')} p**`;
       }
 
       const resultLines = [
@@ -183,6 +188,10 @@ export const lotteryCommand: SlashCommand = {
 
       if (jackpotBreakdownLine) {
         resultLines.push(jackpotBreakdownLine);
+      }
+
+      if (jackpotPoolLine) {
+        resultLines.push(jackpotPoolLine);
       }
 
       resultLines.push(`📈 순손익: **${signedP(row.out_net_change)}**`);
