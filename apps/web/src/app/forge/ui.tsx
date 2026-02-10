@@ -63,7 +63,7 @@ export default function ForgeClient() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<ForgePhase>('idle');
-  const [lastMessage, setLastMessage] = useState('강화하기를 눌러 참치캔에 에너지를 모아봐.');
+  const [lastMessage, setLastMessage] = useState('강화하기를 눌러 참치캔을 달궈봐. 기운 3개면 50% 할인!');
   const uiRef = useRef<HTMLDivElement | null>(null);
   const resetTimerRef = useRef<number | null>(null);
 
@@ -80,6 +80,9 @@ export default function ForgeClient() {
       destroy,
     };
   }, [status?.level, status?.successRatePct]);
+
+  const discountReady = (status?.tunaEnergy ?? 0) >= 3;
+  const effectiveEnhanceCost = status ? (discountReady ? Math.floor(status.enhanceCost * 0.5) : status.enhanceCost) : 0;
 
   const clearResetTimer = () => {
     if (resetTimerRef.current !== null) {
@@ -131,6 +134,7 @@ export default function ForgeClient() {
   const handleEnhance = async () => {
     if (!status || busy) return;
 
+    const previousEnhanceCost = status.enhanceCost;
     clearResetTimer();
     setBusy(true);
     setPhase('charging');
@@ -156,7 +160,12 @@ export default function ForgeClient() {
         setPhase('error');
 
         if (code === 'INSUFFICIENT_POINTS') {
-          setLastMessage('포인트가 부족해서 강화에 실패했어.');
+          const requiredCost = typeof body?.cost === 'number' ? body.cost : null;
+          setLastMessage(
+            requiredCost !== null
+              ? `포인트가 부족해. ${requiredCost.toLocaleString('ko-KR')}p 필요해.`
+              : '포인트가 부족해서 강화에 실패했어.'
+          );
         } else {
           setLastMessage('강화 중 오류가 발생했어.');
         }
@@ -182,17 +191,19 @@ export default function ForgeClient() {
           : prev
       );
 
-      const costPrefix = result.cost === 0 ? '기운 사용! ' : '';
+      const usedEnergyDiscount = result.cost < previousEnhanceCost;
+      const costPrefix = usedEnergyDiscount ? '기운 할인! ' : '';
+      const paidCostText = `${result.cost.toLocaleString('ko-KR')}p 소모`;
 
       if (result.result === 'success') {
         setPhase('success');
-        setLastMessage(`${costPrefix}성공! 참치캔 강화가 한 단계 올랐어.`);
+        setLastMessage(`${costPrefix}성공! 참치캔 강화가 한 단계 올랐어. (${paidCostText})`);
       } else if (result.result === 'downgrade') {
         setPhase('downgrade');
-        setLastMessage(`${costPrefix}하락! +${result.previousLevel} → +${result.level}`);
+        setLastMessage(`${costPrefix}하락! +${result.previousLevel} → +${result.level} (${paidCostText})`);
       } else {
         setPhase('destroy');
-        setLastMessage(`${costPrefix}대실패! 캔이 터져서 +0으로 초기화됐어.`);
+        setLastMessage(`${costPrefix}대실패! 캔이 터져서 +0으로 초기화됐어. (${paidCostText})`);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '강화 중 오류가 발생했습니다.';
@@ -273,6 +284,15 @@ export default function ForgeClient() {
               <Sparkles className="h-3.5 w-3.5" />
               기운 {status?.tunaEnergy?.toLocaleString('ko-KR') ?? 0}
             </span>
+            <span
+              className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] ${
+                discountReady
+                  ? 'border-[color:color-mix(in_srgb,#facc15_38%,var(--border))] bg-[color:color-mix(in_srgb,#facc15_14%,var(--card))] text-[#facc15]'
+                  : 'border-[color:color-mix(in_srgb,var(--fg)_16%,transparent)] bg-[color:color-mix(in_srgb,var(--card)_78%,transparent)] text-[color:var(--muted)]'
+              }`}
+            >
+              {discountReady ? '50% 할인 준비' : '기운 3개 필요'}
+            </span>
           </div>
 
           <div className="pointer-events-none mb-2 flex flex-col items-center gap-3">
@@ -307,7 +327,7 @@ export default function ForgeClient() {
                 className="inline-flex h-11 min-w-[134px] items-center justify-center gap-1 overflow-hidden rounded-xl border border-[color:color-mix(in_srgb,var(--accent-pink)_30%,var(--border))] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--accent-pink-2)_20%,var(--card)),color-mix(in_srgb,var(--accent-lavender)_16%,var(--card)))] bg-clip-padding px-4 py-2.5 text-sm font-black leading-none text-[color:var(--fg)] shadow-[0_8px_18px_rgba(12,16,28,0.14)] transition-[filter,border-color] duration-150 ease-out hover:brightness-[1.02] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-55"
               >
                 <Hammer className="h-4 w-4" />
-                {busy ? '강화 중...' : '강화하기'}
+                {busy ? '강화 중...' : discountReady ? '강화하기 -50%' : '강화하기'}
               </button>
 
               <button
@@ -323,7 +343,9 @@ export default function ForgeClient() {
             </div>
 
             <p className="pointer-events-auto text-[11px] font-medium text-[color:var(--muted)]">
-              강화 비용 {status?.enhanceCost?.toLocaleString('ko-KR') ?? 0}p · 판매 예상 {status?.sellPrice?.toLocaleString('ko-KR') ?? 0}p · 기운 1개로 무료 강화
+              강화 비용 {effectiveEnhanceCost.toLocaleString('ko-KR')}p
+              {discountReady ? ' (기운 3개 할인 적용)' : ''} · 기본 비용 {status?.enhanceCost?.toLocaleString('ko-KR') ?? 0}p · 판매 예상{' '}
+              {status?.sellPrice?.toLocaleString('ko-KR') ?? 0}p
             </p>
           </div>
         </div>
