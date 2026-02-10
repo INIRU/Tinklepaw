@@ -47,6 +47,8 @@ export async function GET() {
     level: row.out_level,
     enhanceCost: row.out_enhance_cost,
     sellPrice: row.out_sell_price,
+    totalPaidCost: row.out_total_paid_cost,
+    sellProfit: row.out_sell_price - row.out_total_paid_cost,
     successRatePct: row.out_success_rate_pct,
     balance: row.out_balance,
     tunaEnergy: row.out_tuna_forge_energy,

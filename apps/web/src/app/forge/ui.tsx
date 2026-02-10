@@ -12,6 +12,8 @@ type ForgeStatus = {
   level: number;
   enhanceCost: number;
   sellPrice: number;
+  totalPaidCost: number;
+  sellProfit: number;
   successRatePct: number;
   balance: number;
   tunaEnergy: number;
@@ -58,6 +60,8 @@ const computeEnhanceCost = (level: number) => {
   return baseCost + extraLevel * 180 + extraLevel * extraLevel * 26;
 };
 
+const formatSignedPoints = (value: number) => `${value >= 0 ? '+' : ''}${value.toLocaleString('ko-KR')}p`;
+
 export default function ForgeClient() {
   const [status, setStatus] = useState<ForgeStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -83,6 +87,8 @@ export default function ForgeClient() {
 
   const discountReady = (status?.tunaEnergy ?? 0) >= 3;
   const effectiveEnhanceCost = status ? (discountReady ? Math.floor(status.enhanceCost * 0.5) : status.enhanceCost) : 0;
+  const totalPaidCost = Math.max(0, status?.totalPaidCost ?? 0);
+  const sellProfit = (status?.sellProfit ?? (status?.sellPrice ?? 0) - totalPaidCost) ?? 0;
   const canSell = Boolean(status && status.level > 0 && status.sellPrice > 0);
   const sellBlockedByZeroPrice = Boolean(status && status.level > 0 && status.sellPrice <= 0);
 
@@ -181,6 +187,14 @@ export default function ForgeClient() {
         prev
           ? {
               ...prev,
+              ...(() => {
+                const nextTotalPaidCost = prev.totalPaidCost + Math.max(0, result.cost);
+                const nextSellProfit = result.sellPrice - nextTotalPaidCost;
+                return {
+                  totalPaidCost: nextTotalPaidCost,
+                  sellProfit: nextSellProfit,
+                };
+              })(),
               level: result.level,
               enhanceCost: computeEnhanceCost(result.level),
               sellPrice: result.sellPrice,
@@ -244,6 +258,7 @@ export default function ForgeClient() {
       }
 
       const result = body as SellResponse;
+      const realizedProfit = result.payout - Math.max(0, status.totalPaidCost ?? 0);
       setStatus((prev) =>
         prev
           ? {
@@ -251,6 +266,8 @@ export default function ForgeClient() {
               level: result.level,
               enhanceCost: result.nextEnhanceCost,
               sellPrice: 0,
+              totalPaidCost: 0,
+              sellProfit: 0,
               successRatePct: 94,
               balance: result.balance,
               soldCount: result.sellCount,
@@ -258,7 +275,7 @@ export default function ForgeClient() {
           : prev
       );
 
-      setLastMessage(`판매 완료! +${result.payout.toLocaleString('ko-KR')}p 획득`);
+      setLastMessage(`판매 완료! +${result.payout.toLocaleString('ko-KR')}p 획득 (손익 ${formatSignedPoints(realizedProfit)})`);
     } catch (error) {
       const message = error instanceof Error ? error.message : '판매 중 오류가 발생했습니다.';
       setLastMessage(message);
@@ -329,6 +346,14 @@ export default function ForgeClient() {
                   <p className="text-[10px] text-[color:var(--muted)]">판매 예상 금액</p>
                   <p className={`font-black ${canSell ? 'text-[#86efac]' : 'text-[color:var(--muted)]'}`}>
                     {(status?.sellPrice ?? 0).toLocaleString('ko-KR')}p
+                  </p>
+                  <p className="text-[10px] text-[color:var(--muted)]">누적 강화비 {totalPaidCost.toLocaleString('ko-KR')}p</p>
+                  <p
+                    className={`text-[10px] font-semibold ${
+                      sellProfit > 0 ? 'text-[#86efac]' : sellProfit < 0 ? 'text-[#f87171]' : 'text-[color:var(--muted)]'
+                    }`}
+                  >
+                    예상 손익 {formatSignedPoints(sellProfit)}
                   </p>
                   {!canSell ? <p className="text-[10px] text-[color:var(--muted)]">0p일 때 판매 불가</p> : null}
                 </div>

@@ -472,6 +472,7 @@ export type Database = {
           out_level: number;
           out_enhance_cost: number;
           out_sell_price: number;
+          out_total_paid_cost: number;
           out_success_rate_pct: number;
           out_balance: number;
           out_tuna_forge_energy: number;
