@@ -76,14 +76,28 @@ export async function saveVoiceRoomTemplateFromChannel(userId: string, channel: 
 export async function rememberVoiceAutoRoom(channelId: string, ownerUserId: string, categoryId: string | null): Promise<void> {
   const ctx = getBotContext();
 
-  const { error } = await ctx.supabase.from('voice_auto_rooms').upsert(
-    {
-      channel_id: channelId,
-      owner_discord_user_id: ownerUserId,
-      category_id: categoryId,
-    },
-    { onConflict: 'channel_id' },
-  );
+  const payload = {
+    channel_id: channelId,
+    owner_discord_user_id: ownerUserId,
+    category_id: categoryId,
+    created_at: new Date().toISOString(),
+  };
+
+  let { error } = await ctx.supabase
+    .from('voice_auto_rooms')
+    .upsert(payload, { onConflict: 'owner_discord_user_id' });
+
+  if (error && /no unique or exclusion constraint matching the ON CONFLICT specification/i.test(error.message ?? '')) {
+    await ctx.supabase
+      .from('voice_auto_rooms')
+      .delete()
+      .eq('owner_discord_user_id', ownerUserId)
+      .neq('channel_id', channelId);
+
+    ({ error } = await ctx.supabase
+      .from('voice_auto_rooms')
+      .upsert(payload, { onConflict: 'channel_id' }));
+  }
 
   if (error) {
     throw error;

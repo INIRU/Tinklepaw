@@ -1,4 +1,4 @@
-import { ChannelType, type Client, type VoiceChannel } from 'discord.js';
+import { ChannelType, type Client, type Guild, type VoiceChannel } from 'discord.js';
 
 import { getBotContext } from '../context.js';
 import { getAppConfig } from '../services/config.js';
@@ -13,8 +13,64 @@ import {
 } from '../services/voice-interface.js';
 
 const activeAutoCreateUsers = new Set<string>();
+const AUTO_ROOM_IDLE_TIMEOUT_MS = 120_000;
+const AUTO_ROOM_JANITOR_INTERVAL_MS = 60_000;
+
+async function cleanupTrackedVoiceChannel(guild: Guild, channelId: string, ownerUserId: string, reason: string) {
+  const channel = await guild.channels.fetch(channelId).catch(() => null);
+  if (!channel) {
+    await forgetVoiceAutoRoom(channelId).catch(() => null);
+    return;
+  }
+
+  if (channel.type !== ChannelType.GuildVoice) {
+    await forgetVoiceAutoRoom(channelId).catch(() => null);
+    return;
+  }
+
+  const nonBotMembers = channel.members.filter((m) => !m.user.bot);
+  if (nonBotMembers.size > 0) {
+    return;
+  }
+
+  await saveVoiceRoomTemplateFromChannel(ownerUserId, channel).catch(() => null);
+  const deleted = await channel.delete(reason).then(() => true).catch(() => false);
+  if (deleted) {
+    await forgetVoiceAutoRoom(channelId).catch(() => null);
+  }
+}
+
+async function runVoiceAutoRoomJanitor(client: Client) {
+  const ctx = getBotContext();
+  const guild = client.guilds.cache.get(ctx.env.NYARU_GUILD_ID) ?? await client.guilds.fetch(ctx.env.NYARU_GUILD_ID).catch(() => null);
+  if (!guild) return;
+
+  const cutoffIso = new Date(Date.now() - AUTO_ROOM_IDLE_TIMEOUT_MS).toISOString();
+  const { data, error } = await ctx.supabase
+    .from('voice_auto_rooms')
+    .select('channel_id, owner_discord_user_id')
+    .lte('created_at', cutoffIso)
+    .limit(200);
+
+  if (error) {
+    console.warn('[voiceStateUpdate] janitor query failed:', error);
+    return;
+  }
+
+  for (const row of data ?? []) {
+    await cleanupTrackedVoiceChannel(guild, row.channel_id, row.owner_discord_user_id, 'voice auto room idle janitor cleanup');
+  }
+}
 
 export function registerVoiceStateUpdate(client: Client) {
+  client.once('ready', () => {
+    void runVoiceAutoRoomJanitor(client);
+    const timer = setInterval(() => {
+      void runVoiceAutoRoomJanitor(client);
+    }, AUTO_ROOM_JANITOR_INTERVAL_MS);
+    timer.unref?.();
+  });
+
   client.on('voiceStateUpdate', async (oldState, newState) => {
     try {
       const ctx = getBotContext();
@@ -31,9 +87,7 @@ export function registerVoiceStateUpdate(client: Client) {
         if (tracked) {
           const nonBotMembers = leftChannel.members.filter((m) => !m.user.bot);
           if (nonBotMembers.size === 0) {
-            await saveVoiceRoomTemplateFromChannel(tracked.ownerUserId, leftChannel as VoiceChannel);
-            await forgetVoiceAutoRoom(leftChannel.id);
-            await leftChannel.delete('auto voice room empty cleanup').catch(() => null);
+            await cleanupTrackedVoiceChannel(guild, leftChannel.id, tracked.ownerUserId, 'auto voice room empty cleanup');
           }
         }
       }
