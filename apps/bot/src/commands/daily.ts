@@ -88,8 +88,9 @@ export const dailyCommand: SlashCommand = {
       });
 
       if (error) {
+        console.error('[DailyChest] claim rpc failed:', error);
         await interaction.editReply({
-          content: `일일 보물상자를 열지 못했어요. 잠시 후 다시 시도해줘. (${error.message})`
+          content: '일일 보물상자를 열지 못했어요. 잠시 후 다시 시도해줘.'
         });
         return;
       }

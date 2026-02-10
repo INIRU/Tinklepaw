@@ -387,7 +387,11 @@ export async function triggerGachaUI(
                 continue;
               }
 
-              errors.push(`${i + 1}회: ${errorMsg}`);
+              if (errorMsg.includes('PAID_COOLDOWN')) {
+                errors.push(`${i + 1}회: 쿨다운 중`);
+              } else {
+                errors.push(`${i + 1}회: 일시 오류`);
+              }
               completedCurrentDraw = true;
               break;
             }
@@ -396,7 +400,7 @@ export async function triggerGachaUI(
             const row = rawRow as unknown as GachaDrawResult | undefined;
 
             if (!row) {
-              errors.push(`${i + 1}회: EMPTY_RESULT`);
+              errors.push(`${i + 1}회: 결과 누락`);
               completedCurrentDraw = true;
               break;
             }

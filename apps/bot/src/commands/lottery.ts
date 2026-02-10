@@ -98,8 +98,9 @@ export const lotteryCommand: SlashCommand = {
       });
 
       if (error) {
+        console.error('[Lottery] play rpc failed:', error);
         await interaction.editReply({
-          content: `복권 처리 중 오류가 발생했어. 잠시 후 다시 시도해줘. (${error.message})`
+          content: '복권 처리 중 오류가 발생했어. 잠시 후 다시 시도해줘.'
         });
         return;
       }

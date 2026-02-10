@@ -7,8 +7,16 @@ import { fetchGuildMember } from '@/lib/server/discord';
 export const runtime = 'nodejs';
 export const dynamic = 'auto';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 const clampInt = (n: number, min: number, max: number) =>
   Math.min(max, Math.max(min, Math.trunc(n)));
+
+const parseIntInRange = (raw: string | null, fallback: number, min: number, max: number) => {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  return clampInt(parsed, min, max);
+};
 
 const parseRarities = (value: string | null) => {
   if (!value) return [];
@@ -28,18 +36,29 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
   }
 
-  const member = await fetchGuildMember({ userId });
+  let member = null;
+  try {
+    member = await fetchGuildMember({ userId });
+  } catch (error) {
+    const requestId = crypto.randomUUID();
+    console.error(`[GachaHistory] guild check failed [${requestId}]`, error);
+    return NextResponse.json({ error: 'Service unavailable', code: 'DISCORD_API_ERROR', requestId }, { status: 503 });
+  }
+
   if (!member) {
     return NextResponse.json({ error: 'NOT_IN_GUILD' }, { status: 403 });
   }
 
   const { searchParams } = new URL(req.url);
-  const limit = clampInt(Number(searchParams.get('limit') ?? 30), 1, 50);
-  const offset = clampInt(Number(searchParams.get('offset') ?? 0), 0, 100_000);
+  const limit = parseIntInRange(searchParams.get('limit'), 30, 1, 50);
+  const offset = parseIntInRange(searchParams.get('offset'), 0, 0, 100_000);
   const poolId = searchParams.get('poolId');
+  if (poolId && !UUID_RE.test(poolId)) {
+    return NextResponse.json({ error: 'POOL_ID_INVALID' }, { status: 400 });
+  }
   const rarities = parseRarities(searchParams.get('rarities'));
   const pityOnly = searchParams.get('pity') === '1';
-  const qRaw = (searchParams.get('q') ?? '').trim();
+  const qRaw = (searchParams.get('q') ?? '').trim().slice(0, 120);
   const q = qRaw.toLowerCase();
 
   const supabase = createSupabaseAdminClient();
@@ -77,7 +96,9 @@ export async function GET(req: Request) {
       .range(fetchOffset, fetchOffset + chunk - 1);
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      const requestId = crypto.randomUUID();
+      console.error(`[GachaHistory] query failed [${requestId}]`, error);
+      return NextResponse.json({ error: 'Failed to load history', code: 'GACHA_HISTORY_QUERY_FAILED', requestId }, { status: 500 });
     }
 
     const rows = (data ?? []) as unknown as Array<{

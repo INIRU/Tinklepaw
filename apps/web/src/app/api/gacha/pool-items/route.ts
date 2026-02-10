@@ -6,17 +6,28 @@ import { fetchGuildMember, fetchRoleIconMap } from '@/lib/server/discord';
 
 export const runtime = 'nodejs';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export async function GET(req: Request) {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
 
-  const member = await fetchGuildMember({ userId });
+  let member = null;
+  try {
+    member = await fetchGuildMember({ userId });
+  } catch (error) {
+    const requestId = crypto.randomUUID();
+    console.error(`[GachaPoolItems] guild check failed [${requestId}]`, error);
+    return NextResponse.json({ error: 'Service unavailable', code: 'DISCORD_API_ERROR', requestId }, { status: 503 });
+  }
+
   if (!member) return NextResponse.json({ error: 'NOT_IN_GUILD' }, { status: 403 });
 
   const url = new URL(req.url);
   const poolId = url.searchParams.get('poolId');
   if (!poolId) return NextResponse.json({ error: 'POOL_ID_REQUIRED' }, { status: 400 });
+  if (!UUID_RE.test(poolId)) return NextResponse.json({ error: 'POOL_ID_INVALID' }, { status: 400 });
 
   const supabase = createSupabaseAdminClient();
 
@@ -33,7 +44,11 @@ export async function GET(req: Request) {
     .eq('pool_id', poolId)
     .maybeSingle();
 
-  if (poolErr) return NextResponse.json({ error: poolErr.message }, { status: 400 });
+  if (poolErr) {
+    const requestId = crypto.randomUUID();
+    console.error(`[GachaPoolItems] pool query failed [${requestId}]`, poolErr);
+    return NextResponse.json({ error: 'Failed to load pool metadata', code: 'GACHA_POOL_QUERY_FAILED', requestId }, { status: 500 });
+  }
   const pool = poolRaw as unknown as PoolRow | null;
   if (!pool || !pool.is_active) {
     return NextResponse.json({ error: 'POOL_NOT_ACTIVE' }, { status: 400 });
@@ -53,7 +68,11 @@ export async function GET(req: Request) {
     .select('item_id, items(item_id, name, rarity, discord_role_id, reward_points)')
     .eq('pool_id', poolId);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error) {
+    const requestId = crypto.randomUUID();
+    console.error(`[GachaPoolItems] item query failed [${requestId}]`, error);
+    return NextResponse.json({ error: 'Failed to load pool items', code: 'GACHA_POOL_ITEMS_QUERY_FAILED', requestId }, { status: 500 });
+  }
 
   const rawItems = (data ?? [])
     .map((row) => {

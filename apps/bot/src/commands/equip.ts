@@ -152,7 +152,8 @@ export const equipCommand: SlashCommand = {
     });
 
     if (error) {
-      const msg = error.message === 'ITEM_NOT_OWNED' ? '보유하지 않은 아이템입니다.' : `장착 실패: ${error.message}`;
+      console.error('[Equip] set_equipped_item failed:', error);
+      const msg = error.message === 'ITEM_NOT_OWNED' ? '보유하지 않은 아이템입니다.' : '장착 처리 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.';
       await interaction.reply({ content: msg, ephemeral: true });
       return;
     }

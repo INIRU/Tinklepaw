@@ -8,6 +8,10 @@ export const runtime = 'nodejs';
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DRAW_REQUEST_LOCK_TTL_MS = 20_000;
+const inFlightDrawRequests = new Map<string, number>();
+
 const isRetryableDrawError = (message: string) => {
   const m = message.toUpperCase();
   return (
@@ -60,13 +64,34 @@ export async function POST(req: Request) {
   }
 
   const body = (await req.json().catch(() => null)) as { poolId?: string; amount?: number } | null;
+  const poolId = typeof body?.poolId === 'string' && body.poolId.trim() ? body.poolId.trim() : null;
+  if (poolId && !UUID_RE.test(poolId)) {
+    return NextResponse.json({ error: 'POOL_ID_INVALID' }, { status: 400 });
+  }
+
   const amount = normalizeDrawAmount(body?.amount);
 
-  const supabase = createSupabaseAdminClient();
-  const results = [];
+  const now = Date.now();
+  const existingLockAt = inFlightDrawRequests.get(userId);
+  if (existingLockAt && now - existingLockAt < DRAW_REQUEST_LOCK_TTL_MS) {
+    return NextResponse.json({ error: 'DRAW_IN_PROGRESS' }, { status: 429 });
+  }
+  const lockToken = now;
+  inFlightDrawRequests.set(userId, lockToken);
+
+  const results: Array<{
+    itemId?: string;
+    name?: string;
+    rarity?: 'R' | 'S' | 'SS' | 'SSS';
+    discordRoleId?: string | null;
+    rewardPoints: number;
+    isVariant: boolean;
+  }> = [];
   let partialError: string | null = null;
 
   try {
+    const supabase = createSupabaseAdminClient();
+
     for (let i = 0; i < amount; i++) {
       let retry = 0;
       let completedCurrentDraw = false;
@@ -74,7 +99,7 @@ export async function POST(req: Request) {
       while (!completedCurrentDraw) {
         const { data, error } = await supabase.rpc('perform_gacha_draw', {
           p_discord_user_id: userId,
-          p_pool_id: body?.poolId ?? null
+          p_pool_id: poolId
         });
 
         if (error) {
@@ -137,6 +162,10 @@ export async function POST(req: Request) {
     const requestId = crypto.randomUUID();
     console.error(`[GachaDraw] POST failed [${requestId}]`, error);
     return NextResponse.json({ error: 'DRAW_FAILED', code: 'INTERNAL_DRAW_ERROR', requestId }, { status: 500 });
+  } finally {
+    if (inFlightDrawRequests.get(userId) === lockToken) {
+      inFlightDrawRequests.delete(userId);
+    }
   }
 
   if (results.length === 0) {

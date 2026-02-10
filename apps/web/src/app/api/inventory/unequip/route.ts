@@ -11,7 +11,15 @@ export async function POST() {
   const userId = session?.user?.id;
   if (!userId) return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
 
-  const member = await fetchGuildMember({ userId });
+  let member = null;
+  try {
+    member = await fetchGuildMember({ userId });
+  } catch (error) {
+    const requestId = crypto.randomUUID();
+    console.error(`[InventoryUnequip] guild check failed [${requestId}]`, error);
+    return NextResponse.json({ error: 'Service unavailable', code: 'DISCORD_API_ERROR', requestId }, { status: 503 });
+  }
+
   if (!member) return NextResponse.json({ error: 'NOT_IN_GUILD' }, { status: 403 });
 
   const supabase = createSupabaseAdminClient();
@@ -20,6 +28,10 @@ export async function POST() {
     p_item_id: null
   });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error) {
+    const requestId = crypto.randomUUID();
+    console.error(`[InventoryUnequip] rpc failed [${requestId}]`, error);
+    return NextResponse.json({ error: 'Failed to unequip item', code: 'UNEQUIP_RPC_FAILED', requestId }, { status: 500 });
+  }
   return NextResponse.json({ result: Array.isArray(data) ? data[0] : data });
 }

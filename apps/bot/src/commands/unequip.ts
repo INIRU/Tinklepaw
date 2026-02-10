@@ -25,7 +25,8 @@ export const unequipCommand: SlashCommand = {
     });
 
     if (error) {
-      await interaction.reply({ content: `해제 실패: ${error.message}`, ephemeral: true });
+      console.error('[Unequip] set_equipped_item failed:', error);
+      await interaction.reply({ content: '해제 처리 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.', ephemeral: true });
       return;
     }
 

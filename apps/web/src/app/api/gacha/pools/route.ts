@@ -11,7 +11,15 @@ export async function GET() {
   const userId = session?.user?.id;
   if (!userId) return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
 
-  const member = await fetchGuildMember({ userId });
+  let member = null;
+  try {
+    member = await fetchGuildMember({ userId });
+  } catch (error) {
+    const requestId = crypto.randomUUID();
+    console.error(`[GachaPools] guild check failed [${requestId}]`, error);
+    return NextResponse.json({ error: 'Service unavailable', code: 'DISCORD_API_ERROR', requestId }, { status: 503 });
+  }
+
   if (!member) return NextResponse.json({ error: 'NOT_IN_GUILD' }, { status: 403 });
 
   const supabase = createSupabaseAdminClient();
@@ -21,7 +29,11 @@ export async function GET() {
     .eq('is_active', true)
     .order('updated_at', { ascending: false });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error) {
+    const requestId = crypto.randomUUID();
+    console.error(`[GachaPools] query failed [${requestId}]`, error);
+    return NextResponse.json({ error: 'Failed to load pools', code: 'GACHA_POOLS_QUERY_FAILED', requestId }, { status: 500 });
+  }
 
   const now = Date.now();
   const pools = (data ?? []).filter((p) => {
