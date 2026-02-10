@@ -83,6 +83,8 @@ export default function ForgeClient() {
 
   const discountReady = (status?.tunaEnergy ?? 0) >= 3;
   const effectiveEnhanceCost = status ? (discountReady ? Math.floor(status.enhanceCost * 0.5) : status.enhanceCost) : 0;
+  const canSell = Boolean(status && status.level > 0 && status.sellPrice > 0);
+  const sellBlockedByZeroPrice = Boolean(status && status.level > 0 && status.sellPrice <= 0);
 
   const clearResetTimer = () => {
     if (resetTimerRef.current !== null) {
@@ -219,6 +221,10 @@ export default function ForgeClient() {
 
   const handleSell = async () => {
     if (!status || busy || status.level <= 0) return;
+    if (status.sellPrice <= 0) {
+      setLastMessage('판매 예상 금액이 0p라 판매할 수 없어.');
+      return;
+    }
 
     clearResetTimer();
     setBusy(true);
@@ -311,6 +317,22 @@ export default function ForgeClient() {
                   <p className="font-black text-[#9ca3af]">{loading ? '-' : pct(probabilities.destroy)}</p>
                 </div>
               </div>
+
+              <div className="mt-2 grid grid-cols-2 gap-2 border-t border-[color:color-mix(in_srgb,var(--fg)_10%,transparent)] pt-2 sm:gap-3">
+                <div className="rounded-lg border border-[color:color-mix(in_srgb,var(--fg)_14%,transparent)] bg-[color:color-mix(in_srgb,var(--card)_78%,transparent)] px-2 py-1.5 text-center">
+                  <p className="text-[10px] text-[color:var(--muted)]">강화 비용</p>
+                  <p className="font-black text-[color:var(--fg)]">{effectiveEnhanceCost.toLocaleString('ko-KR')}p</p>
+                  {discountReady ? <p className="text-[10px] text-[#facc15]">기운 3개 할인 적용</p> : null}
+                </div>
+
+                <div className="rounded-lg border border-[color:color-mix(in_srgb,var(--fg)_14%,transparent)] bg-[color:color-mix(in_srgb,var(--card)_78%,transparent)] px-2 py-1.5 text-center">
+                  <p className="text-[10px] text-[color:var(--muted)]">판매 예상 금액</p>
+                  <p className={`font-black ${canSell ? 'text-[#86efac]' : 'text-[color:var(--muted)]'}`}>
+                    {(status?.sellPrice ?? 0).toLocaleString('ko-KR')}p
+                  </p>
+                  {!canSell ? <p className="text-[10px] text-[color:var(--muted)]">0p일 때 판매 불가</p> : null}
+                </div>
+              </div>
             </div>
 
             <p className="pointer-events-auto card-glass rounded-full px-3 py-1.5 text-center text-xs font-medium text-[color:var(--fg)]">
@@ -335,18 +357,12 @@ export default function ForgeClient() {
                 onClick={() => {
                   void handleSell();
                 }}
-                disabled={loading || busy || !status || status.level <= 0}
+                disabled={loading || busy || !status || !canSell}
                 className="inline-flex h-11 min-w-[134px] items-center justify-center overflow-hidden rounded-xl border border-[color:var(--border)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--card)_84%,transparent),color-mix(in_srgb,var(--chip)_90%,transparent))] bg-clip-padding px-4 py-2.5 text-sm font-black leading-none text-[color:var(--fg)] shadow-[0_8px_18px_rgba(12,16,28,0.10)] transition-[filter,border-color] duration-150 ease-out hover:brightness-[1.015] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
               >
-                판매하기
+                {sellBlockedByZeroPrice ? '판매 불가 (0p)' : '판매하기'}
               </button>
             </div>
-
-            <p className="pointer-events-auto text-[11px] font-medium text-[color:var(--muted)]">
-              강화 비용 {effectiveEnhanceCost.toLocaleString('ko-KR')}p
-              {discountReady ? ' (기운 3개 할인 적용)' : ''} · 기본 비용 {status?.enhanceCost?.toLocaleString('ko-KR') ?? 0}p · 판매 예상{' '}
-              {status?.sellPrice?.toLocaleString('ko-KR') ?? 0}p
-            </p>
           </div>
         </div>
       </section>

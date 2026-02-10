@@ -1,5 +1,6 @@
-import { createCanvas, CanvasRenderingContext2D } from 'canvas';
+import { createCanvas, CanvasRenderingContext2D, registerFont } from 'canvas';
 import { AttachmentBuilder } from 'discord.js';
+import { fileURLToPath } from 'url';
 
 type GachaResult = {
   name: string;
@@ -21,6 +22,35 @@ const RARITY_GLOW = {
   S: '#8B008B',
   R: '#708090'
 };
+
+const textFontFamily =
+  'Pretendard, "Noto Sans", "Noto Sans CJK JP", "Noto Sans Elbasan", "Noto Sans Symbols 2", "Noto Sans Math", "Noto Color Emoji", sans-serif';
+
+const pretendardPath = fileURLToPath(new URL('../assets/fonts/Pretendard-Regular.ttf', import.meta.url));
+const notoSansPath = fileURLToPath(new URL('../assets/fonts/NotoSans-Regular.ttf', import.meta.url));
+const cjkPath = fileURLToPath(new URL('../assets/fonts/NotoSansCJKjp-VF.ttf', import.meta.url));
+const elbasanPath = fileURLToPath(new URL('../assets/fonts/NotoSansElbasan-Regular.ttf', import.meta.url));
+const symbolsPath = fileURLToPath(new URL('../assets/fonts/NotoSansSymbols2-Regular.ttf', import.meta.url));
+const mathPath = fileURLToPath(new URL('../assets/fonts/NotoSansMath-Regular.ttf', import.meta.url));
+const emojiPath = fileURLToPath(new URL('../assets/fonts/NotoColorEmoji.ttf', import.meta.url));
+
+const safeRegisterFont = (src: string, options: Parameters<typeof registerFont>[1]) => {
+  try {
+    registerFont(src, options);
+  } catch (error) {
+    console.warn('[GachaImage] Failed to register font:', options.family, error);
+  }
+};
+
+safeRegisterFont(pretendardPath, { family: 'Pretendard', weight: '400' });
+safeRegisterFont(pretendardPath, { family: 'Pretendard', weight: '700' });
+safeRegisterFont(notoSansPath, { family: 'Noto Sans', weight: '400' });
+safeRegisterFont(notoSansPath, { family: 'Noto Sans', weight: '700' });
+safeRegisterFont(cjkPath, { family: 'Noto Sans CJK JP', weight: '400' });
+safeRegisterFont(elbasanPath, { family: 'Noto Sans Elbasan', weight: '400' });
+safeRegisterFont(symbolsPath, { family: 'Noto Sans Symbols 2', weight: '400' });
+safeRegisterFont(mathPath, { family: 'Noto Sans Math', weight: '400' });
+safeRegisterFont(emojiPath, { family: 'Noto Color Emoji', weight: '400' });
 
 export async function generateGachaResultImage(
   results: GachaResult[],
@@ -46,7 +76,7 @@ export async function generateGachaResultImage(
   ctx.fillRect(0, 0, width, height);
 
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 28px sans-serif';
+  ctx.font = `700 28px ${textFontFamily}`;
   ctx.textAlign = 'center';
   ctx.fillText(poolName, width / 2, 40);
 
@@ -62,15 +92,15 @@ export async function generateGachaResultImage(
     ctx.shadowBlur = 0;
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 48px sans-serif';
+    ctx.font = `700 48px ${textFontFamily}`;
     ctx.textAlign = 'center';
     ctx.fillText(result.rarity, centerX, centerY - 30);
 
-    ctx.font = 'bold 32px sans-serif';
+    ctx.font = `700 32px ${textFontFamily}`;
     ctx.fillText(result.name, centerX, centerY + 20);
 
     if (result.refund_points && result.refund_points > 0) {
-      ctx.font = '20px sans-serif';
+      ctx.font = `400 20px ${textFontFamily}`;
       ctx.fillStyle = '#ffeb3b';
       ctx.fillText(`중복 환불: +${result.refund_points}p`, centerX, centerY + 60);
     }
@@ -91,18 +121,18 @@ export async function generateGachaResultImage(
       ctx.shadowBlur = 0;
 
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 20px sans-serif';
+      ctx.font = `700 20px ${textFontFamily}`;
       ctx.textAlign = 'center';
       ctx.fillText(result.rarity, x + itemWidth / 2, y + 25);
 
-      ctx.font = '14px sans-serif';
+      ctx.font = `400 14px ${textFontFamily}`;
       const nameLines = wrapText(ctx, result.name, itemWidth - 10);
       nameLines.forEach((line, i) => {
         ctx.fillText(line, x + itemWidth / 2, y + 50 + i * 18);
       });
 
       if (result.refund_points && result.refund_points > 0) {
-        ctx.font = '11px sans-serif';
+        ctx.font = `400 11px ${textFontFamily}`;
         ctx.fillStyle = '#ffeb3b';
         ctx.fillText(`+${result.refund_points}p`, x + itemWidth / 2, y + itemHeight - 10);
       }
