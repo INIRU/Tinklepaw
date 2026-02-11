@@ -117,7 +117,7 @@ function mapTradeError(code: string | null): string {
 
 async function fetchDashboard(userId: string) {
   const ctx = getBotContext();
-  const rpc = ctx.supabase.rpc as unknown as (
+  const rpc = ctx.supabase.rpc.bind(ctx.supabase) as unknown as (
     fn: string,
     params?: Record<string, unknown>,
   ) => Promise<{ data: unknown; error: { message: string } | null }>;
@@ -301,7 +301,7 @@ export const stockCommand: SlashCommand = {
 
       await modalSubmit.deferReply({ ephemeral: true });
 
-      const rpc = ctx.supabase.rpc as unknown as (
+      const rpc = ctx.supabase.rpc.bind(ctx.supabase) as unknown as (
         fn: string,
         params?: Record<string, unknown>,
       ) => Promise<{ data: unknown; error: { message: string } | null }>;

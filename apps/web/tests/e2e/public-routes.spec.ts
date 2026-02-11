@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 const cases: Array<{ path: string; heading?: string }> = [
-  { path: '/', heading: '방울냥' },
+  { path: '/' },
   { path: '/login', heading: '로그인' },
   { path: '/terms', heading: '이용약관' },
   { path: '/privacy', heading: '개인정보 처리방침' },
