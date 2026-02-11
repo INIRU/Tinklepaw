@@ -197,7 +197,7 @@ export const stockCommand: SlashCommand = {
       return;
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply();
     const userId = interaction.user.id;
 
     const renderPanel = async (disabled = false) => {
@@ -309,12 +309,11 @@ export const stockCommand: SlashCommand = {
       if (!Number.isFinite(qty) || qty <= 0) {
         await modalSubmit.reply({
           content: '수량은 1 이상의 숫자로 입력해 주세요.',
-          ephemeral: true,
         });
         return;
       }
 
-      await modalSubmit.deferReply({ ephemeral: true });
+      await modalSubmit.deferReply();
 
       const rpc = ctx.supabase.rpc.bind(ctx.supabase) as unknown as (
         fn: string,
