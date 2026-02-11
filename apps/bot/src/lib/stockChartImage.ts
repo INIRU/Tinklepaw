@@ -20,51 +20,52 @@ type StockCandle = {
   h: number;
   l: number;
   c: number;
+  v: number;
 };
 
-const WIDTH = 1200;
-const HEIGHT = 680;
+const WIDTH = 1280;
+const HEIGHT = 760;
 
-const MARGIN = {
-  top: 110,
-  right: 34,
-  bottom: 92,
-  left: 98,
+const PAD = {
+  top: 98,
+  right: 98,
+  bottom: 66,
+  left: 86,
 };
 
-function timeLabel(ts: string): string {
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return '--:--';
-  return d.toLocaleTimeString('ko-KR', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
-}
+const VOLUME_HEIGHT = 130;
+const PANEL_GAP = 18;
 
-function movingAverage(candles: StockCandle[], windowSize: number): number[] {
-  const result: number[] = [];
-  for (let i = 0; i < candles.length; i += 1) {
-    const start = Math.max(0, i - windowSize + 1);
-    const slice = candles.slice(start, i + 1);
-    const sum = slice.reduce((acc, cur) => acc + cur.c, 0);
-    result.push(sum / slice.length);
-  }
-  return result;
-}
+const UP_COLOR = '#ef4444';
+const DOWN_COLOR = '#3b82f6';
+const GRID_COLOR = 'rgba(148,163,184,0.18)';
 
 function fallbackCandles(currentPrice: number): StockCandle[] {
-  const safePrice = Math.max(100, currentPrice);
-  return Array.from({ length: 24 }).map((_, idx) => {
-    const ts = new Date(Date.now() - (23 - idx) * 5 * 60 * 1000).toISOString();
-    return {
-      t: ts,
-      o: safePrice,
-      h: safePrice,
-      l: safePrice,
-      c: safePrice,
-    };
+  const safe = Math.max(100, currentPrice);
+  return Array.from({ length: 48 }).map((_, idx) => {
+    const ts = new Date(Date.now() - (47 - idx) * 5 * 60 * 1000).toISOString();
+    return { t: ts, o: safe, h: safe, l: safe, c: safe, v: 0 };
   });
+}
+
+function movingAverage(candles: StockCandle[], windowSize: number): Array<number | null> {
+  const result: Array<number | null> = [];
+  let sum = 0;
+
+  for (let i = 0; i < candles.length; i += 1) {
+    sum += candles[i].c;
+    if (i >= windowSize) {
+      sum -= candles[i - windowSize].c;
+    }
+
+    if (i < windowSize - 1) {
+      result.push(null);
+    } else {
+      result.push(sum / windowSize);
+    }
+  }
+
+  return result;
 }
 
 function drawRoundedRect(
@@ -90,23 +91,75 @@ function drawRoundedRect(
 }
 
 function drawBackground(ctx: CanvasRenderingContext2D) {
-  const gradient = ctx.createLinearGradient(0, 0, 0, HEIGHT);
-  gradient.addColorStop(0, '#060d1a');
-  gradient.addColorStop(1, '#0f1a2e');
-  ctx.fillStyle = gradient;
+  const bg = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+  bg.addColorStop(0, '#070d17');
+  bg.addColorStop(1, '#0f172a');
+  ctx.fillStyle = bg;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-  const glowA = ctx.createRadialGradient(180, 90, 20, 180, 90, 260);
-  glowA.addColorStop(0, 'rgba(56,189,248,0.22)');
-  glowA.addColorStop(1, 'rgba(56,189,248,0)');
+  const glowA = ctx.createRadialGradient(210, 80, 20, 210, 80, 260);
+  glowA.addColorStop(0, 'rgba(59,130,246,0.17)');
+  glowA.addColorStop(1, 'rgba(59,130,246,0)');
   ctx.fillStyle = glowA;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-  const glowB = ctx.createRadialGradient(WIDTH - 130, HEIGHT - 80, 20, WIDTH - 130, HEIGHT - 80, 280);
-  glowB.addColorStop(0, 'rgba(244,114,182,0.2)');
-  glowB.addColorStop(1, 'rgba(244,114,182,0)');
+  const glowB = ctx.createRadialGradient(WIDTH - 160, HEIGHT - 100, 24, WIDTH - 160, HEIGHT - 100, 300);
+  glowB.addColorStop(0, 'rgba(239,68,68,0.15)');
+  glowB.addColorStop(1, 'rgba(239,68,68,0)');
   ctx.fillStyle = glowB;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
+}
+
+function formatTime(ts: string): string {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '--:--';
+  return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function formatDateTime(ts: string): string {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '--';
+  return d.toLocaleString('ko-KR', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function drawLineSeries(
+  ctx: CanvasRenderingContext2D,
+  values: Array<number | null>,
+  xAt: (index: number) => number,
+  yAt: (price: number) => number,
+  color: string,
+  width: number,
+  dashed = false,
+) {
+  ctx.beginPath();
+  let started = false;
+
+  for (let i = 0; i < values.length; i += 1) {
+    const value = values[i];
+    if (value == null) continue;
+    const x = xAt(i);
+    const y = yAt(value);
+    if (!started) {
+      ctx.moveTo(x, y);
+      started = true;
+    } else {
+      ctx.lineTo(x, y);
+    }
+  }
+
+  if (!started) return;
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.setLineDash(dashed ? [7, 6] : []);
+  ctx.stroke();
+  ctx.setLineDash([]);
 }
 
 export async function generateStockChartImage(params: {
@@ -116,100 +169,104 @@ export async function generateStockChartImage(params: {
   changePct: number;
   candles: StockCandle[];
 }) {
-  const candles = params.candles.length > 0 ? params.candles : fallbackCandles(params.currentPrice);
+  const source = params.candles.length > 0 ? params.candles : fallbackCandles(params.currentPrice);
+  const candles = source
+    .slice(-72)
+    .sort((a, b) => new Date(a.t).getTime() - new Date(b.t).getTime());
 
   const canvas = createCanvas(WIDTH, HEIGHT);
   const ctx = canvas.getContext('2d');
 
   drawBackground(ctx);
 
-  const plotX = MARGIN.left;
-  const plotY = MARGIN.top;
-  const plotW = WIDTH - MARGIN.left - MARGIN.right;
-  const plotH = HEIGHT - MARGIN.top - MARGIN.bottom;
+  const priceX = PAD.left;
+  const priceY = PAD.top;
+  const priceW = WIDTH - PAD.left - PAD.right;
+  const priceH = HEIGHT - PAD.top - PAD.bottom - VOLUME_HEIGHT - PANEL_GAP;
 
-  drawRoundedRect(ctx, plotX, plotY, plotW, plotH, 18);
-  ctx.fillStyle = 'rgba(15,23,42,0.72)';
+  const volumeX = PAD.left;
+  const volumeY = priceY + priceH + PANEL_GAP;
+  const volumeW = priceW;
+  const volumeH = VOLUME_HEIGHT;
+
+  drawRoundedRect(ctx, priceX, priceY, priceW, priceH, 14);
+  ctx.fillStyle = 'rgba(15,23,42,0.76)';
   ctx.fill();
-  ctx.strokeStyle = 'rgba(148,163,184,0.2)';
+  ctx.strokeStyle = 'rgba(148,163,184,0.22)';
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  const highs = candles.map((c) => c.h);
-  const lows = candles.map((c) => c.l);
-  const maxPrice = Math.max(...highs);
-  const minPrice = Math.min(...lows);
-  const rangeRaw = maxPrice - minPrice;
-  const rangePad = Math.max(40, rangeRaw * 0.08);
-  const priceTop = maxPrice + rangePad;
-  const priceBottom = Math.max(1, minPrice - rangePad);
-  const priceRange = Math.max(1, priceTop - priceBottom);
+  drawRoundedRect(ctx, volumeX, volumeY, volumeW, volumeH, 14);
+  ctx.fillStyle = 'rgba(15,23,42,0.66)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(148,163,184,0.17)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
 
-  const yFromPrice = (price: number) => plotY + ((priceTop - price) / priceRange) * plotH;
+  const maxHigh = Math.max(...candles.map((c) => c.h));
+  const minLow = Math.min(...candles.map((c) => c.l));
+  const pad = Math.max(16, (maxHigh - minLow) * 0.08);
+  const topPrice = maxHigh + pad;
+  const bottomPrice = Math.max(1, minLow - pad);
+  const range = Math.max(1, topPrice - bottomPrice);
 
-  const yTicks = 6;
+  const yAtPrice = (price: number) => priceY + ((topPrice - price) / range) * priceH;
+
+  const xStep = priceW / candles.length;
+  const xAt = (index: number) => priceX + xStep * index + xStep / 2;
+
   ctx.font = "12px 'Noto Sans KR', sans-serif";
-  ctx.textAlign = 'right';
+  ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
 
-  for (let i = 0; i <= yTicks; i += 1) {
-    const ratio = i / yTicks;
-    const price = priceTop - priceRange * ratio;
-    const y = plotY + plotH * ratio;
+  for (let i = 0; i <= 6; i += 1) {
+    const ratio = i / 6;
+    const y = priceY + priceH * ratio;
+    const value = topPrice - range * ratio;
 
-    ctx.strokeStyle = 'rgba(148,163,184,0.12)';
+    ctx.strokeStyle = GRID_COLOR;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(plotX, y);
-    ctx.lineTo(plotX + plotW, y);
+    ctx.moveTo(priceX, y);
+    ctx.lineTo(priceX + priceW, y);
     ctx.stroke();
 
     ctx.fillStyle = 'rgba(226,232,240,0.78)';
-    ctx.fillText(`${Math.round(price).toLocaleString()}P`, plotX - 12, y);
+    ctx.fillText(`${Math.round(value).toLocaleString()}P`, priceX + priceW + 10, y);
   }
 
-  const xStep = plotW / candles.length;
-  const candleWidth = Math.max(5, Math.min(16, xStep * 0.64));
-  const axisY = plotY + plotH;
-
-  const labelCount = Math.min(8, candles.length);
+  const labelEvery = Math.max(1, Math.floor(candles.length / 8));
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.font = "11px 'Noto Sans KR', sans-serif";
 
-  for (let i = 0; i < labelCount; i += 1) {
-    const idx = Math.min(
-      candles.length - 1,
-      Math.round((i * (candles.length - 1)) / Math.max(1, labelCount - 1)),
-    );
-    const x = plotX + idx * xStep + xStep / 2;
-    const label = timeLabel(candles[idx]?.t ?? '');
-
-    ctx.strokeStyle = 'rgba(148,163,184,0.1)';
+  for (let i = 0; i < candles.length; i += labelEvery) {
+    const x = xAt(i);
+    ctx.strokeStyle = 'rgba(148,163,184,0.12)';
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(x, plotY);
-    ctx.lineTo(x, plotY + plotH);
+    ctx.moveTo(x, priceY);
+    ctx.lineTo(x, priceY + priceH);
     ctx.stroke();
 
-    ctx.fillStyle = 'rgba(226,232,240,0.68)';
-    ctx.fillText(label, x, axisY + 12);
+    ctx.fillStyle = 'rgba(226,232,240,0.72)';
+    ctx.fillText(formatTime(candles[i].t), x, volumeY + volumeH + 12);
   }
 
+  const candleWidth = Math.max(5, Math.min(14, xStep * 0.68));
   for (let i = 0; i < candles.length; i += 1) {
-    const candle = candles[i];
-    const x = plotX + i * xStep + xStep / 2;
+    const c = candles[i];
+    const x = xAt(i);
 
-    const yHigh = yFromPrice(candle.h);
-    const yLow = yFromPrice(candle.l);
-    const yOpen = yFromPrice(candle.o);
-    const yClose = yFromPrice(candle.c);
+    const yHigh = yAtPrice(c.h);
+    const yLow = yAtPrice(c.l);
+    const yOpen = yAtPrice(c.o);
+    const yClose = yAtPrice(c.c);
+    const isUp = c.c >= c.o;
+    const color = isUp ? UP_COLOR : DOWN_COLOR;
 
-    const up = candle.c >= candle.o;
-    const color = up ? '#22c55e' : '#ef4444';
-    const border = up ? '#86efac' : '#fca5a5';
-
-    ctx.strokeStyle = 'rgba(203,213,225,0.82)';
-    ctx.lineWidth = 1.3;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.4;
     ctx.beginPath();
     ctx.moveTo(x, yHigh);
     ctx.lineTo(x, yLow);
@@ -217,57 +274,79 @@ export async function generateStockChartImage(params: {
 
     const bodyTop = Math.min(yOpen, yClose);
     const bodyHeight = Math.max(2, Math.abs(yClose - yOpen));
-
     ctx.fillStyle = color;
-    ctx.strokeStyle = border;
-    ctx.lineWidth = 1;
     ctx.fillRect(x - candleWidth / 2, bodyTop, candleWidth, bodyHeight);
-    ctx.strokeRect(x - candleWidth / 2, bodyTop, candleWidth, bodyHeight);
   }
 
-  const ma = movingAverage(candles, 6);
-  ctx.strokeStyle = 'rgba(248,250,252,0.76)';
-  ctx.setLineDash([7, 7]);
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  for (let i = 0; i < ma.length; i += 1) {
-    const x = plotX + i * xStep + xStep / 2;
-    const y = yFromPrice(ma[i]);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+  const ma5 = movingAverage(candles, 5);
+  const ma20 = movingAverage(candles, 20);
+  drawLineSeries(ctx, ma5, xAt, yAtPrice, 'rgba(250,204,21,0.92)', 1.8, false);
+  drawLineSeries(ctx, ma20, xAt, yAtPrice, 'rgba(248,250,252,0.78)', 1.8, true);
+
+  const maxVolume = Math.max(1, ...candles.map((c) => c.v));
+  for (let i = 0; i < candles.length; i += 1) {
+    const c = candles[i];
+    const x = xAt(i);
+    const isUp = c.c >= c.o;
+    const color = isUp ? 'rgba(239,68,68,0.55)' : 'rgba(59,130,246,0.55)';
+
+    const h = (Math.max(0, c.v) / maxVolume) * (volumeH - 24);
+    const y = volumeY + volumeH - h - 8;
+    ctx.fillStyle = color;
+    ctx.fillRect(x - candleWidth / 2, y, candleWidth, h);
   }
+
+  ctx.font = "11px 'Noto Sans KR', sans-serif";
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(203,213,225,0.82)';
+  ctx.fillText('거래량', volumeX + 10, volumeY + 16);
+
+  const last = candles[candles.length - 1];
+  const first = candles[0];
+
+  const lastY = yAtPrice(last.c);
+  ctx.strokeStyle = 'rgba(250,204,21,0.72)';
+  ctx.setLineDash([6, 5]);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(priceX, lastY);
+  ctx.lineTo(priceX + priceW, lastY);
   ctx.stroke();
   ctx.setLineDash([]);
 
-  const trendUp = params.changePct >= 0;
-  const trendColor = trendUp ? '#93c5fd' : '#fca5a5';
+  ctx.fillStyle = 'rgba(250,204,21,0.9)';
+  ctx.font = "600 11px 'Noto Sans KR', sans-serif";
+  ctx.textAlign = 'left';
+  ctx.fillText(`현재가 ${last.c.toLocaleString()}P`, priceX + 10, Math.max(priceY + 14, lastY - 10));
 
+  const trendColor = params.changePct >= 0 ? '#fecaca' : '#bfdbfe';
+
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = "700 30px 'Noto Sans KR', sans-serif";
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = '#f8fafc';
-  ctx.font = "700 34px 'Noto Sans KR', sans-serif";
-  ctx.fillText(`${params.title} (${params.symbol})`, 38, 52);
+  ctx.fillText(`${params.title} (${params.symbol})`, 34, 50);
 
-  ctx.font = "600 17px 'Noto Sans KR', sans-serif";
+  ctx.font = "600 16px 'Noto Sans KR', sans-serif";
   ctx.fillStyle = trendColor;
   ctx.fillText(
-    `현재가 ${params.currentPrice.toLocaleString()}P  ·  변동 ${params.changePct >= 0 ? '+' : ''}${params.changePct.toFixed(2)}%`,
-    40,
-    84,
+    `현재가 ${params.currentPrice.toLocaleString()}P  ·  등락 ${params.changePct >= 0 ? '+' : ''}${params.changePct.toFixed(2)}%  ·  5분봉 ${candles.length}개`,
+    36,
+    78,
   );
 
-  ctx.font = "600 13px 'Noto Sans KR', sans-serif";
+  ctx.font = "500 12px 'Noto Sans KR', sans-serif";
+  ctx.fillStyle = 'rgba(226,232,240,0.78)';
+  ctx.fillText(`기간 ${formatDateTime(first.t)} ~ ${formatDateTime(last.t)}`, WIDTH - 430, 76);
+
+  ctx.font = "600 12px 'Noto Sans KR', sans-serif";
   ctx.fillStyle = 'rgba(226,232,240,0.9)';
-  ctx.fillText('캔들(5분 봉)', WIDTH - 200, 50);
-  ctx.strokeStyle = '#f8fafc';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([7, 7]);
-  ctx.beginPath();
-  ctx.moveTo(WIDTH - 205, 72);
-  ctx.lineTo(WIDTH - 128, 72);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillText('이동 평균(6)', WIDTH - 200, 86);
+  ctx.fillText(
+    `O ${last.o.toLocaleString()}  H ${last.h.toLocaleString()}  L ${last.l.toLocaleString()}  C ${last.c.toLocaleString()}`,
+    WIDTH - 432,
+    98,
+  );
 
   const buffer = canvas.toBuffer('image/png');
   return new AttachmentBuilder(buffer, { name: 'stock-chart.png' });

@@ -23,6 +23,7 @@ type StockCandle = {
   h: number;
   l: number;
   c: number;
+  v: number;
 };
 
 type StockDashboardRow = {
@@ -74,6 +75,8 @@ function parseCandles(raw: unknown): StockCandle[] {
       const open = toNumber(row.o) || close;
       const high = toNumber(row.h) || Math.max(open, close);
       const low = toNumber(row.l) || Math.min(open, close);
+      const volumeBuy = toNumber(row.vb);
+      const volumeSell = toNumber(row.vs);
 
       return {
         t: String(row.t ?? ''),
@@ -81,6 +84,7 @@ function parseCandles(raw: unknown): StockCandle[] {
         h: Math.max(high, open, close),
         l: Math.min(low, open, close),
         c: close,
+        v: Math.max(0, volumeBuy + volumeSell),
       };
     })
     .filter((c) => c.t.length > 0 && c.c > 0 && c.h > 0 && c.l > 0);
