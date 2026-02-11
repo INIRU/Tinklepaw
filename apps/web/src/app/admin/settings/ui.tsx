@@ -50,6 +50,7 @@ type AppConfig = {
   lottery_silver_payout_points: number;
   lottery_bronze_payout_points: number;
   lottery_jackpot_pool_points: number;
+  lottery_activity_jackpot_rate_pct: number;
 };
 
 type DiscordChannel = { id: string; name: string; type: number; parent_id?: string | null };
@@ -347,7 +348,17 @@ export default function SettingsClient() {
     if (!cfgRes.ok) {
       throw new Error(cfgBody?.error ?? `HTTP ${cfgRes.status}`);
     }
-    setCfg(cfgBody);
+    if (!cfgBody) {
+      throw new Error('설정 데이터를 불러오지 못했습니다.');
+    }
+    setCfg({
+      ...(cfgBody as AppConfig),
+      join_message_template: cfgBody.join_message_template ?? null,
+      join_message_channel_id: cfgBody.join_message_channel_id ?? null,
+      voice_interface_trigger_channel_id: cfgBody.voice_interface_trigger_channel_id ?? null,
+      voice_interface_category_id: cfgBody.voice_interface_category_id ?? null,
+      lottery_activity_jackpot_rate_pct: Number(cfgBody.lottery_activity_jackpot_rate_pct ?? 10),
+    });
     setLoadError(null);
 
     const [chRes, rcRes] = await Promise.all([
@@ -1234,6 +1245,18 @@ export default function SettingsClient() {
               min={0}
               value={cfg.lottery_jackpot_pool_points}
               onChange={(e) => setCfg({ ...cfg, lottery_jackpot_pool_points: Number(e.target.value) })}
+            />
+          </label>
+          <label className="text-sm">
+            활동 잭팟 적립률(%)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              step="0.1"
+              min={0}
+              max={100}
+              value={cfg.lottery_activity_jackpot_rate_pct}
+              onChange={(e) => setCfg({ ...cfg, lottery_activity_jackpot_rate_pct: Number(e.target.value) })}
             />
           </label>
           <label className="text-sm">

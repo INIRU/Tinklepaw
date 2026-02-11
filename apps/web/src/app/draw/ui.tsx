@@ -67,6 +67,38 @@ type PoolItem = {
   roleIconUrl?: string | null;
 };
 
+type UserStatus = {
+  balance: number;
+  pityCounter: number;
+  freeAvailableAt?: string | null;
+  paidAvailableAt?: string | null;
+  jackpotPoolPoints?: number;
+  jackpotActivityRatePct?: number;
+  lastJackpotPayout?: number;
+  lastJackpotAt?: string | null;
+};
+
+const toSafeNumber = (value: unknown, fallback = 0) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+};
+
+const formatJackpotTime = (value: string | null | undefined) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  return date.toLocaleString('ko-KR', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
 const PityGauge = ({
   current,
   max,
@@ -105,10 +137,9 @@ export default function DrawClient() {
   const [selectedPoolId, setSelectedPoolId] = useState<string>('');
 
   // User Status
-  const [userStatus, setUserStatus] = useState<{
-    balance: number;
-    pityCounter: number;
-  } | null>(null);
+  const [userStatus, setUserStatus] = useState<UserStatus | null>(null);
+  const [animatedJackpotPool, setAnimatedJackpotPool] = useState(0);
+  const animatedJackpotPoolRef = useRef(0);
   const [showProbModal, setShowProbModal] = useState(false);
   const [openRarities, setOpenRarities] = useState<
     Record<'SSS' | 'SS' | 'S' | 'R', boolean>
@@ -358,8 +389,17 @@ export default function DrawClient() {
         : '/api/gacha/status';
       const res = await fetch(url);
       if (res.ok) {
-        const data = await res.json();
-        setUserStatus(data);
+      const data = (await res.json()) as Partial<UserStatus>;
+      setUserStatus({
+        balance: Math.floor(toSafeNumber(data.balance)),
+        pityCounter: Math.max(0, Math.floor(toSafeNumber(data.pityCounter))),
+        freeAvailableAt: data.freeAvailableAt ?? null,
+        paidAvailableAt: data.paidAvailableAt ?? null,
+        jackpotPoolPoints: Math.max(0, Math.floor(toSafeNumber(data.jackpotPoolPoints))),
+        jackpotActivityRatePct: Math.max(0, toSafeNumber(data.jackpotActivityRatePct)),
+        lastJackpotPayout: Math.max(0, Math.floor(toSafeNumber(data.lastJackpotPayout))),
+        lastJackpotAt: data.lastJackpotAt ?? null,
+      });
       }
     } catch (e) {
       console.error('[DrawClient] fetchStatus failed:', e);
@@ -369,6 +409,36 @@ export default function DrawClient() {
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
+
+  useEffect(() => {
+    const target = Math.max(0, Math.floor(toSafeNumber(userStatus?.jackpotPoolPoints)));
+
+    if (target <= animatedJackpotPoolRef.current) {
+      animatedJackpotPoolRef.current = target;
+      setAnimatedJackpotPool(target);
+      return;
+    }
+
+    const start = animatedJackpotPoolRef.current;
+    const durationMs = 900;
+    const startedAt = performance.now();
+    let raf = 0;
+
+    const tick = (now: number) => {
+      const progress = Math.min((now - startedAt) / durationMs, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const nextValue = Math.round(start + (target - start) * eased);
+      animatedJackpotPoolRef.current = nextValue;
+      setAnimatedJackpotPool(nextValue);
+
+      if (progress < 1) {
+        raf = requestAnimationFrame(tick);
+      }
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [userStatus?.jackpotPoolPoints]);
 
   useEffect(() => {
     document.documentElement.style.overflow = 'hidden';
@@ -864,19 +934,44 @@ export default function DrawClient() {
             </button>
           </div>
 
-          {/* Top Right Balance */}
-          <div className='absolute top-4 right-4 pointer-events-auto flex items-center gap-2 bg-[color:var(--card)]/80 backdrop-blur-md px-3 py-2 rounded-xl border border-[color:var(--border)] shadow-sm'>
-            <Coins className='w-3.5 h-3.5 text-[color:var(--accent-pink)] sm:hidden' />
-            <span className='text-[10px] sm:text-xs text-[color:var(--muted)] mr-1 sm:mr-2'>
-              보유 포인트
-            </span>
-            <span className='text-xs sm:text-sm font-bold text-[color:var(--accent-pink)]'>
-              {userStatus ? (
-                `${userStatus.balance.toLocaleString()} P`
+          <div className='absolute top-4 right-4 pointer-events-auto flex flex-col items-end gap-2'>
+            <div className='flex items-center gap-2 bg-[color:var(--card)]/80 backdrop-blur-md px-3 py-2 rounded-xl border border-[color:var(--border)] shadow-sm'>
+              <Coins className='w-3.5 h-3.5 text-[color:var(--accent-pink)] sm:hidden' />
+              <span className='text-[10px] sm:text-xs text-[color:var(--muted)] mr-1 sm:mr-2'>
+                보유 포인트
+              </span>
+              <span className='text-xs sm:text-sm font-bold text-[color:var(--accent-pink)]'>
+                {userStatus ? (
+                  `${toSafeNumber(userStatus.balance).toLocaleString()} P`
+                ) : (
+                  <Skeleton className='h-4 w-12 sm:w-16 inline-block align-middle' />
+                )}
+              </span>
+            </div>
+
+            <div className='w-[220px] sm:w-[260px] rounded-xl border border-[color:color-mix(in_srgb,var(--accent-pink)_30%,var(--border))] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--accent-pink)_14%,var(--card)),color-mix(in_srgb,var(--accent-lavender)_14%,var(--card)))] px-3 py-2 shadow-sm backdrop-blur-md'>
+              <div className='flex items-center justify-between gap-2'>
+                <span className='text-[10px] sm:text-xs font-semibold text-[color:var(--muted)]'>잭팟 누적금</span>
+                <span className='inline-flex items-center gap-1 rounded-full border border-[color:color-mix(in_srgb,var(--fg)_18%,transparent)] bg-[color:color-mix(in_srgb,var(--card)_80%,transparent)] px-2 py-0.5 text-[10px] text-[color:var(--muted)]'>
+                  활동 적립 {toSafeNumber(userStatus?.jackpotActivityRatePct).toFixed(1)}%
+                </span>
+              </div>
+              <p className='mt-1 text-lg sm:text-xl font-black tracking-tight text-[#facc15]'>
+                {animatedJackpotPool.toLocaleString('ko-KR')}p
+              </p>
+              {toSafeNumber(userStatus?.lastJackpotPayout) > 0 ? (
+                <p className='mt-1 text-[10px] sm:text-xs text-[color:var(--muted)]'>
+                  최근 잭팟 {toSafeNumber(userStatus?.lastJackpotPayout).toLocaleString('ko-KR')}p
+                  {formatJackpotTime(userStatus?.lastJackpotAt)
+                    ? ` · ${formatJackpotTime(userStatus?.lastJackpotAt)}`
+                    : ''}
+                </p>
               ) : (
-                <Skeleton className='h-4 w-12 sm:w-16 inline-block align-middle' />
+                <p className='mt-1 text-[10px] sm:text-xs text-[color:var(--muted)]'>
+                  서버 활동과 꽝 누적으로 잭팟이 쌓여요.
+                </p>
               )}
-            </span>
+            </div>
           </div>
 
           {/* Header */}

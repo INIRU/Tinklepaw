@@ -58,6 +58,7 @@ export async function getOrInitAppConfig() {
       lottery_silver_payout_points: 1500,
       lottery_bronze_payout_points: 700,
       lottery_jackpot_pool_points: 0,
+      lottery_activity_jackpot_rate_pct: 10,
     })
     .select('*')
     .single();

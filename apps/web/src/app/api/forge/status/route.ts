@@ -6,6 +6,15 @@ import { createSupabaseAdminClient } from '../../../../lib/server/supabase-admin
 
 export const runtime = 'nodejs';
 
+const toSafeNumber = (value: unknown, fallback = 0) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+};
+
 export async function GET() {
   const session = await auth();
   const userId = session?.user?.id;
@@ -43,17 +52,23 @@ export async function GET() {
     return NextResponse.json({ error: 'Failed to load forge status' }, { status: 500 });
   }
 
+  const level = Math.max(0, Math.floor(toSafeNumber(row.out_level)));
+  const enhanceCost = Math.max(0, Math.floor(toSafeNumber(row.out_enhance_cost)));
+  const sellPrice = Math.max(0, Math.floor(toSafeNumber(row.out_sell_price)));
+  const totalPaidCost = Math.max(0, Math.floor(toSafeNumber(row.out_total_paid_cost)));
+  const sellProfit = sellPrice - totalPaidCost;
+
   return NextResponse.json({
-    level: row.out_level,
-    enhanceCost: row.out_enhance_cost,
-    sellPrice: row.out_sell_price,
-    totalPaidCost: row.out_total_paid_cost,
-    sellProfit: row.out_sell_price - row.out_total_paid_cost,
-    successRatePct: row.out_success_rate_pct,
-    balance: row.out_balance,
-    tunaEnergy: row.out_tuna_forge_energy,
-    enhanceAttempts: row.out_enhance_attempts,
-    successCount: row.out_success_count,
-    soldCount: row.out_sold_count,
+    level,
+    enhanceCost,
+    sellPrice,
+    totalPaidCost,
+    sellProfit,
+    successRatePct: toSafeNumber(row.out_success_rate_pct),
+    balance: Math.floor(toSafeNumber(row.out_balance)),
+    tunaEnergy: Math.max(0, Math.floor(toSafeNumber(row.out_tuna_forge_energy))),
+    enhanceAttempts: Math.max(0, Math.floor(toSafeNumber(row.out_enhance_attempts))),
+    successCount: Math.max(0, Math.floor(toSafeNumber(row.out_success_count))),
+    soldCount: Math.max(0, Math.floor(toSafeNumber(row.out_sold_count))),
   });
 }

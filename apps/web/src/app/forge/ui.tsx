@@ -60,7 +60,41 @@ const computeEnhanceCost = (level: number) => {
   return baseCost + extraLevel * 180 + extraLevel * extraLevel * 26;
 };
 
-const formatSignedPoints = (value: number) => `${value >= 0 ? '+' : ''}${value.toLocaleString('ko-KR')}p`;
+const toSafeNumber = (value: unknown, fallback = 0) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+};
+
+const formatSignedPoints = (value: number) => {
+  const safeValue = toSafeNumber(value);
+  return `${safeValue >= 0 ? '+' : ''}${safeValue.toLocaleString('ko-KR')}p`;
+};
+
+const normalizeForgeStatus = (raw: Partial<ForgeStatus>): ForgeStatus => {
+  const level = Math.max(0, Math.floor(toSafeNumber(raw.level)));
+  const enhanceCost = Math.max(0, Math.floor(toSafeNumber(raw.enhanceCost)));
+  const sellPrice = Math.max(0, Math.floor(toSafeNumber(raw.sellPrice)));
+  const totalPaidCost = Math.max(0, Math.floor(toSafeNumber(raw.totalPaidCost)));
+  const fallbackSellProfit = sellPrice - totalPaidCost;
+
+  return {
+    level,
+    enhanceCost,
+    sellPrice,
+    totalPaidCost,
+    sellProfit: toSafeNumber(raw.sellProfit, fallbackSellProfit),
+    successRatePct: toSafeNumber(raw.successRatePct),
+    balance: Math.floor(toSafeNumber(raw.balance)),
+    tunaEnergy: Math.max(0, Math.floor(toSafeNumber(raw.tunaEnergy))),
+    enhanceAttempts: Math.max(0, Math.floor(toSafeNumber(raw.enhanceAttempts))),
+    successCount: Math.max(0, Math.floor(toSafeNumber(raw.successCount))),
+    soldCount: Math.max(0, Math.floor(toSafeNumber(raw.soldCount))),
+  };
+};
 
 export default function ForgeClient() {
   const [status, setStatus] = useState<ForgeStatus | null>(null);
@@ -86,9 +120,10 @@ export default function ForgeClient() {
   }, [status?.level, status?.successRatePct]);
 
   const discountReady = (status?.tunaEnergy ?? 0) >= 3;
-  const effectiveEnhanceCost = status ? (discountReady ? Math.floor(status.enhanceCost * 0.5) : status.enhanceCost) : 0;
-  const totalPaidCost = Math.max(0, status?.totalPaidCost ?? 0);
-  const sellProfit = (status?.sellProfit ?? (status?.sellPrice ?? 0) - totalPaidCost) ?? 0;
+  const baseEnhanceCost = toSafeNumber(status?.enhanceCost);
+  const effectiveEnhanceCost = status ? (discountReady ? Math.floor(baseEnhanceCost * 0.5) : baseEnhanceCost) : 0;
+  const totalPaidCost = Math.max(0, toSafeNumber(status?.totalPaidCost));
+  const sellProfit = toSafeNumber(status?.sellProfit, toSafeNumber(status?.sellPrice) - totalPaidCost);
   const canSell = Boolean(status && status.level > 0 && status.sellPrice > 0);
   const sellBlockedByZeroPrice = Boolean(status && status.level > 0 && status.sellPrice <= 0);
 
@@ -114,7 +149,7 @@ export default function ForgeClient() {
       if (!response.ok) {
         throw new Error(body?.error ?? '강화 상태를 불러오지 못했습니다.');
       }
-      setStatus(body as ForgeStatus);
+      setStatus(normalizeForgeStatus(body as Partial<ForgeStatus>));
     } catch (error) {
       const message = error instanceof Error ? error.message : '강화 상태를 불러오지 못했습니다.';
       setLastMessage(message);
@@ -188,8 +223,8 @@ export default function ForgeClient() {
           ? {
               ...prev,
               ...(() => {
-                const nextTotalPaidCost = prev.totalPaidCost + Math.max(0, result.cost);
-                const nextSellProfit = result.sellPrice - nextTotalPaidCost;
+                const nextTotalPaidCost = Math.max(0, toSafeNumber(prev.totalPaidCost) + Math.max(0, toSafeNumber(result.cost)));
+                const nextSellProfit = toSafeNumber(result.sellPrice) - nextTotalPaidCost;
                 return {
                   totalPaidCost: nextTotalPaidCost,
                   sellProfit: nextSellProfit,
@@ -258,7 +293,7 @@ export default function ForgeClient() {
       }
 
       const result = body as SellResponse;
-      const realizedProfit = result.payout - Math.max(0, status.totalPaidCost ?? 0);
+      const realizedProfit = toSafeNumber(result.payout) - Math.max(0, toSafeNumber(status.totalPaidCost));
       setStatus((prev) =>
         prev
           ? {
@@ -301,11 +336,11 @@ export default function ForgeClient() {
             <span>참치캔 강화소</span>
             <span className="ml-1 inline-flex items-center gap-1 rounded-lg border border-[color:color-mix(in_srgb,var(--fg)_16%,transparent)] bg-[color:color-mix(in_srgb,var(--card)_78%,transparent)] px-2 py-1 text-[11px] text-[color:var(--muted)]">
               <Coins className="h-3.5 w-3.5" />
-              {status?.balance?.toLocaleString('ko-KR') ?? 0}p
+              {toSafeNumber(status?.balance).toLocaleString('ko-KR')}p
             </span>
             <span className="inline-flex items-center gap-1 rounded-lg border border-[color:color-mix(in_srgb,var(--fg)_16%,transparent)] bg-[color:color-mix(in_srgb,var(--card)_78%,transparent)] px-2 py-1 text-[11px] text-[color:var(--muted)]">
               <Sparkles className="h-3.5 w-3.5" />
-              기운 {status?.tunaEnergy?.toLocaleString('ko-KR') ?? 0}
+              기운 {toSafeNumber(status?.tunaEnergy).toLocaleString('ko-KR')}
             </span>
             <span
               className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] ${
@@ -345,7 +380,7 @@ export default function ForgeClient() {
                 <div className="rounded-lg border border-[color:color-mix(in_srgb,var(--fg)_14%,transparent)] bg-[color:color-mix(in_srgb,var(--card)_78%,transparent)] px-2 py-1.5 text-center">
                   <p className="text-[10px] text-[color:var(--muted)]">판매 예상 금액</p>
                   <p className={`font-black ${canSell ? 'text-[#86efac]' : 'text-[color:var(--muted)]'}`}>
-                    {(status?.sellPrice ?? 0).toLocaleString('ko-KR')}p
+                    {toSafeNumber(status?.sellPrice).toLocaleString('ko-KR')}p
                   </p>
                   <p
                     className={`text-[10px] font-semibold ${

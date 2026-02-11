@@ -69,6 +69,7 @@ export async function PUT(req: Request) {
     lottery_silver_payout_points?: number;
     lottery_bronze_payout_points?: number;
     lottery_jackpot_pool_points?: number;
+    lottery_activity_jackpot_rate_pct?: number;
   };
 
   const patch: Record<string, unknown> = {};
@@ -117,6 +118,7 @@ export async function PUT(req: Request) {
   if (body.lottery_silver_payout_points !== undefined) patch.lottery_silver_payout_points = body.lottery_silver_payout_points;
   if (body.lottery_bronze_payout_points !== undefined) patch.lottery_bronze_payout_points = body.lottery_bronze_payout_points;
   if (body.lottery_jackpot_pool_points !== undefined) patch.lottery_jackpot_pool_points = body.lottery_jackpot_pool_points;
+  if (body.lottery_activity_jackpot_rate_pct !== undefined) patch.lottery_activity_jackpot_rate_pct = body.lottery_activity_jackpot_rate_pct;
 
     const supabase = createSupabaseAdminClient();
 

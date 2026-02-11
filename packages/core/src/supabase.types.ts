@@ -80,6 +80,7 @@ export type Database = {
           lottery_silver_payout_points: number;
           lottery_bronze_payout_points: number;
           lottery_jackpot_pool_points: number;
+          lottery_activity_jackpot_rate_pct: number;
           server_intro: string | null;
           banner_image_url: string | null;
           icon_image_url: string | null;
