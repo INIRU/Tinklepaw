@@ -39,11 +39,12 @@ const PANEL_GAP = 18;
 const UP_COLOR = '#ef4444';
 const DOWN_COLOR = '#3b82f6';
 const GRID_COLOR = 'rgba(148,163,184,0.18)';
+const CANDLE_WINDOW = 72;
 
 function fallbackCandles(currentPrice: number): StockCandle[] {
   const safe = Math.max(100, currentPrice);
-  return Array.from({ length: 48 }).map((_, idx) => {
-    const ts = new Date(Date.now() - (47 - idx) * 5 * 60 * 1000).toISOString();
+  return Array.from({ length: CANDLE_WINDOW }).map((_, idx) => {
+    const ts = new Date(Date.now() - (CANDLE_WINDOW - 1 - idx) * 5 * 60 * 1000).toISOString();
     return { t: ts, o: safe, h: safe, l: safe, c: safe, v: 0 };
   });
 }
@@ -171,7 +172,7 @@ export async function generateStockChartImage(params: {
 }) {
   const source = params.candles.length > 0 ? params.candles : fallbackCandles(params.currentPrice);
   const candles = source
-    .slice(-72)
+    .slice(-CANDLE_WINDOW)
     .sort((a, b) => new Date(a.t).getTime() - new Date(b.t).getTime());
 
   const canvas = createCanvas(WIDTH, HEIGHT);
@@ -212,7 +213,7 @@ export async function generateStockChartImage(params: {
 
   const yAtPrice = (price: number) => priceY + ((topPrice - price) / range) * priceH;
 
-  const xStep = priceW / candles.length;
+  const xStep = priceW / Math.max(candles.length, 1);
   const xAt = (index: number) => priceX + xStep * index + xStep / 2;
 
   ctx.font = "12px 'Noto Sans KR', sans-serif";
@@ -235,7 +236,7 @@ export async function generateStockChartImage(params: {
     ctx.fillText(`${Math.round(value).toLocaleString()}P`, priceX + priceW + 10, y);
   }
 
-  const labelEvery = Math.max(1, Math.floor(candles.length / 8));
+  const labelEvery = Math.max(1, Math.floor(candles.length / 9));
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.font = "11px 'Noto Sans KR', sans-serif";
@@ -253,7 +254,7 @@ export async function generateStockChartImage(params: {
     ctx.fillText(formatTime(candles[i].t), x, volumeY + volumeH + 12);
   }
 
-  const candleWidth = Math.max(5, Math.min(14, xStep * 0.68));
+  const candleWidth = Math.max(7, Math.min(20, xStep * 0.9));
   for (let i = 0; i < candles.length; i += 1) {
     const c = candles[i];
     const x = xAt(i);
