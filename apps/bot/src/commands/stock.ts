@@ -19,6 +19,9 @@ import { generateStockChartImage } from '../lib/stockChartImage.js';
 
 type StockCandle = {
   t: string;
+  o: number;
+  h: number;
+  l: number;
   c: number;
 };
 
@@ -67,12 +70,20 @@ function parseCandles(raw: unknown): StockCandle[] {
   return raw
     .map((entry) => {
       const row = entry as Record<string, unknown>;
+      const close = toNumber(row.c);
+      const open = toNumber(row.o) || close;
+      const high = toNumber(row.h) || Math.max(open, close);
+      const low = toNumber(row.l) || Math.min(open, close);
+
       return {
         t: String(row.t ?? ''),
-        c: toNumber(row.c),
+        o: open,
+        h: Math.max(high, open, close),
+        l: Math.min(low, open, close),
+        c: close,
       };
     })
-    .filter((c) => c.t.length > 0 && c.c > 0);
+    .filter((c) => c.t.length > 0 && c.c > 0 && c.h > 0 && c.l > 0);
 }
 
 function actionRow(disabled = false) {
