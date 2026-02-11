@@ -1,0 +1,605 @@
+'use client';
+
+import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ArrowUpDown, CandlestickChart, Coins, RefreshCcw, Wallet } from 'lucide-react';
+
+type StockCandle = {
+  t: string;
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v: number;
+};
+
+type StockDashboard = {
+  symbol: string;
+  displayName: string;
+  price: number;
+  changePct: number;
+  feeBps: number;
+  balance: number;
+  holdingQty: number;
+  holdingAvgPrice: number;
+  holdingValue: number;
+  unrealizedPnl: number;
+  candles: StockCandle[];
+};
+
+type TradeResult = {
+  side: string | null;
+  qty: number;
+  price: number;
+  gross: number;
+  fee: number;
+  settlement: number;
+};
+
+type ThemeMode = 'light' | 'dark';
+
+const CANDLE_WINDOW = 72;
+const FIVE_MINUTE_MS = 5 * 60 * 1000;
+
+function currentThemeMode(): ThemeMode {
+  if (typeof document === 'undefined') return 'light';
+  return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+}
+
+function useThemeMode() {
+  const [theme, setTheme] = useState<ThemeMode>(() => currentThemeMode());
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const sync = () => setTheme(currentThemeMode());
+    sync();
+
+    const observer = new MutationObserver(sync);
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+
+    window.addEventListener('storage', sync);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('storage', sync);
+    };
+  }, []);
+
+  return theme;
+}
+
+const toSafeNumber = (value: unknown, fallback = 0) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+function normalizeDashboard(raw: unknown): StockDashboard {
+  const body = (raw ?? {}) as Record<string, unknown>;
+  const candlesRaw = Array.isArray(body.candles) ? body.candles : [];
+  const candles = candlesRaw
+    .map((entry) => {
+      const row = entry as Record<string, unknown>;
+      const c = toSafeNumber(row.c);
+      const o = toSafeNumber(row.o, c);
+      const h = Math.max(toSafeNumber(row.h, c), o, c);
+      const l = Math.min(toSafeNumber(row.l, c), o, c);
+      return {
+        t: String(row.t ?? ''),
+        o,
+        h,
+        l,
+        c,
+        v: Math.max(0, toSafeNumber(row.v)),
+      };
+    })
+    .filter((c) => c.t.length > 0 && c.c > 0 && c.h > 0 && c.l > 0);
+
+  return {
+    symbol: String(body.symbol ?? 'KURO'),
+    displayName: String(body.displayName ?? '쿠로 주식'),
+    price: toSafeNumber(body.price),
+    changePct: toSafeNumber(body.changePct),
+    feeBps: toSafeNumber(body.feeBps, 150),
+    balance: toSafeNumber(body.balance),
+    holdingQty: toSafeNumber(body.holdingQty),
+    holdingAvgPrice: toSafeNumber(body.holdingAvgPrice),
+    holdingValue: toSafeNumber(body.holdingValue),
+    unrealizedPnl: toSafeNumber(body.unrealizedPnl),
+    candles,
+  };
+}
+
+function fallbackCandles(price: number): StockCandle[] {
+  const safePrice = Math.max(1, price || 1000);
+  return Array.from({ length: CANDLE_WINDOW }).map((_, idx) => ({
+    t: new Date(Date.now() - (CANDLE_WINDOW - 1 - idx) * FIVE_MINUTE_MS).toISOString(),
+    o: safePrice,
+    h: safePrice,
+    l: safePrice,
+    c: safePrice,
+    v: 0,
+  }));
+}
+
+function normalizeCandles(candles: StockCandle[], fallbackPrice: number): StockCandle[] {
+  const sorted = [...candles]
+    .sort((a, b) => new Date(a.t).getTime() - new Date(b.t).getTime())
+    .slice(-CANDLE_WINDOW);
+
+  if (sorted.length === 0) return fallbackCandles(fallbackPrice);
+  if (sorted.length >= CANDLE_WINDOW) return sorted;
+
+  const missing = CANDLE_WINDOW - sorted.length;
+  const base = Math.max(1, sorted[0].o || sorted[0].c || fallbackPrice || 1000);
+  const firstTime = new Date(sorted[0].t).getTime();
+  const startTime = Number.isNaN(firstTime)
+    ? Date.now() - (CANDLE_WINDOW - 1) * FIVE_MINUTE_MS
+    : firstTime - missing * FIVE_MINUTE_MS;
+
+  const padded = Array.from({ length: missing }).map((_, idx) => {
+    const ts = new Date(startTime + idx * FIVE_MINUTE_MS).toISOString();
+    return { t: ts, o: base, h: base, l: base, c: base, v: 0 };
+  });
+
+  return [...padded, ...sorted];
+}
+
+function movingAverage(candles: StockCandle[], windowSize: number): Array<number | null> {
+  const result: Array<number | null> = [];
+  let sum = 0;
+
+  for (let i = 0; i < candles.length; i += 1) {
+    sum += candles[i].c;
+    if (i >= windowSize) sum -= candles[i - windowSize].c;
+    if (i < windowSize - 1) result.push(null);
+    else result.push(sum / windowSize);
+  }
+
+  return result;
+}
+
+function formatTime(ts: string) {
+  const d = new Date(ts);
+  if (!Number.isFinite(d.getTime())) return '--:--';
+  return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function signed(value: number) {
+  return `${value >= 0 ? '+' : ''}${value.toLocaleString('ko-KR')}`;
+}
+
+function signedPct(value: number) {
+  return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+}
+
+function StockChart({ status }: { status: StockDashboard | null }) {
+  const theme = useThemeMode();
+  const palette = useMemo(
+    () =>
+      theme === 'dark'
+        ? {
+            pricePanelBg: 'rgba(15,23,42,0.82)',
+            pricePanelStroke: 'rgba(148,163,184,0.32)',
+            volumePanelBg: 'rgba(15,23,42,0.76)',
+            volumePanelStroke: 'rgba(148,163,184,0.26)',
+            grid: 'rgba(148,163,184,0.20)',
+            axis: 'rgba(226,232,240,0.88)',
+            axisMuted: 'rgba(226,232,240,0.76)',
+            up: '#ef4444',
+            down: '#60a5fa',
+            upVolume: 'rgba(239,68,68,0.58)',
+            downVolume: 'rgba(96,165,250,0.58)',
+            maFast: 'rgba(250,204,21,0.96)',
+            maSlow: 'rgba(248,250,252,0.84)',
+          }
+        : {
+            pricePanelBg: 'rgba(255,255,255,0.96)',
+            pricePanelStroke: 'rgba(28,36,66,0.24)',
+            volumePanelBg: 'rgba(255,255,255,0.93)',
+            volumePanelStroke: 'rgba(28,36,66,0.2)',
+            grid: 'rgba(28,36,66,0.12)',
+            axis: 'rgba(28,36,66,0.86)',
+            axisMuted: 'rgba(28,36,66,0.74)',
+            up: '#e11d48',
+            down: '#2563eb',
+            upVolume: 'rgba(225,29,72,0.36)',
+            downVolume: 'rgba(37,99,235,0.34)',
+            maFast: 'rgba(217,119,6,0.92)',
+            maSlow: 'rgba(71,85,105,0.82)',
+          },
+    [theme],
+  );
+
+  const candles = useMemo(
+    () => normalizeCandles(status?.candles ?? [], status?.price ?? 1000),
+    [status?.candles, status?.price],
+  );
+
+  const ma5 = useMemo(() => movingAverage(candles, 5), [candles]);
+  const ma20 = useMemo(() => movingAverage(candles, 20), [candles]);
+
+  const { priceTop, priceBottom, plotW, plotH, volH, maxVolume } = useMemo(() => {
+    const highs = candles.map((c) => c.h);
+    const lows = candles.map((c) => c.l);
+    const top = Math.max(...highs);
+    const bottom = Math.min(...lows);
+    const range = Math.max(1, top - bottom);
+    const pad = Math.max(12, range * 0.08);
+    return {
+      priceTop: top + pad,
+      priceBottom: Math.max(1, bottom - pad),
+      plotW: 1020,
+      plotH: 350,
+      volH: 90,
+      maxVolume: Math.max(1, ...candles.map((c) => c.v)),
+    };
+  }, [candles]);
+
+  const x0 = 24;
+  const y0 = 16;
+  const gap = 18;
+  const volumeY0 = y0 + plotH + gap;
+  const xStep = plotW / candles.length;
+  const candleWidth = Math.max(7, Math.min(14, xStep * 0.92));
+  const yScale = Math.max(1, priceTop - priceBottom);
+
+  const yAtPrice = (price: number) => y0 + ((priceTop - price) / yScale) * plotH;
+
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_94%,transparent)] p-3 shadow-[0_10px_28px_rgba(12,18,34,0.12)]">
+      <svg viewBox="0 0 1120 510" className="h-auto min-w-[860px] w-full" role="img" aria-label="주식 5분봉 차트">
+        <rect x={x0} y={y0} width={plotW} height={plotH} rx={12} fill={palette.pricePanelBg} stroke={palette.pricePanelStroke} />
+        <rect x={x0} y={volumeY0} width={plotW} height={volH} rx={10} fill={palette.volumePanelBg} stroke={palette.volumePanelStroke} />
+
+        {Array.from({ length: 6 }).map((_, i) => {
+          const ratio = i / 5;
+          const y = y0 + plotH * ratio;
+          const value = priceTop - (priceTop - priceBottom) * ratio;
+          return (
+            <g key={`grid-${i}`}>
+              <line x1={x0} y1={y} x2={x0 + plotW} y2={y} stroke={palette.grid} strokeWidth={1} />
+              <text x={x0 + plotW + 10} y={y + 4} fontSize={11} fill={palette.axis}>
+                {Math.round(value).toLocaleString('ko-KR')}P
+              </text>
+            </g>
+          );
+        })}
+
+        {candles.map((candle, index) => {
+          const x = x0 + index * xStep + xStep / 2;
+          const up = candle.c >= candle.o;
+          const color = up ? palette.up : palette.down;
+
+          const yHigh = yAtPrice(candle.h);
+          const yLow = yAtPrice(candle.l);
+          const yOpen = yAtPrice(candle.o);
+          const yClose = yAtPrice(candle.c);
+          const bodyTop = Math.min(yOpen, yClose);
+          const bodyHeight = Math.max(2, Math.abs(yClose - yOpen));
+
+          const volHeight = (Math.max(candle.v, 0) / maxVolume) * (volH - 14);
+          const volTop = volumeY0 + volH - volHeight - 6;
+
+          return (
+            <g key={`candle-${index}`}>
+              <line x1={x} y1={yHigh} x2={x} y2={yLow} stroke={color} strokeWidth={1.2} />
+              <rect x={x - candleWidth / 2} y={bodyTop} width={candleWidth} height={bodyHeight} fill={color} rx={1.2} />
+              <rect
+                x={x - candleWidth / 2}
+                y={volTop}
+                width={candleWidth}
+                height={Math.max(1, volHeight)}
+                fill={up ? palette.upVolume : palette.downVolume}
+              />
+            </g>
+          );
+        })}
+
+        {(() => {
+          const path = ma5
+            .map((value, index) => {
+              if (value == null) return null;
+              const x = x0 + index * xStep + xStep / 2;
+              const y = yAtPrice(value);
+              return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
+            })
+            .filter(Boolean)
+            .join(' ');
+          return path ? <path d={path} fill="none" stroke={palette.maFast} strokeWidth={1.6} /> : null;
+        })()}
+
+        {(() => {
+          const path = ma20
+            .map((value, index) => {
+              if (value == null) return null;
+              const x = x0 + index * xStep + xStep / 2;
+              const y = yAtPrice(value);
+              return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
+            })
+            .filter(Boolean)
+            .join(' ');
+          return path ? (
+            <path d={path} fill="none" stroke={palette.maSlow} strokeWidth={1.4} strokeDasharray="6 5" />
+          ) : null;
+        })()}
+
+        {candles
+          .filter((_, index) => index % Math.max(1, Math.floor(candles.length / 8)) === 0)
+          .map((candle, i) => {
+            const index = i * Math.max(1, Math.floor(candles.length / 8));
+            const x = x0 + index * xStep + xStep / 2;
+            return (
+              <text key={`label-${candle.t}-${i}`} x={x} y={volumeY0 + volH + 16} fontSize={10} textAnchor="middle" fill={palette.axisMuted}>
+                {formatTime(candle.t)}
+              </text>
+            );
+          })}
+
+        <text x={x0 + 10} y={volumeY0 + 14} fontSize={11} fill={palette.axisMuted}>거래량</text>
+      </svg>
+    </div>
+  );
+}
+
+export default function StockClient() {
+  const [status, setStatus] = useState<StockDashboard | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [qtyInput, setQtyInput] = useState('1');
+  const [busySide, setBusySide] = useState<'buy' | 'sell' | null>(null);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [notice, setNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [lastTrade, setLastTrade] = useState<TradeResult | null>(null);
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/stock/status', { cache: 'no-store' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(typeof body?.error === 'string' ? body.error : `HTTP ${res.status}`);
+      }
+
+      setStatus(normalizeDashboard(body));
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '주식 정보를 불러오지 못했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadStatus();
+    const id = setInterval(() => {
+      void loadStatus();
+    }, 15000);
+    return () => clearInterval(id);
+  }, [loadStatus]);
+
+  const handleManualRefresh = useCallback(async () => {
+    setManualRefreshing(true);
+    try {
+      await loadStatus();
+    } finally {
+      window.setTimeout(() => {
+        setManualRefreshing(false);
+      }, 120);
+    }
+  }, [loadStatus]);
+
+  const submitTrade = useCallback(
+    async (side: 'buy' | 'sell') => {
+      const qty = Math.trunc(Number(qtyInput));
+      if (!Number.isFinite(qty) || qty <= 0) {
+        setNotice({ type: 'error', text: '수량은 1 이상의 숫자로 입력해 주세요.' });
+        return;
+      }
+
+      setBusySide(side);
+      setNotice(null);
+
+      try {
+        const res = await fetch('/api/stock/trade', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ side, qty }),
+        });
+
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(typeof body?.error === 'string' ? body.error : `HTTP ${res.status}`);
+        }
+
+        const trade = (body.trade ?? {}) as Record<string, unknown>;
+        setLastTrade({
+          side: String(trade.side ?? side),
+          qty: toSafeNumber(trade.qty),
+          price: toSafeNumber(trade.price),
+          gross: toSafeNumber(trade.gross),
+          fee: toSafeNumber(trade.fee),
+          settlement: toSafeNumber(trade.settlement),
+        });
+
+        if (body.dashboard) {
+          setStatus(normalizeDashboard(body.dashboard));
+        } else {
+          await loadStatus();
+        }
+
+        setNotice({
+          type: 'success',
+          text: `${side === 'buy' ? '매수' : '매도'} 완료: ${qty.toLocaleString('ko-KR')}주`,
+        });
+      } catch (e) {
+        setNotice({ type: 'error', text: e instanceof Error ? e.message : '거래에 실패했습니다.' });
+      } finally {
+        setBusySide(null);
+      }
+    },
+    [qtyInput, loadStatus],
+  );
+
+  const quickQuantities = [1, 5, 10, 50, 100, 500];
+
+  return (
+    <main className="mx-auto max-w-6xl px-6 py-10">
+      <section className="rounded-3xl border border-[color:color-mix(in_srgb,var(--accent-sky)_28%,var(--border))] bg-[linear-gradient(145deg,color-mix(in_srgb,var(--accent-sky)_14%,var(--card)),color-mix(in_srgb,var(--accent-pink)_8%,var(--card)))] p-6 shadow-[0_22px_54px_rgba(8,12,28,0.16)]">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold tracking-[0.16em] text-[color:color-mix(in_srgb,var(--fg)_74%,transparent)]">TRADING PANEL</p>
+            <h1 className="mt-1 text-3xl font-black tracking-tight font-bangul text-[color:var(--fg)]">{status?.displayName ?? '쿠로 주식'}</h1>
+            <p className="mt-2 text-sm text-[color:color-mix(in_srgb,var(--fg)_74%,transparent)]">웹에서 5분봉 차트를 보면서 바로 매수/매도할 수 있어요.</p>
+          </div>
+
+          <button
+            type="button"
+            disabled={manualRefreshing}
+            onClick={() => void handleManualRefresh()}
+            className="inline-flex items-center gap-2 rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_84%,transparent)] px-4 py-2 text-sm font-semibold text-[color:var(--fg)] transition hover:brightness-105 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            <RefreshCcw className={`h-4 w-4 ${manualRefreshing ? 'animate-spin' : ''}`} />
+            새로고침
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] px-4 py-3">
+            <p className="text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]">현재가</p>
+            <p className="mt-1 text-xl font-black text-[color:var(--fg)]">{status ? `${status.price.toLocaleString('ko-KR')}P` : '...'}</p>
+            <p className={`mt-1 text-xs font-semibold ${status && status.changePct >= 0 ? 'text-[#e11d48] dark:text-[#fb7185]' : 'text-[#2563eb] dark:text-[#7dd3fc]'}`}>
+              {status ? signedPct(status.changePct) : '-'}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] px-4 py-3">
+            <p className="text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]">내 포인트</p>
+            <p className="mt-1 text-xl font-black text-[color:var(--fg)]">{status ? `${status.balance.toLocaleString('ko-KR')}P` : '...'}</p>
+            <p className="mt-1 text-xs text-[color:color-mix(in_srgb,var(--fg)_68%,transparent)]">수수료 {(toSafeNumber(status?.feeBps, 150) / 100).toFixed(2)}%</p>
+          </div>
+
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] px-4 py-3">
+            <p className="text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]">보유 수량</p>
+            <p className="mt-1 text-xl font-black text-[color:var(--fg)]">{status ? `${status.holdingQty.toLocaleString('ko-KR')}주` : '...'}</p>
+            <p className="mt-1 text-xs text-[color:color-mix(in_srgb,var(--fg)_68%,transparent)]">평단 {status ? `${status.holdingAvgPrice.toLocaleString('ko-KR')}P` : '-'}</p>
+          </div>
+
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] px-4 py-3">
+            <p className="text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]">평가손익</p>
+            <p className={`mt-1 text-xl font-black ${status && status.unrealizedPnl >= 0 ? 'text-[#e11d48] dark:text-[#fb7185]' : 'text-[#2563eb] dark:text-[#7dd3fc]'}`}>
+              {status ? `${signed(status.unrealizedPnl)}P` : '...'}
+            </p>
+            <p className="mt-1 text-xs text-[color:color-mix(in_srgb,var(--fg)_68%,transparent)]">평가금액 {status ? `${status.holdingValue.toLocaleString('ko-KR')}P` : '-'}</p>
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <StockChart status={status} />
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-[1.18fr,0.82fr]">
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_90%,transparent)] p-4">
+            <div className="flex items-center gap-2">
+              <ArrowUpDown className="h-4 w-4 text-[color:var(--muted)]" />
+              <p className="text-sm font-semibold text-[color:var(--fg)]">거래</p>
+            </div>
+
+            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <label className="text-sm font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]" htmlFor="stock-qty">
+                수량
+              </label>
+              <input
+                id="stock-qty"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={qtyInput}
+                onChange={(e) => setQtyInput(e.target.value.replace(/[^0-9]/g, ''))}
+                className="h-10 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)] px-3 text-sm font-semibold text-[color:var(--fg)] outline-none focus:border-[color:var(--accent-sky)] sm:max-w-[180px]"
+              />
+              <div className="flex flex-wrap gap-1.5">
+                {quickQuantities.map((qty) => (
+                  <button
+                    key={qty}
+                    type="button"
+                    onClick={() => setQtyInput(String(qty))}
+                    className="rounded-full border border-[color:var(--border)] bg-[color:var(--chip)] px-2.5 py-1 text-xs font-semibold text-[color:var(--fg)] transition hover:brightness-105"
+                  >
+                    {qty}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                disabled={loading || busySide !== null}
+                onClick={() => void submitTrade('buy')}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#ef4444] px-4 py-2.5 text-sm font-black text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <CandlestickChart className="h-4 w-4" />
+                {busySide === 'buy' ? '매수 중...' : '매수'}
+              </button>
+              <button
+                type="button"
+                disabled={loading || busySide !== null}
+                onClick={() => void submitTrade('sell')}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#3b82f6] px-4 py-2.5 text-sm font-black text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <CandlestickChart className="h-4 w-4" />
+                {busySide === 'sell' ? '매도 중...' : '매도'}
+              </button>
+            </div>
+
+            {notice ? (
+              <p className={`mt-3 text-sm font-semibold ${notice.type === 'success' ? 'text-[#22c55e]' : 'text-[#f87171]'}`}>
+                {notice.text}
+              </p>
+            ) : null}
+            {error ? <p className="mt-3 text-sm font-semibold text-[#f87171]">{error}</p> : null}
+          </div>
+
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_90%,transparent)] p-4">
+            <p className="text-sm font-semibold text-[color:var(--fg)]">최근 거래</p>
+            {lastTrade ? (
+              <div className="mt-3 space-y-2 text-sm text-[color:var(--fg)]">
+                <p>
+                  타입: <span className="font-black">{lastTrade.side === 'buy' ? '매수' : '매도'}</span>
+                </p>
+                <p>
+                  수량: <span className="font-black">{lastTrade.qty.toLocaleString('ko-KR')}주</span>
+                </p>
+                <p>
+                  단가: <span className="font-black">{lastTrade.price.toLocaleString('ko-KR')}P</span>
+                </p>
+                <p>
+                  거래금액: <span className="font-black">{lastTrade.gross.toLocaleString('ko-KR')}P</span>
+                </p>
+                <p>
+                  수수료: <span className="font-black">{lastTrade.fee.toLocaleString('ko-KR')}P</span>
+                </p>
+                <p>
+                  정산: <span className="font-black">{lastTrade.settlement.toLocaleString('ko-KR')}P</span>
+                </p>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-[color:color-mix(in_srgb,var(--fg)_68%,transparent)]">아직 거래 기록이 없어요.</p>
+            )}
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Link href="/draw" className="inline-flex items-center gap-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-xs font-semibold text-[color:var(--fg)]">
+                <Coins className="h-3.5 w-3.5" />
+                뽑기
+              </Link>
+              <Link href="/me" className="inline-flex items-center gap-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-xs font-semibold text-[color:var(--fg)]">
+                <Wallet className="h-3.5 w-3.5" />
+                내 정보
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}

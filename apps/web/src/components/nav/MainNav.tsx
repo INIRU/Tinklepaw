@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect, useRef } from 'react';
-import { Menu, X as CloseIcon, LogOut, Package, Dices, MessageCircle, Settings, User, Bell, Music, Hammer, Trophy, ChevronDown } from 'lucide-react';
+import { Menu, X as CloseIcon, LogOut, Package, Dices, MessageCircle, Settings, User, Bell, Music, Hammer, Trophy, ChevronDown, CandlestickChart } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 
 import DiscordMark from '@/components/icons/DiscordMark';
@@ -74,6 +74,7 @@ export default function MainNav(props: {
   const gameLinks: NavLink[] = [
     { label: '뽑기', href: '/draw', icon: Dices },
     { label: '잭팟', href: '/lotto', icon: Trophy },
+    { label: '주식', href: '/stock', icon: CandlestickChart },
     { label: '인벤토리', href: '/inventory', icon: Package },
     { label: '강화', href: '/forge', icon: Hammer },
   ];
