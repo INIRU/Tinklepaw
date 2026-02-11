@@ -9,6 +9,7 @@ const EnvSchema = z.object({
   NYARU_WEB_URL: z.string().url().optional(),
   SUPABASE_DB_SCHEMA: z.enum(['nyang', 'public']).default('nyang'),
   GEMINI_API_KEY: z.string().min(1).optional(),
+  STOCK_NEWS_GEMINI_API_KEY: z.string().min(1).optional(),
   GROQ_API_KEY: z.string().min(1).optional(),
   LAVALINK_HOST: z.string().default('localhost'),
   LAVALINK_PORT: z.string().transform(Number).default('2333'),

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import NextImage from 'next/image';
 import MarkdownPreview from '@/components/content/MarkdownPreview';
+import { CustomSelect } from '@/components/ui/CustomSelect';
 import { useToast } from '@/components/toast/ToastProvider';
 import { Check, ChevronDown, ChevronLeft } from 'lucide-react';
 
@@ -51,6 +52,17 @@ type AppConfig = {
   lottery_bronze_payout_points: number;
   lottery_jackpot_pool_points: number;
   lottery_activity_jackpot_rate_pct: number;
+  stock_news_enabled: boolean;
+  stock_news_channel_id: string | null;
+  stock_news_schedule_mode: 'interval' | 'daily_random';
+  stock_news_interval_minutes: number;
+  stock_news_daily_window_start_hour: number;
+  stock_news_daily_window_end_hour: number;
+  stock_news_min_impact_bps: number;
+  stock_news_max_impact_bps: number;
+  stock_news_last_sent_at?: string | null;
+  stock_news_next_run_at?: string | null;
+  stock_news_force_run_at?: string | null;
 };
 
 type DiscordChannel = { id: string; name: string; type: number; parent_id?: string | null };
@@ -322,6 +334,7 @@ export default function SettingsClient() {
   const [rewardSearch, setRewardSearch] = useState('');
   const [rewardSaving, setRewardSaving] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [newsTriggering, setNewsTriggering] = useState(false);
 
   const [stagedBanner, setStagedBanner] = useState<StagedAsset | null>(null);
   const [stagedIcon, setStagedIcon] = useState<StagedAsset | null>(null);
@@ -342,6 +355,17 @@ export default function SettingsClient() {
   const textChannels = useMemo(() => channels.filter((c) => c.type === 0 || c.type === 5), [channels]);
   const voiceChannels = useMemo(() => channels.filter((c) => c.type === 2), [channels]);
   const categoryChannels = useMemo(() => channels.filter((c) => c.type === 4), [channels]);
+  const stockNewsChannelOptions = useMemo(
+    () => [{ value: '', label: '선택 안 함' }, ...textChannels.map((c) => ({ value: c.id, label: `#${c.name}` }))],
+    [textChannels]
+  );
+  const stockNewsScheduleOptions = useMemo(
+    () => [
+      { value: 'interval', label: '간격 반복' },
+      { value: 'daily_random', label: '하루 1회 랜덤' }
+    ],
+    []
+  );
   const categoryNameById = useMemo(
     () => new Map(categoryChannels.map((c) => [c.id, c.name])),
     [categoryChannels]
@@ -362,6 +386,17 @@ export default function SettingsClient() {
       join_message_channel_id: cfgBody.join_message_channel_id ?? null,
       voice_interface_trigger_channel_id: cfgBody.voice_interface_trigger_channel_id ?? null,
       voice_interface_category_id: cfgBody.voice_interface_category_id ?? null,
+      stock_news_enabled: Boolean(cfgBody.stock_news_enabled ?? false),
+      stock_news_channel_id: cfgBody.stock_news_channel_id ?? null,
+      stock_news_schedule_mode: cfgBody.stock_news_schedule_mode === 'daily_random' ? 'daily_random' : 'interval',
+      stock_news_interval_minutes: Number(cfgBody.stock_news_interval_minutes ?? 60),
+      stock_news_daily_window_start_hour: Number(cfgBody.stock_news_daily_window_start_hour ?? 9),
+      stock_news_daily_window_end_hour: Number(cfgBody.stock_news_daily_window_end_hour ?? 23),
+      stock_news_min_impact_bps: Number(cfgBody.stock_news_min_impact_bps ?? 40),
+      stock_news_max_impact_bps: Number(cfgBody.stock_news_max_impact_bps ?? 260),
+      stock_news_last_sent_at: cfgBody.stock_news_last_sent_at ?? null,
+      stock_news_next_run_at: cfgBody.stock_news_next_run_at ?? null,
+      stock_news_force_run_at: cfgBody.stock_news_force_run_at ?? null,
       lottery_activity_jackpot_rate_pct: Number(cfgBody.lottery_activity_jackpot_rate_pct ?? 10),
     });
     setLoadError(null);
@@ -424,6 +459,23 @@ export default function SettingsClient() {
       setSaving(false);
     }
   }, [cfg, toast]);
+
+  const triggerStockNewsNow = useCallback(async () => {
+    setNewsTriggering(true);
+    try {
+      const res = await fetch('/api/admin/stock/news/trigger', {
+        method: 'POST'
+      });
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+      toast.success('기사 생성 요청을 등록했습니다. 잠시 후 지정 채널에 전송됩니다.');
+      await loadAll();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '기사 생성 요청에 실패했습니다.');
+    } finally {
+      setNewsTriggering(false);
+    }
+  }, [loadAll, toast]);
 
   const toggleRewardChannel = useCallback(
     (channelId: string) => {
@@ -833,6 +885,142 @@ export default function SettingsClient() {
           ) : (
             <div className="mt-2 text-sm muted">—</div>
           )}
+        </div>
+      </section>
+
+      <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">주식 뉴스</h2>
+            <p className="mt-1 text-xs muted">자동 기사 전송 채널과 생성 주기를 설정합니다.</p>
+          </div>
+          <button
+            type="button"
+            className="rounded-2xl btn-bangul px-4 py-2 text-xs font-semibold disabled:opacity-60"
+            disabled={newsTriggering || !cfg.stock_news_enabled || !cfg.stock_news_channel_id}
+            onClick={() => void triggerStockNewsNow()}
+          >
+            {newsTriggering ? '요청 중…' : '기사 지금 생성'}
+          </button>
+        </div>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <label className="text-sm sm:col-span-2">
+            <span className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                className="h-4 w-4"
+                checked={cfg.stock_news_enabled}
+                onChange={(e) => setCfg({ ...cfg, stock_news_enabled: e.target.checked })}
+              />
+              주식 뉴스 자동 전송 활성화
+            </span>
+          </label>
+
+          <div className="text-sm sm:col-span-2">
+            <CustomSelect
+              label="전송 채널"
+              value={cfg.stock_news_channel_id ?? ''}
+              options={stockNewsChannelOptions}
+              onChange={(value) => setCfg({ ...cfg, stock_news_channel_id: value || null })}
+            />
+          </div>
+
+          <div className="text-sm">
+            <CustomSelect
+              label="스케줄 모드"
+              value={cfg.stock_news_schedule_mode}
+              options={stockNewsScheduleOptions}
+              onChange={(value) =>
+                setCfg({
+                  ...cfg,
+                  stock_news_schedule_mode: value === 'daily_random' ? 'daily_random' : 'interval'
+                })
+              }
+            />
+          </div>
+
+          <label className="text-sm">
+            반복 간격(분)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)] disabled:opacity-60"
+              type="number"
+              min={5}
+              max={1440}
+              value={cfg.stock_news_interval_minutes}
+              disabled={cfg.stock_news_schedule_mode !== 'interval'}
+              onChange={(e) => setCfg({ ...cfg, stock_news_interval_minutes: Number(e.target.value) })}
+            />
+          </label>
+
+          <label className="text-sm">
+            랜덤 시작 시(0~23)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)] disabled:opacity-60"
+              type="number"
+              min={0}
+              max={23}
+              value={cfg.stock_news_daily_window_start_hour}
+              disabled={cfg.stock_news_schedule_mode !== 'daily_random'}
+              onChange={(e) => setCfg({ ...cfg, stock_news_daily_window_start_hour: Number(e.target.value) })}
+            />
+          </label>
+
+          <label className="text-sm">
+            랜덤 종료 시(0~23)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)] disabled:opacity-60"
+              type="number"
+              min={0}
+              max={23}
+              value={cfg.stock_news_daily_window_end_hour}
+              disabled={cfg.stock_news_schedule_mode !== 'daily_random'}
+              onChange={(e) => setCfg({ ...cfg, stock_news_daily_window_end_hour: Number(e.target.value) })}
+            />
+          </label>
+
+          <label className="text-sm">
+            최소 영향(bps)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              min={0}
+              max={5000}
+              value={cfg.stock_news_min_impact_bps}
+              onChange={(e) => setCfg({ ...cfg, stock_news_min_impact_bps: Number(e.target.value) })}
+            />
+          </label>
+
+          <label className="text-sm">
+            최대 영향(bps)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              min={0}
+              max={5000}
+              value={cfg.stock_news_max_impact_bps}
+              onChange={(e) => setCfg({ ...cfg, stock_news_max_impact_bps: Number(e.target.value) })}
+            />
+          </label>
+        </div>
+
+        <div className="mt-4 grid gap-2 rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] p-3 text-xs muted sm:grid-cols-3">
+          <div>
+            <div className="muted-2">최근 전송</div>
+            <div className="text-[color:var(--fg)]">
+              {cfg.stock_news_last_sent_at ? new Date(cfg.stock_news_last_sent_at).toLocaleString('ko-KR', { hour12: false }) : '-'}
+            </div>
+          </div>
+          <div>
+            <div className="muted-2">다음 예정</div>
+            <div className="text-[color:var(--fg)]">
+              {cfg.stock_news_next_run_at ? new Date(cfg.stock_news_next_run_at).toLocaleString('ko-KR', { hour12: false }) : '-'}
+            </div>
+          </div>
+          <div>
+            <div className="muted-2">수동 요청 대기</div>
+            <div className="text-[color:var(--fg)]">{cfg.stock_news_force_run_at ? '있음' : '없음'}</div>
+          </div>
         </div>
       </section>
 

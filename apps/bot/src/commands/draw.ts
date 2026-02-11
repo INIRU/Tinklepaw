@@ -74,6 +74,17 @@ export async function triggerGachaUI(
     voice_reward_daily_cap_points: null,
     booster_voice_bonus_points: 0,
     error_log_channel_id: null,
+    stock_news_enabled: false,
+    stock_news_channel_id: null,
+    stock_news_schedule_mode: 'interval',
+    stock_news_interval_minutes: 60,
+    stock_news_daily_window_start_hour: 9,
+    stock_news_daily_window_end_hour: 23,
+    stock_news_min_impact_bps: 40,
+    stock_news_max_impact_bps: 260,
+    stock_news_last_sent_at: null,
+    stock_news_next_run_at: null,
+    stock_news_force_run_at: null,
     show_traceback_to_user: true,
   }));
 

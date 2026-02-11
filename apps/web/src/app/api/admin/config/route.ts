@@ -70,6 +70,14 @@ export async function PUT(req: Request) {
     lottery_bronze_payout_points?: number;
     lottery_jackpot_pool_points?: number;
     lottery_activity_jackpot_rate_pct?: number;
+    stock_news_enabled?: boolean;
+    stock_news_channel_id?: string | null;
+    stock_news_schedule_mode?: 'interval' | 'daily_random';
+    stock_news_interval_minutes?: number;
+    stock_news_daily_window_start_hour?: number;
+    stock_news_daily_window_end_hour?: number;
+    stock_news_min_impact_bps?: number;
+    stock_news_max_impact_bps?: number;
   };
 
   const patch: Record<string, unknown> = {};
@@ -119,6 +127,33 @@ export async function PUT(req: Request) {
   if (body.lottery_bronze_payout_points !== undefined) patch.lottery_bronze_payout_points = body.lottery_bronze_payout_points;
   if (body.lottery_jackpot_pool_points !== undefined) patch.lottery_jackpot_pool_points = body.lottery_jackpot_pool_points;
   if (body.lottery_activity_jackpot_rate_pct !== undefined) patch.lottery_activity_jackpot_rate_pct = body.lottery_activity_jackpot_rate_pct;
+  if (body.stock_news_enabled !== undefined) patch.stock_news_enabled = Boolean(body.stock_news_enabled);
+  if (body.stock_news_channel_id !== undefined) patch.stock_news_channel_id = body.stock_news_channel_id ?? null;
+  if (body.stock_news_schedule_mode !== undefined) {
+    patch.stock_news_schedule_mode = body.stock_news_schedule_mode === 'daily_random' ? 'daily_random' : 'interval';
+  }
+  if (body.stock_news_interval_minutes !== undefined) {
+    patch.stock_news_interval_minutes = Math.max(5, Math.min(1440, Math.floor(body.stock_news_interval_minutes)));
+  }
+  if (body.stock_news_daily_window_start_hour !== undefined) {
+    patch.stock_news_daily_window_start_hour = Math.max(0, Math.min(23, Math.floor(body.stock_news_daily_window_start_hour)));
+  }
+  if (body.stock_news_daily_window_end_hour !== undefined) {
+    patch.stock_news_daily_window_end_hour = Math.max(0, Math.min(23, Math.floor(body.stock_news_daily_window_end_hour)));
+  }
+  const nextMinImpact =
+    body.stock_news_min_impact_bps !== undefined
+      ? Math.max(0, Math.min(5000, Math.floor(body.stock_news_min_impact_bps)))
+      : undefined;
+  const nextMaxImpact =
+    body.stock_news_max_impact_bps !== undefined
+      ? Math.max(0, Math.min(5000, Math.floor(body.stock_news_max_impact_bps)))
+      : undefined;
+  if (nextMinImpact !== undefined) patch.stock_news_min_impact_bps = nextMinImpact;
+  if (nextMaxImpact !== undefined) patch.stock_news_max_impact_bps = nextMaxImpact;
+  if (nextMinImpact !== undefined && nextMaxImpact !== undefined && nextMaxImpact < nextMinImpact) {
+    patch.stock_news_max_impact_bps = nextMinImpact;
+  }
 
     const supabase = createSupabaseAdminClient();
 
