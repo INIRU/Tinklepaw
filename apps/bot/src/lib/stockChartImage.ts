@@ -40,13 +40,42 @@ const UP_COLOR = '#ef4444';
 const DOWN_COLOR = '#3b82f6';
 const GRID_COLOR = 'rgba(148,163,184,0.18)';
 const CANDLE_WINDOW = 72;
+const FIVE_MINUTE_MS = 5 * 60 * 1000;
 
 function fallbackCandles(currentPrice: number): StockCandle[] {
   const safe = Math.max(100, currentPrice);
   return Array.from({ length: CANDLE_WINDOW }).map((_, idx) => {
-    const ts = new Date(Date.now() - (CANDLE_WINDOW - 1 - idx) * 5 * 60 * 1000).toISOString();
+    const ts = new Date(Date.now() - (CANDLE_WINDOW - 1 - idx) * FIVE_MINUTE_MS).toISOString();
     return { t: ts, o: safe, h: safe, l: safe, c: safe, v: 0 };
   });
+}
+
+function normalizeCandles(candles: StockCandle[], currentPrice: number): StockCandle[] {
+  const recent = [...candles]
+    .sort((a, b) => new Date(a.t).getTime() - new Date(b.t).getTime())
+    .slice(-CANDLE_WINDOW);
+
+  if (recent.length === 0) {
+    return fallbackCandles(currentPrice);
+  }
+
+  if (recent.length >= CANDLE_WINDOW) {
+    return recent;
+  }
+
+  const missing = CANDLE_WINDOW - recent.length;
+  const base = Math.max(1, recent[0].o || recent[0].c || currentPrice || 100);
+  const firstTs = new Date(recent[0].t).getTime();
+  const startTs = Number.isNaN(firstTs)
+    ? Date.now() - (CANDLE_WINDOW - 1) * FIVE_MINUTE_MS
+    : firstTs - missing * FIVE_MINUTE_MS;
+
+  const padded = Array.from({ length: missing }).map((_, idx) => {
+    const ts = new Date(startTs + idx * FIVE_MINUTE_MS).toISOString();
+    return { t: ts, o: base, h: base, l: base, c: base, v: 0 };
+  });
+
+  return [...padded, ...recent];
 }
 
 function movingAverage(candles: StockCandle[], windowSize: number): Array<number | null> {
@@ -170,10 +199,10 @@ export async function generateStockChartImage(params: {
   changePct: number;
   candles: StockCandle[];
 }) {
-  const source = params.candles.length > 0 ? params.candles : fallbackCandles(params.currentPrice);
-  const candles = source
-    .slice(-CANDLE_WINDOW)
-    .sort((a, b) => new Date(a.t).getTime() - new Date(b.t).getTime());
+  const realCandles = [...params.candles]
+    .sort((a, b) => new Date(a.t).getTime() - new Date(b.t).getTime())
+    .slice(-CANDLE_WINDOW);
+  const candles = normalizeCandles(realCandles, params.currentPrice);
 
   const canvas = createCanvas(WIDTH, HEIGHT);
   const ctx = canvas.getContext('2d');
@@ -303,8 +332,8 @@ export async function generateStockChartImage(params: {
   ctx.fillStyle = 'rgba(203,213,225,0.82)';
   ctx.fillText('거래량', volumeX + 10, volumeY + 16);
 
-  const last = candles[candles.length - 1];
-  const first = candles[0];
+  const last = realCandles[realCandles.length - 1] ?? candles[candles.length - 1];
+  const first = realCandles[0] ?? candles[0];
 
   const lastY = yAtPrice(last.c);
   ctx.strokeStyle = 'rgba(250,204,21,0.72)';
@@ -332,7 +361,7 @@ export async function generateStockChartImage(params: {
   ctx.font = "600 16px 'Noto Sans KR', sans-serif";
   ctx.fillStyle = trendColor;
   ctx.fillText(
-    `현재가 ${params.currentPrice.toLocaleString()}P  ·  등락 ${params.changePct >= 0 ? '+' : ''}${params.changePct.toFixed(2)}%  ·  5분봉 ${candles.length}개`,
+    `현재가 ${params.currentPrice.toLocaleString()}P  ·  등락 ${params.changePct >= 0 ? '+' : ''}${params.changePct.toFixed(2)}%  ·  5분봉 ${Math.max(realCandles.length, 1)}개`,
     36,
     78,
   );
