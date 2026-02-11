@@ -40,6 +40,7 @@ type ThemeMode = 'light' | 'dark';
 
 const CANDLE_WINDOW = 72;
 const FIVE_MINUTE_MS = 5 * 60 * 1000;
+const FALLBACK_BASE_TS = Date.UTC(2024, 0, 1, 0, 0, 0);
 
 function currentThemeMode(): ThemeMode {
   if (typeof document === 'undefined') return 'light';
@@ -47,7 +48,7 @@ function currentThemeMode(): ThemeMode {
 }
 
 function useThemeMode() {
-  const [theme, setTheme] = useState<ThemeMode>(() => currentThemeMode());
+  const [theme, setTheme] = useState<ThemeMode>('light');
 
   useEffect(() => {
     const root = document.documentElement;
@@ -114,7 +115,7 @@ function normalizeDashboard(raw: unknown): StockDashboard {
 function fallbackCandles(price: number): StockCandle[] {
   const safePrice = Math.max(1, price || 1000);
   return Array.from({ length: CANDLE_WINDOW }).map((_, idx) => ({
-    t: new Date(Date.now() - (CANDLE_WINDOW - 1 - idx) * FIVE_MINUTE_MS).toISOString(),
+    t: new Date(FALLBACK_BASE_TS + idx * FIVE_MINUTE_MS).toISOString(),
     o: safePrice,
     h: safePrice,
     l: safePrice,
@@ -135,7 +136,7 @@ function normalizeCandles(candles: StockCandle[], fallbackPrice: number): StockC
   const base = Math.max(1, sorted[0].o || sorted[0].c || fallbackPrice || 1000);
   const firstTime = new Date(sorted[0].t).getTime();
   const startTime = Number.isNaN(firstTime)
-    ? Date.now() - (CANDLE_WINDOW - 1) * FIVE_MINUTE_MS
+    ? FALLBACK_BASE_TS
     : firstTime - missing * FIVE_MINUTE_MS;
 
   const padded = Array.from({ length: missing }).map((_, idx) => {
@@ -163,7 +164,12 @@ function movingAverage(candles: StockCandle[], windowSize: number): Array<number
 function formatTime(ts: string) {
   const d = new Date(ts);
   if (!Number.isFinite(d.getTime())) return '--:--';
-  return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return d.toLocaleTimeString('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Seoul',
+  });
 }
 
 function signed(value: number) {
