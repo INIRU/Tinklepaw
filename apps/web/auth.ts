@@ -66,12 +66,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               token.adminCheckedAt = now;
             }
           } catch (e) {
-            // If Discord API fails, keep previous isAdmin value (don't reset to false)
             console.error(
               '[auth] Failed to check admin status:',
               e instanceof Error ? e.message : e,
             );
-            // Don't update adminCheckedAt so it will retry on next session access
           }
         }
       }

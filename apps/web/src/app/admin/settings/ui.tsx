@@ -123,6 +123,7 @@ function CropModal(props: {
 
   useEffect(() => {
     let alive = true;
+    setLocalError(null);
     loadHtmlImage(props.src)
       .then((loaded) => {
         if (!alive) return;
@@ -131,6 +132,7 @@ function CropModal(props: {
       .catch(() => {
         if (!alive) return;
         setImg(null);
+        setLocalError('이미지를 미리보기에 불러오지 못했습니다. GIF 파일은 현재 자르기를 지원하지 않습니다.');
       });
     return () => {
       alive = false;
@@ -254,6 +256,7 @@ function CropModal(props: {
                 width={img.naturalWidth}
                 height={img.naturalHeight}
                 unoptimized
+                loader={({ src }) => src}
                 className="absolute left-1/2 top-1/2 max-w-none select-none"
                 draggable={false}
                 style={{
@@ -262,7 +265,9 @@ function CropModal(props: {
                 }}
               />
             ) : (
-              <div className="flex h-full w-full items-center justify-center text-sm muted">불러오는 중…</div>
+              <div className="flex h-full w-full items-center justify-center text-center text-sm muted px-4">
+                {localError ?? '불러오는 중…'}
+              </div>
             )}
           </div>
 
@@ -496,6 +501,10 @@ export default function SettingsClient() {
   const startCrop = useCallback((key: AssetKey, file: File) => {
     if (!file.type.startsWith('image/')) {
       toast.error('이미지 파일만 업로드할 수 있습니다.');
+      return;
+    }
+    if (file.type === 'image/gif') {
+      toast.error('GIF 이미지는 현재 자르기를 지원하지 않습니다. PNG/JPG/WebP 파일을 사용해 주세요.');
       return;
     }
     const srcUrl = URL.createObjectURL(file);

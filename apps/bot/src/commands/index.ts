@@ -7,6 +7,7 @@ import { equipCommand } from './equip.js';
 import { inventoryCommand } from './inventory.js';
 import { unequipCommand } from './unequip.js';
 import { helpCommand } from './help.js';
+import { webCommand } from './web.js';
 import { notificationCommand } from './notification.js';
 import { notificationSendCommand } from './notification-send.js';
 import { setupCommand } from './setup.js';
@@ -21,6 +22,7 @@ export const commands: SlashCommand[] = [
   equipCommand,
   unequipCommand,
   helpCommand,
+  webCommand,
   setupCommand,
   interfaceCommand,
   notificationCommand,

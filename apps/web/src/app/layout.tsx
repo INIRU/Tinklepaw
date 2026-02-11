@@ -10,7 +10,6 @@ import FooterGate from '@/components/nav/FooterGate';
 import { ToastProvider } from '@/components/toast/ToastProvider';
 import { auth } from '../../auth';
 import { fetchPublicAppConfig } from '@/lib/server/app-config';
-import { fetchGuildMember, isAdmin } from '@/lib/server/discord';
 
 const gowunDodum = Gowun_Dodum({
   variable: '--font-kr-sans',
@@ -76,15 +75,7 @@ export default async function RootLayout({
   const session = await auth();
   const cfg = await fetchPublicAppConfig();
 
-  let showAdmin = false;
-  if (session?.user?.id) {
-    try {
-        const member = await fetchGuildMember({ userId: session.user.id });
-        if (member) showAdmin = await isAdmin({ userId: session.user.id, member });
-    } catch {
-        showAdmin = false;
-    }
-  }
+  const showAdmin = Boolean(session?.isAdmin || (process.env.NODE_ENV !== 'production' && session?.user?.id));
 
   const user = session?.user?.id
     ? {

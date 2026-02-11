@@ -6,6 +6,7 @@ const EnvSchema = z.object({
   NYARU_GUILD_ID: z.string().min(1),
   SUPABASE_URL: z.string().url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  NYARU_WEB_URL: z.string().url().optional(),
   SUPABASE_DB_SCHEMA: z.enum(['nyang', 'public']).default('nyang'),
   GEMINI_API_KEY: z.string().min(1).optional(),
   GROQ_API_KEY: z.string().min(1).optional(),

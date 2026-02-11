@@ -4,8 +4,8 @@ import { m, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState, useEffect } from 'react';
-import { Menu, X as CloseIcon, LogOut, Package, Dices, MessageCircle, Settings, User, Bell, Music, Hammer } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Menu, X as CloseIcon, LogOut, Package, Dices, MessageCircle, Settings, User, Bell, Music, Hammer, Trophy, ChevronDown } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 
 import DiscordMark from '@/components/icons/DiscordMark';
@@ -16,6 +16,13 @@ type UserView = {
   imageUrl: string | null;
 };
 
+type NavLink = {
+  label: string;
+  href: string;
+  icon: typeof Dices;
+  badge?: boolean;
+};
+
 export default function MainNav(props: {
   user: UserView | null;
   showAdmin?: boolean;
@@ -24,6 +31,8 @@ export default function MainNav(props: {
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [openDesktopGroup, setOpenDesktopGroup] = useState<'game' | 'community' | null>(null);
+  const desktopGroupWrapRef = useRef<HTMLDivElement | null>(null);
   const inviteUrl = process.env.NEXT_PUBLIC_DISCORD_INVITE_URL ?? 'https://discord.gg/tinklepaw';
   const iconSrc = props.iconUrl ?? '/icon.jpg';
 
@@ -36,19 +45,110 @@ export default function MainNav(props: {
     }
   }, [props.user]);
 
-  const navLinks = [
+  useEffect(() => {
+    setOpenDesktopGroup(null);
+  }, [pathname]);
+
+  useEffect(() => {
+    const onPointerDown = (event: MouseEvent) => {
+      if (!desktopGroupWrapRef.current) return;
+      if (!desktopGroupWrapRef.current.contains(event.target as Node)) {
+        setOpenDesktopGroup(null);
+      }
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpenDesktopGroup(null);
+      }
+    };
+
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
+
+  const gameLinks: NavLink[] = [
     { label: '뽑기', href: '/draw', icon: Dices },
+    { label: '잭팟', href: '/lotto', icon: Trophy },
     { label: '인벤토리', href: '/inventory', icon: Package },
     { label: '강화', href: '/forge', icon: Hammer },
+  ];
+
+  const communityLinks: NavLink[] = [
     { label: '음악', href: '/music', icon: Music },
     { label: '알림', href: '/notifications', icon: Bell, badge: unreadCount > 0 },
     { label: '문의', href: '/support', icon: MessageCircle },
-    ...(props.showAdmin ? [{ label: '관리자', href: '/admin', icon: Settings }] : [])
+  ];
+
+  const adminLinks: NavLink[] = props.showAdmin ? [{ label: '관리자', href: '/admin', icon: Settings }] : [];
+
+  const mobileSections: Array<{ title: string; links: NavLink[] }> = [
+    { title: '게임', links: gameLinks },
+    { title: '커뮤니티', links: communityLinks },
+    ...(adminLinks.length > 0 ? [{ title: '관리', links: adminLinks }] : []),
   ];
 
   const isLinkActive = (href: string) => {
     if (href === '/') return pathname === '/';
     return pathname === href || pathname.startsWith(`${href}/`);
+  };
+
+  const isGroupActive = (links: NavLink[]) => links.some((link) => isLinkActive(link.href));
+
+  const renderDesktopGroup = (key: 'game' | 'community', label: string, links: NavLink[]) => {
+    const active = isGroupActive(links);
+    const opened = openDesktopGroup === key;
+
+    return (
+      <div key={label} className="relative">
+        <button
+          type="button"
+          onClick={() => setOpenDesktopGroup((prev) => (prev === key ? null : key))}
+          className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${
+            active ? 'nav-pill-active' : 'btn-soft'
+          }`}
+        >
+          {label}
+          <ChevronDown className="h-3.5 w-3.5 opacity-80" />
+        </button>
+
+        <div
+          className={`absolute left-0 top-[calc(100%+8px)] z-40 w-48 transition-all duration-150 ${
+            opened
+              ? 'pointer-events-auto visible translate-y-0 opacity-100'
+              : 'pointer-events-none invisible -translate-y-1 opacity-0'
+          }`}
+        >
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-2 shadow-[0_16px_38px_rgba(10,15,30,0.18)] backdrop-blur-xl">
+            {links.map((link) => {
+              const LinkIcon = link.icon;
+              const activeLink = isLinkActive(link.href);
+
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setOpenDesktopGroup(null)}
+                  className={`relative flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold transition-all ${
+                    activeLink
+                      ? 'bg-[color:color-mix(in_srgb,var(--accent-pink)_20%,var(--chip))] text-[color:var(--fg)]'
+                      : 'text-[color:var(--muted)] hover:bg-[color:var(--chip)] hover:text-[color:var(--fg)]'
+                  }`}
+                >
+                  <LinkIcon className="h-3.5 w-3.5" />
+                  {link.label}
+                  {link.badge ? <span className="ml-auto h-2 w-2 rounded-full bg-red-500" /> : null}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -71,8 +171,10 @@ export default function MainNav(props: {
               </div>
             </Link>
 
-              <div className="ml-3 hidden items-center gap-1 lg:flex">
-                {navLinks.filter(link => link.href !== '/notifications').map((link) => (
+              <div ref={desktopGroupWrapRef} className="ml-3 hidden items-center gap-2 lg:flex">
+                {renderDesktopGroup('game', '게임', gameLinks)}
+                {renderDesktopGroup('community', '커뮤니티', communityLinks)}
+                {adminLinks.map((link) => (
                   <Link
                     key={link.href}
                     className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all ${
@@ -83,9 +185,9 @@ export default function MainNav(props: {
                     href={link.href}
                   >
                     {link.label}
-                </Link>
-              ))}
-            </div>
+                  </Link>
+                ))}
+              </div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -184,29 +286,36 @@ export default function MainNav(props: {
             className="fixed inset-x-0 top-[61px] z-20 border-b border-[color:var(--border)] bg-[color:var(--bg)]/95 p-4 backdrop-blur-lg md:hidden"
           >
             <div className="flex flex-col gap-2">
-              {navLinks.map((link) => {
-                const active = isLinkActive(link.href);
-                return (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    onClick={() => setIsMenuOpen(false)}
-                    className={`relative flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold transition-all ${
-                      active
-                        ? 'nav-pill-active'
-                        : 'border-transparent text-[color:var(--fg)] hover:bg-[color:var(--chip)] hover:border-[color:var(--border)]'
-                    }`}
-                  >
-                    <link.icon className={`h-5 w-5 ${active ? 'text-[color:var(--fg)]' : 'text-[color:var(--muted)]'}`} />
-                    {link.label}
-                    {link.badge && (
-                      <span className="ml-auto flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
-                        {unreadCount}
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
+              {mobileSections.map((section) => (
+                <div key={section.title} className="space-y-1">
+                  <p className="px-2 text-[11px] font-semibold tracking-[0.16em] text-[color:var(--muted)]">{section.title}</p>
+                  {section.links.map((link) => {
+                    const active = isLinkActive(link.href);
+                    const LinkIcon = link.icon;
+
+                    return (
+                      <Link
+                        key={link.href}
+                        href={link.href}
+                        onClick={() => setIsMenuOpen(false)}
+                        className={`relative flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold transition-all ${
+                          active
+                            ? 'nav-pill-active'
+                            : 'border-transparent text-[color:var(--fg)] hover:bg-[color:var(--chip)] hover:border-[color:var(--border)]'
+                        }`}
+                      >
+                        <LinkIcon className={`h-5 w-5 ${active ? 'text-[color:var(--fg)]' : 'text-[color:var(--muted)]'}`} />
+                        {link.label}
+                        {link.badge && (
+                          <span className="ml-auto flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                            {unreadCount}
+                          </span>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              ))}
 
               <div className="my-2 h-px bg-[color:var(--border)] opacity-50" />
 

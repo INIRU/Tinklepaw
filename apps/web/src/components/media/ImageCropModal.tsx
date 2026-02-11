@@ -42,6 +42,7 @@ async function loadHtmlImage(src: string) {
 function extFromMime(mime: string) {
   if (mime === 'image/avif') return 'avif';
   if (mime === 'image/webp') return 'webp';
+  if (mime === 'image/gif') return 'gif';
   if (mime === 'image/png') return 'png';
   if (mime === 'image/jpeg') return 'jpg';
   return 'bin';
@@ -93,6 +94,7 @@ export function ImageCropModal(props: {
 
   useEffect(() => {
     let alive = true;
+    setLocalError(null);
     loadHtmlImage(props.src)
       .then((loaded) => {
         if (!alive) return;
@@ -101,6 +103,7 @@ export function ImageCropModal(props: {
       .catch(() => {
         if (!alive) return;
         setImg(null);
+        setLocalError('이미지를 미리보기에 불러오지 못했습니다. GIF 파일이라면 PNG/JPG로 변환 후 다시 시도해 주세요.');
       });
     return () => {
       alive = false;
@@ -241,7 +244,9 @@ export function ImageCropModal(props: {
                 }}
               />
             ) : (
-              <div className="flex h-full w-full items-center justify-center text-sm muted">불러오는 중…</div>
+              <div className="flex h-full w-full items-center justify-center text-center text-sm muted px-4">
+                {localError ?? '불러오는 중…'}
+              </div>
             )}
           </div>
 
