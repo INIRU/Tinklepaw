@@ -15,6 +15,15 @@ const toSafeNumber = (value: unknown, fallback = 0) => {
   return fallback;
 };
 
+const toFiniteOrNaN = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return Number.NaN;
+};
+
 export async function GET() {
   const session = await auth();
   const userId = session?.user?.id;
@@ -55,7 +64,44 @@ export async function GET() {
   const level = Math.max(0, Math.floor(toSafeNumber(row.out_level)));
   const enhanceCost = Math.max(0, Math.floor(toSafeNumber(row.out_enhance_cost)));
   const sellPrice = Math.max(0, Math.floor(toSafeNumber(row.out_sell_price)));
-  const totalPaidCost = Math.max(0, Math.floor(toSafeNumber(row.out_total_paid_cost)));
+
+  const rpcTotalPaidCost = toFiniteOrNaN(row.out_total_paid_cost);
+  let totalPaidCost = Number.isFinite(rpcTotalPaidCost) ? Math.max(0, Math.floor(rpcTotalPaidCost)) : 0;
+
+  if (!Number.isFinite(rpcTotalPaidCost)) {
+    let lastSellAt: string | null = null;
+
+    const { data: lastSellRows, error: lastSellError } = await supabase
+      .from('point_events')
+      .select('created_at')
+      .eq('discord_user_id', userId)
+      .in('kind', ['sword_sell_reward', 'sword_forge_sell'])
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (!lastSellError && Array.isArray(lastSellRows) && lastSellRows.length > 0) {
+      lastSellAt = lastSellRows[0]?.created_at ?? null;
+    }
+
+    let spendQuery = supabase
+      .from('point_events')
+      .select('amount')
+      .eq('discord_user_id', userId)
+      .in('kind', ['sword_enhance_spend', 'sword_forge_enhance']);
+
+    if (lastSellAt) {
+      spendQuery = spendQuery.gt('created_at', lastSellAt);
+    }
+
+    const { data: spendRows, error: spendError } = await spendQuery;
+    if (!spendError && Array.isArray(spendRows)) {
+      totalPaidCost = spendRows.reduce((acc, eventRow) => {
+        const amount = toSafeNumber((eventRow as { amount?: unknown }).amount);
+        return amount < 0 ? acc + Math.floor(-amount) : acc;
+      }, 0);
+    }
+  }
+
   const sellProfit = sellPrice - totalPaidCost;
 
   return NextResponse.json({
