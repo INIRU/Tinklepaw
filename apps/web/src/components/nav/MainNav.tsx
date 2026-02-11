@@ -283,7 +283,7 @@ export default function MainNav(props: {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-x-0 top-[61px] z-20 border-b border-[color:var(--border)] bg-[color:var(--bg)]/95 p-4 backdrop-blur-lg md:hidden"
+            className="fixed inset-x-0 top-[61px] z-20 border-b border-[color:var(--border)] bg-[color:var(--bg)]/95 p-4 backdrop-blur-lg lg:hidden"
           >
             <div className="flex flex-col gap-2">
               {mobileSections.map((section) => (
