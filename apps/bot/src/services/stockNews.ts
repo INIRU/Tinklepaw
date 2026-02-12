@@ -79,20 +79,36 @@ const MAX_IMPACT_BPS = 5000;
 const DEFAULT_STOCK_SYMBOL = 'KURO';
 const DEFAULT_STOCK_DISPLAY_NAME = '쿠로 전자';
 const VOLATILITY_FLOOR_RATIO = 0.55;
-const BASE_NEUTRAL_PROBABILITY = 0.14;
-const SPARSE_DATA_NEUTRAL_PENALTY = 0.08;
-const STRONG_TREND_THRESHOLD_PCT = 0.65;
-const NEUTRAL_ALLOWED_MAX_MOVE_PCT = 0.28;
-const MANUAL_FALLBACK_HEADLINES = [
-  '쿠로 전자 대형 매수세 유입',
-  '쿠로 전자 차익 실현 물량 급증',
-  '쿠로 전자 급등 기대감 확산',
-  '쿠로 전자 리스크 경계 매물 출회',
-  '쿠로 전자 수급 쏠림으로 변동 확대'
+const SENTIMENT_BULLISH_PROBABILITY = 0.44;
+const SENTIMENT_BEARISH_PROBABILITY = 0.44;
+
+const BULLISH_REASON_SEEDS = [
+  '차세대 제품 쇼케이스 기대감 확산',
+  '대형 파트너십 체결 루머 확산',
+  '핵심 엔지니어 팀 합류 소식',
+  '기관성 매수세 유입 추정',
+  '해외 커뮤니티에서 기술력 재평가'
+];
+
+const BEARISH_REASON_SEEDS = [
+  '생산 라인 점검 이슈 부각',
+  '핵심 부품 수급 지연 우려 확대',
+  '경영진 발언 해석 논란 확산',
+  '단기 차익 실현 물량 집중',
+  '경쟁사 공세 심화 관측'
+];
+
+const NEUTRAL_REASON_SEEDS = [
+  '대형 재료 부재로 관망세 확대',
+  '매수·매도 공방 속 방향성 탐색',
+  '다음 이벤트 대기 심리 확산',
+  '거래량 정체로 박스권 유지',
+  '수급 균형 구간 진입'
 ];
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+
+const pickOne = <T>(items: readonly T[]): T => items[Math.floor(Math.random() * items.length)]!;
 
 const toNumber = (value: unknown, fallback = 0) => {
   const n = typeof value === 'number' ? value : Number(value);
@@ -110,42 +126,29 @@ const getVolatilityFloorImpact = (minImpactBps: number, maxImpactBps: number) =>
   return minImpactBps + Math.floor(spread * VOLATILITY_FLOOR_RATIO);
 };
 
-const pickDirectionalSentiment = (changePct: number): Exclude<Sentiment, 'neutral'> => {
-  if (changePct >= 0.15) return 'bullish';
-  if (changePct <= -0.15) return 'bearish';
-  return Math.random() < 0.5 ? 'bullish' : 'bearish';
+const pickRandomSentiment = (): Sentiment => {
+  const roll = Math.random();
+  if (roll < SENTIMENT_BULLISH_PROBABILITY) return 'bullish';
+  if (roll < SENTIMENT_BULLISH_PROBABILITY + SENTIMENT_BEARISH_PROBABILITY) return 'bearish';
+  return 'neutral';
 };
 
-const pickBalancedSentiment = (params: {
-  requested: Sentiment;
-  changePct: number;
-  dataIsSparse: boolean;
-}): Sentiment => {
-  const { requested, changePct, dataIsSparse } = params;
-  const absMove = Math.abs(changePct);
+const pickReasonSeed = (sentiment: Sentiment): string => {
+  if (sentiment === 'bullish') return pickOne(BULLISH_REASON_SEEDS);
+  if (sentiment === 'bearish') return pickOne(BEARISH_REASON_SEEDS);
+  return pickOne(NEUTRAL_REASON_SEEDS);
+};
 
-  if (absMove >= STRONG_TREND_THRESHOLD_PCT) {
-    return changePct >= 0 ? 'bullish' : 'bearish';
+const buildGameHeadline = (displayName: string, reasonSeed: string) => `${displayName} ${reasonSeed}`;
+
+const buildGameBody = (displayName: string, sentiment: Sentiment, reasonSeed: string) => {
+  if (sentiment === 'bullish') {
+    return `${displayName} 관련해서 ${reasonSeed} 이슈가 돌면서 매수 심리가 빠르게 강해지고 있습니다. 단기 과열 구간일 수 있어 분할 대응이 권장됩니다.`;
   }
-
-  const neutralProbability = clamp01(
-    BASE_NEUTRAL_PROBABILITY
-      - (dataIsSparse ? SPARSE_DATA_NEUTRAL_PENALTY : 0)
-      - Math.min(absMove, 0.6) * 0.12
-  );
-
-  if (requested === 'neutral') {
-    if (absMove <= NEUTRAL_ALLOWED_MAX_MOVE_PCT && Math.random() < neutralProbability) {
-      return 'neutral';
-    }
-    return pickDirectionalSentiment(changePct);
+  if (sentiment === 'bearish') {
+    return `${displayName} 관련해서 ${reasonSeed} 이슈가 확산되며 매도 압력이 커지고 있습니다. 변동성이 큰 구간이라 급격한 추격 매매는 주의가 필요합니다.`;
   }
-
-  if (!dataIsSparse && absMove <= 0.06 && Math.random() < neutralProbability * 0.5) {
-    return 'neutral';
-  }
-
-  return requested;
+  return `${displayName} 시장에서는 ${reasonSeed} 분위기 속에 매수·매도 공방이 이어지고 있습니다. 방향성 확정 전까지는 리스크 관리가 중요합니다.`;
 };
 
 const boostImpactForVolatility = (impactBpsAbs: number, minImpactBps: number, maxImpactBps: number) => {
@@ -162,7 +165,8 @@ const pickHighVolatilityImpact = (minImpactBps: number, maxImpactBps: number) =>
 const sanitizeGeneratedBody = (body: string) => {
   if (!body) return body;
   const hasExplicitNumbers = /\d[\d,.]*\s*(?:p|P|%|bps)/.test(body);
-  if (!hasExplicitNumbers) return body;
+  const hasLowConfidenceWording = /(데이터\s*부족|초기\s*구간|방향성\s*판단|다소\s*어렵)/.test(body);
+  if (!hasExplicitNumbers && !hasLowConfidenceWording) return body;
   return '수급 변화와 투자 심리 변동이 단기 흐름에 반영되고 있습니다. 변동성 구간에서는 분할 대응이 유리할 수 있습니다.';
 };
 
@@ -174,12 +178,6 @@ const resolveStockTicker = (row: StockDashboardRpcRow | null | undefined) => {
     symbol: symbolRaw || DEFAULT_STOCK_SYMBOL,
     displayName: displayNameRaw || DEFAULT_STOCK_DISPLAY_NAME
   };
-};
-
-const normalizeSentiment = (value: unknown): Sentiment => {
-  const raw = String(value ?? '').trim().toLowerCase();
-  if (raw === 'bullish' || raw === 'bearish' || raw === 'neutral') return raw;
-  return 'neutral';
 };
 
 const isSendableChannel = (value: unknown): value is SendableChannel => {
@@ -232,25 +230,20 @@ const getNextRunAfterSend = (cfg: AppConfig, now: Date) => {
 const buildFallbackDraft = (params: {
   minImpactBps: number;
   maxImpactBps: number;
-  changePct: number;
   displayName: string;
-  dataIsSparse: boolean;
 }): StockNewsDraft => {
-  const { minImpactBps, maxImpactBps, changePct, displayName, dataIsSparse } = params;
+  const { minImpactBps, maxImpactBps, displayName } = params;
 
-  const sentiment = pickBalancedSentiment({
-    requested: pickDirectionalSentiment(changePct),
-    changePct,
-    dataIsSparse
-  });
+  const sentiment = pickRandomSentiment();
+  const reasonSeed = pickReasonSeed(sentiment);
   const impactBpsAbs = pickHighVolatilityImpact(minImpactBps, maxImpactBps);
-  const headline = MANUAL_FALLBACK_HEADLINES[Math.floor(Math.random() * MANUAL_FALLBACK_HEADLINES.length)] ?? '시장 변동성 확대';
+  const headline = buildGameHeadline(displayName, reasonSeed);
 
   return {
     sentiment,
     impactBpsAbs,
     headline,
-    body: `${displayName} 매수·매도 수급이 한쪽으로 빠르게 기울며 단기 변동성이 확대되고 있습니다. 체결 흐름을 확인하며 분할 대응이 권장됩니다.`
+    body: buildGameBody(displayName, sentiment, reasonSeed)
   };
 };
 
@@ -266,9 +259,12 @@ const buildGeminiDraft = async (params: {
   maxImpactBps: number;
 }): Promise<StockNewsDraft | null> => {
   const ai = new GoogleGenAI({ apiKey: params.apiKey });
+  const forcedSentiment = pickRandomSentiment();
+  const reasonSeed = pickReasonSeed(forcedSentiment);
+  const forcedSentimentLabel = forcedSentiment === 'bullish' ? '호재' : forcedSentiment === 'bearish' ? '악재' : '중립';
 
   const systemInstruction =
-    `당신은 디스코드 주식 게임의 단일 종목 ${params.displayName}(${params.symbol}) 뉴스 에디터다. 반드시 JSON만 반환한다. 과장 없이 자연스러운 한국어를 사용한다. 방향성과 변동성을 우선하고, neutral은 횡보 판단일 때만 제한적으로 사용한다.`;
+    `당신은 디스코드 주식 게임의 단일 종목 ${params.displayName}(${params.symbol}) 뉴스 에디터다. 반드시 JSON만 반환한다. 뉴스 이유는 현실 근거가 없어도 되고, 게임 이벤트처럼 그럴듯하게 작성한다.`;
 
   const prompt = [
     `디스코드 주식 게임 단일 종목 ${params.displayName}(${params.symbol}) 뉴스 1건을 작성해줘.`,
@@ -276,10 +272,11 @@ const buildGeminiDraft = async (params: {
     `현재 등락률: ${params.changePct.toFixed(2)}%`,
     `최근 흐름 요약: ${params.recentSummary}`,
     `캔들 데이터 상태: ${params.dataIsSparse ? '제한적' : '충분'}`,
-    'body에는 가격/등락률/bps 같은 정확한 숫자를 쓰지 말고, 방향성과 수급 흐름을 서술형으로 작성.',
-    '캔들 데이터가 제한적이어도 neutral을 기본값처럼 남발하지 말고 가격/등락 기반 방향성을 우선 판단.',
+    `이번 기사 감정은 반드시 \`${forcedSentiment}\`(${forcedSentimentLabel})로 고정하고, 이유 키워드 \`${reasonSeed}\`를 반드시 포함해.`,
+    'body에는 가격/등락률/bps 같은 정확한 숫자를 쓰지 말고, 방향성과 분위기만 서술형으로 작성.',
+    '뉴스 이유는 실제 사실일 필요 없이, 게임 내에서 발생한 이슈처럼 자연스럽게 작성.',
     `impact_bps는 절대값 정수로 ${params.minImpactBps}~${params.maxImpactBps} 범위만 허용하고, 가능하면 변동성이 강하게 보이도록 범위 상단을 우선 사용.`,
-    'sentiment는 bullish/bearish/neutral 중 하나. neutral은 횡보에 대한 확신이 있을 때만 사용.',
+    'sentiment는 bullish/bearish/neutral 중 하나.',
     'headline은 42자 이하, body는 2~3문장으로 작성.'
   ].join('\n');
 
@@ -309,18 +306,14 @@ const buildGeminiDraft = async (params: {
       body?: unknown;
     };
 
-    const sentiment = pickBalancedSentiment({
-      requested: normalizeSentiment(parsed.sentiment),
-      changePct: params.changePct,
-      dataIsSparse: params.dataIsSparse
-    });
+    const sentiment = forcedSentiment;
     const impactBpsAbs = boostImpactForVolatility(
       clamp(Math.abs(Math.floor(toNumber(parsed.impact_bps, 0))), params.minImpactBps, params.maxImpactBps),
       params.minImpactBps,
       params.maxImpactBps
     );
-    const headline = String(parsed.headline ?? '').trim();
-    const body = sanitizeGeneratedBody(String(parsed.body ?? '').trim());
+    const headline = String(parsed.headline ?? '').trim() || buildGameHeadline(params.displayName, reasonSeed);
+    const body = sanitizeGeneratedBody(String(parsed.body ?? '').trim()) || buildGameBody(params.displayName, sentiment, reasonSeed);
     if (!headline || !body) return null;
 
     return {
@@ -524,9 +517,7 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
     buildFallbackDraft({
       minImpactBps,
       maxImpactBps,
-      changePct,
-      displayName: stockTicker.displayName,
-      dataIsSparse: marketSignal.dataIsSparse
+      displayName: stockTicker.displayName
     });
 
   const { data: applyRows, error: applyError } = await rpc<ApplyStockNewsRpcRow>('apply_stock_news_impact', {
