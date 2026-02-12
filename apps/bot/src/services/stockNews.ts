@@ -20,9 +20,16 @@ type SendableChannel = {
 };
 
 type StockDashboardRpcRow = {
-  price: number;
-  change_pct: number;
-  candles: unknown;
+  symbol?: string;
+  display_name?: string;
+  price?: number;
+  change_pct?: number;
+  candles?: unknown;
+  out_symbol?: string;
+  out_display_name?: string;
+  out_price?: number;
+  out_change_pct?: number;
+  out_candles?: unknown;
 };
 
 type ApplyStockNewsRpcRow = {
@@ -69,6 +76,8 @@ const MIN_INTERVAL_MINUTES = 5;
 const MAX_INTERVAL_MINUTES = 1440;
 const MIN_IMPACT_BPS = 0;
 const MAX_IMPACT_BPS = 5000;
+const DEFAULT_STOCK_SYMBOL = 'KURO';
+const DEFAULT_STOCK_DISPLAY_NAME = '쿠로 전자';
 const VOLATILITY_FLOOR_RATIO = 0.55;
 const BASE_NEUTRAL_PROBABILITY = 0.14;
 const SPARSE_DATA_NEUTRAL_PENALTY = 0.08;
@@ -150,6 +159,23 @@ const pickHighVolatilityImpact = (minImpactBps: number, maxImpactBps: number) =>
   return floor + Math.floor(Math.random() * (range + 1));
 };
 
+const sanitizeGeneratedBody = (body: string) => {
+  if (!body) return body;
+  const hasExplicitNumbers = /\d[\d,.]*\s*(?:p|P|%|bps)/.test(body);
+  if (!hasExplicitNumbers) return body;
+  return '수급 변화와 투자 심리 변동이 단기 흐름에 반영되고 있습니다. 변동성 구간에서는 분할 대응이 유리할 수 있습니다.';
+};
+
+const resolveStockTicker = (row: StockDashboardRpcRow | null | undefined) => {
+  const symbolRaw = String(row?.out_symbol ?? row?.symbol ?? DEFAULT_STOCK_SYMBOL).trim();
+  const displayNameRaw = String(row?.out_display_name ?? row?.display_name ?? DEFAULT_STOCK_DISPLAY_NAME).trim();
+
+  return {
+    symbol: symbolRaw || DEFAULT_STOCK_SYMBOL,
+    displayName: displayNameRaw || DEFAULT_STOCK_DISPLAY_NAME
+  };
+};
+
 const normalizeSentiment = (value: unknown): Sentiment => {
   const raw = String(value ?? '').trim().toLowerCase();
   if (raw === 'bullish' || raw === 'bearish' || raw === 'neutral') return raw;
@@ -207,10 +233,10 @@ const buildFallbackDraft = (params: {
   minImpactBps: number;
   maxImpactBps: number;
   changePct: number;
-  currentPrice: number;
+  displayName: string;
   dataIsSparse: boolean;
 }): StockNewsDraft => {
-  const { minImpactBps, maxImpactBps, changePct, currentPrice, dataIsSparse } = params;
+  const { minImpactBps, maxImpactBps, changePct, displayName, dataIsSparse } = params;
 
   const sentiment = pickBalancedSentiment({
     requested: pickDirectionalSentiment(changePct),
@@ -224,12 +250,14 @@ const buildFallbackDraft = (params: {
     sentiment,
     impactBpsAbs,
     headline,
-    body: `쿠로 전자 현재 기준가는 ${currentPrice.toLocaleString()}p 입니다. 수급이 한쪽으로 강하게 쏠리며 단기 변동성이 확대되고 있습니다.`
+    body: `${displayName} 매수·매도 수급이 한쪽으로 빠르게 기울며 단기 변동성이 확대되고 있습니다. 체결 흐름을 확인하며 분할 대응이 권장됩니다.`
   };
 };
 
 const buildGeminiDraft = async (params: {
   apiKey: string;
+  symbol: string;
+  displayName: string;
   currentPrice: number;
   changePct: number;
   recentSummary: string;
@@ -240,14 +268,15 @@ const buildGeminiDraft = async (params: {
   const ai = new GoogleGenAI({ apiKey: params.apiKey });
 
   const systemInstruction =
-    '당신은 디스코드 주식 게임의 가상 종목 쿠로 전자 뉴스 에디터다. 반드시 JSON만 반환한다. 과장 없이 자연스러운 한국어를 사용한다. 방향성과 변동성을 우선하고, neutral은 횡보 판단일 때만 제한적으로 사용한다.';
+    `당신은 디스코드 주식 게임의 단일 종목 ${params.displayName}(${params.symbol}) 뉴스 에디터다. 반드시 JSON만 반환한다. 과장 없이 자연스러운 한국어를 사용한다. 방향성과 변동성을 우선하고, neutral은 횡보 판단일 때만 제한적으로 사용한다.`;
 
   const prompt = [
-    '디스코드 주식 게임 종목인 쿠로 전자 뉴스 1건을 작성해줘.',
+    `디스코드 주식 게임 단일 종목 ${params.displayName}(${params.symbol}) 뉴스 1건을 작성해줘.`,
     `현재 가격: ${params.currentPrice.toFixed(0)}p`,
     `현재 등락률: ${params.changePct.toFixed(2)}%`,
     `최근 흐름 요약: ${params.recentSummary}`,
     `캔들 데이터 상태: ${params.dataIsSparse ? '제한적' : '충분'}`,
+    'body에는 가격/등락률/bps 같은 정확한 숫자를 쓰지 말고, 방향성과 수급 흐름을 서술형으로 작성.',
     '캔들 데이터가 제한적이어도 neutral을 기본값처럼 남발하지 말고 가격/등락 기반 방향성을 우선 판단.',
     `impact_bps는 절대값 정수로 ${params.minImpactBps}~${params.maxImpactBps} 범위만 허용하고, 가능하면 변동성이 강하게 보이도록 범위 상단을 우선 사용.`,
     'sentiment는 bullish/bearish/neutral 중 하나. neutral은 횡보에 대한 확신이 있을 때만 사용.',
@@ -291,7 +320,7 @@ const buildGeminiDraft = async (params: {
       params.maxImpactBps
     );
     const headline = String(parsed.headline ?? '').trim();
-    const body = String(parsed.body ?? '').trim();
+    const body = sanitizeGeneratedBody(String(parsed.body ?? '').trim());
     if (!headline || !body) return null;
 
     return {
@@ -364,8 +393,12 @@ const shouldRunStockNews = (cfg: AppConfig, now: Date) => {
 
 const sendNewsMessage = async (client: Client, params: {
   channelId: string;
+  symbol: string;
+  displayName: string;
   draft: StockNewsDraft;
   applied: ApplyStockNewsRpcRow;
+  marketPrice: number;
+  marketChangePct: number;
   forced: boolean;
 }) => {
   const channel = await client.channels.fetch(params.channelId).catch(() => null);
@@ -383,14 +416,14 @@ const sendNewsMessage = async (client: Client, params: {
 
   const embed = new EmbedBuilder()
     .setColor(color)
-    .setTitle('📰 쿠로 전자 뉴스')
+    .setTitle(`📰 ${params.displayName} 뉴스`)
     .setDescription(
       [
         `> **${params.draft.headline}**`,
         '',
         `- ${sentimentEmoji} **분류:** **${sentimentLabel}**`,
         `- ${moveEmoji} **영향:** \`${impactLabel}\``,
-        '- 🏷️ **종목:** **쿠로 전자**',
+        `- 🏷️ **종목:** **${params.displayName} (${params.symbol})**`,
         '',
         '**브리핑**',
         params.draft.body
@@ -403,12 +436,22 @@ const sendNewsMessage = async (client: Client, params: {
         inline: false
       },
       {
+        name: '📍 현재 시세',
+        value: `**${params.marketPrice.toLocaleString()}p** (${params.marketChangePct >= 0 ? '+' : ''}${params.marketChangePct.toFixed(2)}%)`,
+        inline: true
+      },
+      {
         name: '🧠 신호',
         value: `${sentimentEmoji} ${sentimentLabel} / ${moveEmoji} ${impactLabel}`,
         inline: true
+      },
+      {
+        name: '📐 기준',
+        value: '`100bps = 1.00%`',
+        inline: true
       }
     )
-    .setFooter({ text: 'Kuro Electronics Market Feed' })
+    .setFooter({ text: `${params.symbol} Market Feed` })
     .setTimestamp(new Date());
 
   await channel.send({ embeds: [embed] });
@@ -454,17 +497,20 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
 
   const dashboard = Array.isArray(dashboardRows) ? dashboardRows[0] : null;
   if (!dashboard) throw new Error('[StockNews] dashboard payload missing');
+  const stockTicker = resolveStockTicker(dashboard);
 
   const minImpactBps = clamp(Math.floor(toNumber(cfg.stock_news_min_impact_bps, 40)), MIN_IMPACT_BPS, MAX_IMPACT_BPS);
   const maxImpactBps = clamp(Math.floor(toNumber(cfg.stock_news_max_impact_bps, 260)), minImpactBps, MAX_IMPACT_BPS);
-  const currentPrice = toNumber(dashboard.price, 0);
-  const changePct = toNumber(dashboard.change_pct, 0);
-  const marketSignal = getMarketSignal(dashboard.candles);
+  const currentPrice = Math.max(50, toNumber(dashboard.out_price ?? dashboard.price, 0));
+  const changePct = toNumber(dashboard.out_change_pct ?? dashboard.change_pct, 0);
+  const marketSignal = getMarketSignal(dashboard.out_candles ?? dashboard.candles);
 
   const apiKey = ctx.env.STOCK_NEWS_GEMINI_API_KEY || ctx.env.GEMINI_API_KEY;
   const geminiDraft = apiKey
-    ? await buildGeminiDraft({
+      ? await buildGeminiDraft({
         apiKey,
+        symbol: stockTicker.symbol,
+        displayName: stockTicker.displayName,
         currentPrice,
         changePct,
         recentSummary: marketSignal.summary,
@@ -479,7 +525,7 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
       minImpactBps,
       maxImpactBps,
       changePct,
-      currentPrice,
+      displayName: stockTicker.displayName,
       dataIsSparse: marketSignal.dataIsSparse
     });
 
@@ -506,10 +552,28 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
   const applied = Array.isArray(applyRows) ? applyRows[0] : null;
   if (!applied) throw new Error('[StockNews] apply_stock_news_impact returned empty payload');
 
+  const { data: postDashboardRows, error: postDashboardError } = await rpc<StockDashboardRpcRow>('get_stock_dashboard', {
+    p_discord_user_id: '__stock_news_worker__'
+  });
+  if (postDashboardError) {
+    console.warn('[StockNews] post-impact dashboard fetch failed:', postDashboardError.message);
+  }
+  const postDashboard = Array.isArray(postDashboardRows) ? postDashboardRows[0] : null;
+  const postTicker = resolveStockTicker(postDashboard ?? dashboard);
+  const marketPrice = Math.max(
+    50,
+    toNumber(postDashboard?.out_price ?? postDashboard?.price, applied.out_price_after)
+  );
+  const marketChangePct = toNumber(postDashboard?.out_change_pct ?? postDashboard?.change_pct, changePct);
+
   await sendNewsMessage(client, {
     channelId: cfg.stock_news_channel_id,
+    symbol: postTicker.symbol,
+    displayName: postTicker.displayName,
     draft,
     applied,
+    marketPrice,
+    marketChangePct,
     forced: decision.forced
   });
 
