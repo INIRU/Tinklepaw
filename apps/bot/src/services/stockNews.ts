@@ -343,7 +343,7 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
 
   const ctx = getBotContext();
   const dynamicSupabase = ctx.supabase as unknown as DynamicSupabase;
-  const rpc = dynamicSupabase.rpc as unknown as <T>(
+  const rpc = ctx.supabase.rpc.bind(ctx.supabase) as unknown as <T>(
     fn: string,
     args?: Record<string, unknown>
   ) => RpcResult<T>;
