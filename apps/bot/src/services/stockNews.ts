@@ -41,9 +41,20 @@ type ApplyStockNewsRpcRow = {
 };
 
 type Sentiment = 'bullish' | 'bearish' | 'neutral';
+type NewsTier = 'general' | 'rare' | 'shock';
+
+type NewsTierProfile = {
+  key: NewsTier;
+  label: string;
+  emoji: string;
+  weight: number;
+  minRatio: number;
+  maxRatio: number;
+};
 
 type StockNewsDraft = {
   sentiment: Sentiment;
+  tier: NewsTier;
   impactBpsAbs: number;
   headline: string;
   body: string;
@@ -78,9 +89,20 @@ const MIN_IMPACT_BPS = 0;
 const MAX_IMPACT_BPS = 5000;
 const DEFAULT_STOCK_SYMBOL = 'KURO';
 const DEFAULT_STOCK_DISPLAY_NAME = '쿠로 전자';
-const VOLATILITY_FLOOR_RATIO = 0.55;
 const SENTIMENT_BULLISH_PROBABILITY = 0.44;
 const SENTIMENT_BEARISH_PROBABILITY = 0.44;
+
+const NEWS_TIER_PROFILES: readonly NewsTierProfile[] = [
+  { key: 'general', label: '일반', emoji: '📰', weight: 0.68, minRatio: 0.0, maxRatio: 0.44 },
+  { key: 'rare', label: '희귀', emoji: '✨', weight: 0.24, minRatio: 0.45, maxRatio: 0.78 },
+  { key: 'shock', label: '충격', emoji: '🚨', weight: 0.08, minRatio: 0.79, maxRatio: 1.0 }
+];
+
+const NEWS_TIER_META: Record<NewsTier, { label: string; emoji: string }> = {
+  general: { label: '일반', emoji: '📰' },
+  rare: { label: '희귀', emoji: '✨' },
+  shock: { label: '충격', emoji: '🚨' }
+};
 
 const BULLISH_REASON_SEEDS = [
   '차세대 제품 쇼케이스 기대감 확산',
@@ -121,9 +143,27 @@ const parseMaybeDate = (value: string | null | undefined) => {
   return Number.isNaN(at.getTime()) ? null : at;
 };
 
-const getVolatilityFloorImpact = (minImpactBps: number, maxImpactBps: number) => {
+const pickNewsTier = (): NewsTierProfile => {
+  const roll = Math.random();
+  let acc = 0;
+  for (const profile of NEWS_TIER_PROFILES) {
+    acc += profile.weight;
+    if (roll < acc) return profile;
+  }
+  return NEWS_TIER_PROFILES[NEWS_TIER_PROFILES.length - 1]!;
+};
+
+const getTierImpactBounds = (profile: NewsTierProfile, minImpactBps: number, maxImpactBps: number) => {
   const spread = Math.max(0, maxImpactBps - minImpactBps);
-  return minImpactBps + Math.floor(spread * VOLATILITY_FLOOR_RATIO);
+  const lower = clamp(minImpactBps + Math.floor(spread * profile.minRatio), minImpactBps, maxImpactBps);
+  const upper = clamp(minImpactBps + Math.floor(spread * profile.maxRatio), lower, maxImpactBps);
+  return { lower, upper };
+};
+
+const pickTierImpact = (profile: NewsTierProfile, minImpactBps: number, maxImpactBps: number) => {
+  const { lower, upper } = getTierImpactBounds(profile, minImpactBps, maxImpactBps);
+  const range = Math.max(0, upper - lower);
+  return lower + Math.floor(Math.random() * (range + 1));
 };
 
 const pickRandomSentiment = (): Sentiment => {
@@ -149,17 +189,6 @@ const buildGameBody = (displayName: string, sentiment: Sentiment, reasonSeed: st
     return `${displayName} 관련해서 ${reasonSeed} 이슈가 확산되며 매도 압력이 커지고 있습니다. 변동성이 큰 구간이라 급격한 추격 매매는 주의가 필요합니다.`;
   }
   return `${displayName} 시장에서는 ${reasonSeed} 분위기 속에 매수·매도 공방이 이어지고 있습니다. 방향성 확정 전까지는 리스크 관리가 중요합니다.`;
-};
-
-const boostImpactForVolatility = (impactBpsAbs: number, minImpactBps: number, maxImpactBps: number) => {
-  const floor = getVolatilityFloorImpact(minImpactBps, maxImpactBps);
-  return clamp(Math.max(impactBpsAbs, floor), minImpactBps, maxImpactBps);
-};
-
-const pickHighVolatilityImpact = (minImpactBps: number, maxImpactBps: number) => {
-  const floor = getVolatilityFloorImpact(minImpactBps, maxImpactBps);
-  const range = Math.max(0, maxImpactBps - floor);
-  return floor + Math.floor(Math.random() * (range + 1));
 };
 
 const sanitizeGeneratedBody = (body: string) => {
@@ -235,12 +264,14 @@ const buildFallbackDraft = (params: {
   const { minImpactBps, maxImpactBps, displayName } = params;
 
   const sentiment = pickRandomSentiment();
+  const tierProfile = pickNewsTier();
   const reasonSeed = pickReasonSeed(sentiment);
-  const impactBpsAbs = pickHighVolatilityImpact(minImpactBps, maxImpactBps);
+  const impactBpsAbs = pickTierImpact(tierProfile, minImpactBps, maxImpactBps);
   const headline = buildGameHeadline(displayName, reasonSeed);
 
   return {
     sentiment,
+    tier: tierProfile.key,
     impactBpsAbs,
     headline,
     body: buildGameBody(displayName, sentiment, reasonSeed)
@@ -260,6 +291,9 @@ const buildGeminiDraft = async (params: {
 }): Promise<StockNewsDraft | null> => {
   const ai = new GoogleGenAI({ apiKey: params.apiKey });
   const forcedSentiment = pickRandomSentiment();
+  const forcedTierProfile = pickNewsTier();
+  const forcedTier = forcedTierProfile.key;
+  const tierBounds = getTierImpactBounds(forcedTierProfile, params.minImpactBps, params.maxImpactBps);
   const reasonSeed = pickReasonSeed(forcedSentiment);
   const forcedSentimentLabel = forcedSentiment === 'bullish' ? '호재' : forcedSentiment === 'bearish' ? '악재' : '중립';
 
@@ -272,10 +306,11 @@ const buildGeminiDraft = async (params: {
     `현재 등락률: ${params.changePct.toFixed(2)}%`,
     `최근 흐름 요약: ${params.recentSummary}`,
     `캔들 데이터 상태: ${params.dataIsSparse ? '제한적' : '충분'}`,
+    `이번 기사 티어는 반드시 \`${forcedTier}\`(${forcedTierProfile.label})로 고정해.`,
     `이번 기사 감정은 반드시 \`${forcedSentiment}\`(${forcedSentimentLabel})로 고정하고, 이유 키워드 \`${reasonSeed}\`를 반드시 포함해.`,
     'body에는 가격/등락률/bps 같은 정확한 숫자를 쓰지 말고, 방향성과 분위기만 서술형으로 작성.',
     '뉴스 이유는 실제 사실일 필요 없이, 게임 내에서 발생한 이슈처럼 자연스럽게 작성.',
-    `impact_bps는 절대값 정수로 ${params.minImpactBps}~${params.maxImpactBps} 범위만 허용하고, 가능하면 변동성이 강하게 보이도록 범위 상단을 우선 사용.`,
+    `impact_bps는 절대값 정수로 ${tierBounds.lower}~${tierBounds.upper} 범위만 사용.`,
     'sentiment는 bullish/bearish/neutral 중 하나.',
     'headline은 42자 이하, body는 2~3문장으로 작성.'
   ].join('\n');
@@ -307,17 +342,15 @@ const buildGeminiDraft = async (params: {
     };
 
     const sentiment = forcedSentiment;
-    const impactBpsAbs = boostImpactForVolatility(
-      clamp(Math.abs(Math.floor(toNumber(parsed.impact_bps, 0))), params.minImpactBps, params.maxImpactBps),
-      params.minImpactBps,
-      params.maxImpactBps
-    );
+    const parsedImpactBps = Math.abs(Math.floor(toNumber(parsed.impact_bps, tierBounds.lower)));
+    const impactBpsAbs = clamp(parsedImpactBps, tierBounds.lower, tierBounds.upper);
     const headline = String(parsed.headline ?? '').trim() || buildGameHeadline(params.displayName, reasonSeed);
     const body = sanitizeGeneratedBody(String(parsed.body ?? '').trim()) || buildGameBody(params.displayName, sentiment, reasonSeed);
     if (!headline || !body) return null;
 
     return {
       sentiment,
+      tier: forcedTier,
       impactBpsAbs,
       headline: headline.slice(0, 120),
       body: body.slice(0, 800)
@@ -404,6 +437,7 @@ const sendNewsMessage = async (client: Client, params: {
   const color = signed > 0 ? 0x2ecc71 : signed < 0 ? 0xe74c3c : 0x95a5a6;
   const sentimentLabel = params.draft.sentiment === 'bullish' ? '호재' : params.draft.sentiment === 'bearish' ? '악재' : '중립';
   const sentimentEmoji = params.draft.sentiment === 'bullish' ? '🟢' : params.draft.sentiment === 'bearish' ? '🔴' : '🟡';
+  const tierMeta = NEWS_TIER_META[params.draft.tier];
   const moveEmoji = signed > 0 ? '📈' : signed < 0 ? '📉' : '➖';
   const priceDelta = params.applied.out_price_after - params.applied.out_price_before;
 
@@ -415,6 +449,7 @@ const sendNewsMessage = async (client: Client, params: {
         `> **${params.draft.headline}**`,
         '',
         `- ${sentimentEmoji} **분류:** **${sentimentLabel}**`,
+        `- ${tierMeta.emoji} **티어:** **${tierMeta.label}**`,
         `- ${moveEmoji} **영향:** \`${impactLabel}\``,
         `- 🏷️ **종목:** **${params.displayName} (${params.symbol})**`,
         '',
@@ -435,7 +470,7 @@ const sendNewsMessage = async (client: Client, params: {
       },
       {
         name: '🧠 신호',
-        value: `${sentimentEmoji} ${sentimentLabel} / ${moveEmoji} ${impactLabel}`,
+        value: `${sentimentEmoji} ${sentimentLabel} / ${tierMeta.emoji} ${tierMeta.label} / ${moveEmoji} ${impactLabel}`,
         inline: true
       },
       {
@@ -530,6 +565,7 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
     p_metadata: {
       trigger: decision.forced ? 'manual' : 'schedule',
       model: apiKey ? 'gemini-2.5-flash-lite' : 'fallback',
+      tier: draft.tier,
       data_is_sparse: marketSignal.dataIsSparse,
       candle_count: marketSignal.candleCount,
       generated_at: now.toISOString()
