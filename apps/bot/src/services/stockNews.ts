@@ -69,12 +69,13 @@ const MIN_INTERVAL_MINUTES = 5;
 const MAX_INTERVAL_MINUTES = 1440;
 const MIN_IMPACT_BPS = 0;
 const MAX_IMPACT_BPS = 5000;
+const VOLATILITY_FLOOR_RATIO = 0.55;
 const MANUAL_FALLBACK_HEADLINES = [
-  '대형 매수세 유입, 심리 개선',
-  '차익 실현 매물 출회, 변동성 확대',
-  '관망세 확대, 횡보 장세 지속',
-  '수급 균형 회복, 단기 반등 기대',
-  '리스크 경계 심리로 약세 전환'
+  '쿠로 전자 대형 매수세 유입',
+  '쿠로 전자 차익 실현 물량 급증',
+  '쿠로 전자 급등 기대감 확산',
+  '쿠로 전자 리스크 경계 매물 출회',
+  '쿠로 전자 수급 쏠림으로 변동 확대'
 ];
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -88,6 +89,33 @@ const parseMaybeDate = (value: string | null | undefined) => {
   if (!value) return null;
   const at = new Date(value);
   return Number.isNaN(at.getTime()) ? null : at;
+};
+
+const getVolatilityFloorImpact = (minImpactBps: number, maxImpactBps: number) => {
+  const spread = Math.max(0, maxImpactBps - minImpactBps);
+  return minImpactBps + Math.floor(spread * VOLATILITY_FLOOR_RATIO);
+};
+
+const pickDirectionalSentiment = (changePct: number): Exclude<Sentiment, 'neutral'> => {
+  if (changePct >= 0.15) return 'bullish';
+  if (changePct <= -0.15) return 'bearish';
+  return Math.random() < 0.5 ? 'bullish' : 'bearish';
+};
+
+const forceDirectionalSentiment = (sentiment: Sentiment, changePct: number): Exclude<Sentiment, 'neutral'> => {
+  if (sentiment === 'neutral') return pickDirectionalSentiment(changePct);
+  return sentiment;
+};
+
+const boostImpactForVolatility = (impactBpsAbs: number, minImpactBps: number, maxImpactBps: number) => {
+  const floor = getVolatilityFloorImpact(minImpactBps, maxImpactBps);
+  return clamp(Math.max(impactBpsAbs, floor), minImpactBps, maxImpactBps);
+};
+
+const pickHighVolatilityImpact = (minImpactBps: number, maxImpactBps: number) => {
+  const floor = getVolatilityFloorImpact(minImpactBps, maxImpactBps);
+  const range = Math.max(0, maxImpactBps - floor);
+  return floor + Math.floor(Math.random() * (range + 1));
 };
 
 const normalizeSentiment = (value: unknown): Sentiment => {
@@ -151,19 +179,15 @@ const buildFallbackDraft = (params: {
 }): StockNewsDraft => {
   const { minImpactBps, maxImpactBps, changePct, currentPrice } = params;
 
-  let sentiment: Sentiment = 'neutral';
-  if (changePct >= 0.9) sentiment = 'bullish';
-  else if (changePct <= -0.9) sentiment = 'bearish';
-
-  const range = Math.max(0, maxImpactBps - minImpactBps);
-  const impactBpsAbs = minImpactBps + Math.floor(Math.random() * (range + 1));
+  const sentiment = pickDirectionalSentiment(changePct);
+  const impactBpsAbs = pickHighVolatilityImpact(minImpactBps, maxImpactBps);
   const headline = MANUAL_FALLBACK_HEADLINES[Math.floor(Math.random() * MANUAL_FALLBACK_HEADLINES.length)] ?? '시장 변동성 확대';
 
   return {
     sentiment,
     impactBpsAbs,
     headline,
-    body: `현재 기준가는 ${currentPrice.toLocaleString()}p 입니다. 거래 흐름과 심리 변화가 단기 변동성에 반영되고 있습니다.`
+    body: `쿠로 전자 현재 기준가는 ${currentPrice.toLocaleString()}p 입니다. 수급이 한쪽으로 강하게 쏠리며 단기 변동성이 확대되고 있습니다.`
   };
 };
 
@@ -178,15 +202,15 @@ const buildGeminiDraft = async (params: {
   const ai = new GoogleGenAI({ apiKey: params.apiKey });
 
   const systemInstruction =
-    '당신은 게임 내 가상 주식 시장 뉴스 에디터다. 반드시 JSON만 반환한다. 과장 없이 자연스러운 한국어를 사용한다.';
+    '당신은 게임 내 가상 종목 쿠로 전자 뉴스 에디터다. 반드시 JSON만 반환한다. 과장 없이 자연스러운 한국어를 사용한다. 약한 중립 표현보다 방향성과 변동성을 분명히 드러낸다.';
 
   const prompt = [
-    '방울냥 서버의 /주식 뉴스 1건을 작성해줘.',
+    '쿠로 전자 종목 뉴스 1건을 작성해줘.',
     `현재 가격: ${params.currentPrice.toFixed(0)}p`,
     `현재 등락률: ${params.changePct.toFixed(2)}%`,
     `최근 흐름 요약: ${params.recentSummary}`,
-    `impact_bps는 절대값 정수로 ${params.minImpactBps}~${params.maxImpactBps} 범위만 허용.`,
-    'sentiment는 bullish/bearish/neutral 중 하나만 사용.',
+    `impact_bps는 절대값 정수로 ${params.minImpactBps}~${params.maxImpactBps} 범위만 허용하고, 가능하면 변동성이 강하게 보이도록 범위 상단을 우선 사용.`,
+    'sentiment는 bullish 또는 bearish 중 하나를 기본으로 사용. neutral은 극히 예외적인 상황에서만 사용.',
     'headline은 42자 이하, body는 2~3문장으로 작성.'
   ].join('\n');
 
@@ -216,8 +240,12 @@ const buildGeminiDraft = async (params: {
       body?: unknown;
     };
 
-    const sentiment = normalizeSentiment(parsed.sentiment);
-    const impactBpsAbs = clamp(Math.abs(Math.floor(toNumber(parsed.impact_bps, 0))), params.minImpactBps, params.maxImpactBps);
+    const sentiment = forceDirectionalSentiment(normalizeSentiment(parsed.sentiment), params.changePct);
+    const impactBpsAbs = boostImpactForVolatility(
+      clamp(Math.abs(Math.floor(toNumber(parsed.impact_bps, 0))), params.minImpactBps, params.maxImpactBps),
+      params.minImpactBps,
+      params.maxImpactBps
+    );
     const headline = String(parsed.headline ?? '').trim();
     const body = String(parsed.body ?? '').trim();
     if (!headline || !body) return null;
@@ -291,16 +319,11 @@ const sendNewsMessage = async (client: Client, params: {
   const signed = params.applied.out_signed_impact_bps;
   const impactLabel = `${signed > 0 ? '+' : ''}${signed} bps`;
   const color = signed > 0 ? 0x2ecc71 : signed < 0 ? 0xe74c3c : 0x95a5a6;
-  const sentimentLabel =
-    params.draft.sentiment === 'bullish'
-      ? '호재'
-      : params.draft.sentiment === 'bearish'
-      ? '악재'
-      : '중립';
+  const sentimentLabel = params.draft.sentiment === 'bullish' ? '호재' : params.draft.sentiment === 'bearish' ? '악재' : '중립';
 
   const embed = new EmbedBuilder()
     .setColor(color)
-    .setTitle('주식 뉴스')
+    .setTitle('쿠로 전자 뉴스')
     .setDescription(`**${params.draft.headline}**\n${params.draft.body}`)
     .addFields(
       { name: '분류', value: sentimentLabel, inline: true },
