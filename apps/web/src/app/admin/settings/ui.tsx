@@ -376,6 +376,8 @@ export default function SettingsClient() {
   const [saving, setSaving] = useState(false);
   const [newsTriggering, setNewsTriggering] = useState(false);
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const [bullishScenarioDraft, setBullishScenarioDraft] = useState('');
+  const [bearishScenarioDraft, setBearishScenarioDraft] = useState('');
 
   const [stagedBanner, setStagedBanner] = useState<StagedAsset | null>(null);
   const [stagedIcon, setStagedIcon] = useState<StagedAsset | null>(null);
@@ -421,6 +423,10 @@ export default function SettingsClient() {
     if (!cfgBody) {
       throw new Error('설정 데이터를 불러오지 못했습니다.');
     }
+
+    const bullishScenarios = normalizeScenarioList(cfgBody.stock_news_bullish_scenarios, DEFAULT_BULLISH_SCENARIOS);
+    const bearishScenarios = normalizeScenarioList(cfgBody.stock_news_bearish_scenarios, DEFAULT_BEARISH_SCENARIOS);
+
     setCfg({
       ...(cfgBody as AppConfig),
       join_message_template: cfgBody.join_message_template ?? null,
@@ -435,13 +441,15 @@ export default function SettingsClient() {
       stock_news_daily_window_end_hour: Number(cfgBody.stock_news_daily_window_end_hour ?? 23),
       stock_news_min_impact_bps: Number(cfgBody.stock_news_min_impact_bps ?? 40),
       stock_news_max_impact_bps: Number(cfgBody.stock_news_max_impact_bps ?? 260),
-      stock_news_bullish_scenarios: normalizeScenarioList(cfgBody.stock_news_bullish_scenarios, DEFAULT_BULLISH_SCENARIOS),
-      stock_news_bearish_scenarios: normalizeScenarioList(cfgBody.stock_news_bearish_scenarios, DEFAULT_BEARISH_SCENARIOS),
+      stock_news_bullish_scenarios: bullishScenarios,
+      stock_news_bearish_scenarios: bearishScenarios,
       stock_news_last_sent_at: cfgBody.stock_news_last_sent_at ?? null,
       stock_news_next_run_at: cfgBody.stock_news_next_run_at ?? null,
       stock_news_force_run_at: cfgBody.stock_news_force_run_at ?? null,
       lottery_activity_jackpot_rate_pct: Number(cfgBody.lottery_activity_jackpot_rate_pct ?? 10),
     });
+    setBullishScenarioDraft(formatScenarioLines(bullishScenarios));
+    setBearishScenarioDraft(formatScenarioLines(bearishScenarios));
     setLoadError(null);
 
     const [chRes, rcRes] = await Promise.all([
@@ -485,23 +493,43 @@ export default function SettingsClient() {
     if (!cfg) return;
     setSaving(true);
     try {
+      const bullishScenarios = parseScenarioLines(bullishScenarioDraft);
+      const bearishScenarios = parseScenarioLines(bearishScenarioDraft);
+
+      const nextCfg: AppConfig = {
+        ...cfg,
+        stock_news_bullish_scenarios: bullishScenarios.length > 0 ? bullishScenarios : [...DEFAULT_BULLISH_SCENARIOS],
+        stock_news_bearish_scenarios: bearishScenarios.length > 0 ? bearishScenarios : [...DEFAULT_BEARISH_SCENARIOS]
+      };
+
       const res = await fetch('/api/admin/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cfg)
+        body: JSON.stringify(nextCfg)
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(body?.error ?? `HTTP ${res.status}`);
       }
-      setCfg((await res.json()) as AppConfig);
+
+      const savedCfg = (await res.json()) as AppConfig;
+      const normalizedBullish = normalizeScenarioList(savedCfg.stock_news_bullish_scenarios, DEFAULT_BULLISH_SCENARIOS);
+      const normalizedBearish = normalizeScenarioList(savedCfg.stock_news_bearish_scenarios, DEFAULT_BEARISH_SCENARIOS);
+
+      setCfg({
+        ...savedCfg,
+        stock_news_bullish_scenarios: normalizedBullish,
+        stock_news_bearish_scenarios: normalizedBearish
+      });
+      setBullishScenarioDraft(formatScenarioLines(normalizedBullish));
+      setBearishScenarioDraft(formatScenarioLines(normalizedBearish));
       toast.success('저장했습니다.');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '저장에 실패했습니다.');
     } finally {
       setSaving(false);
     }
-  }, [cfg, toast]);
+  }, [bearishScenarioDraft, bullishScenarioDraft, cfg, toast]);
 
   const triggerStockNewsNow = useCallback(async () => {
     setNewsTriggering(true);
@@ -1086,21 +1114,20 @@ export default function SettingsClient() {
             호재 시나리오 (줄바꿈으로 분리)
             <textarea
               className="mt-1 min-h-[140px] w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)] placeholder:text-[color:var(--muted-2)]"
-              value={formatScenarioLines(cfg.stock_news_bullish_scenarios)}
-              onChange={(e) =>
-                setCfg({
-                  ...cfg,
-                  stock_news_bullish_scenarios: parseScenarioLines(e.target.value)
-                })
-              }
+              value={bullishScenarioDraft}
+              onChange={(e) => setBullishScenarioDraft(e.target.value)}
               placeholder="차세대 제품 쇼케이스 기대감 확산"
             />
             <div className="mt-2 flex items-center justify-between gap-2 text-xs muted-2">
-              <span>{cfg.stock_news_bullish_scenarios.length}개</span>
+              <span>{parseScenarioLines(bullishScenarioDraft).length}개</span>
               <button
                 type="button"
                 className="rounded-xl btn-soft px-2.5 py-1"
-                onClick={() => setCfg({ ...cfg, stock_news_bullish_scenarios: [...DEFAULT_BULLISH_SCENARIOS] })}
+                onClick={() => {
+                  const defaults = [...DEFAULT_BULLISH_SCENARIOS];
+                  setCfg({ ...cfg, stock_news_bullish_scenarios: defaults });
+                  setBullishScenarioDraft(formatScenarioLines(defaults));
+                }}
               >
                 기본값 복원
               </button>
@@ -1111,21 +1138,20 @@ export default function SettingsClient() {
             악재 시나리오 (줄바꿈으로 분리)
             <textarea
               className="mt-1 min-h-[140px] w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)] placeholder:text-[color:var(--muted-2)]"
-              value={formatScenarioLines(cfg.stock_news_bearish_scenarios)}
-              onChange={(e) =>
-                setCfg({
-                  ...cfg,
-                  stock_news_bearish_scenarios: parseScenarioLines(e.target.value)
-                })
-              }
+              value={bearishScenarioDraft}
+              onChange={(e) => setBearishScenarioDraft(e.target.value)}
               placeholder="생산 라인 점검 이슈 부각"
             />
             <div className="mt-2 flex items-center justify-between gap-2 text-xs muted-2">
-              <span>{cfg.stock_news_bearish_scenarios.length}개</span>
+              <span>{parseScenarioLines(bearishScenarioDraft).length}개</span>
               <button
                 type="button"
                 className="rounded-xl btn-soft px-2.5 py-1"
-                onClick={() => setCfg({ ...cfg, stock_news_bearish_scenarios: [...DEFAULT_BEARISH_SCENARIOS] })}
+                onClick={() => {
+                  const defaults = [...DEFAULT_BEARISH_SCENARIOS];
+                  setCfg({ ...cfg, stock_news_bearish_scenarios: defaults });
+                  setBearishScenarioDraft(formatScenarioLines(defaults));
+                }}
               >
                 기본값 복원
               </button>
