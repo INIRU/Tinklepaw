@@ -70,6 +70,10 @@ const MAX_INTERVAL_MINUTES = 1440;
 const MIN_IMPACT_BPS = 0;
 const MAX_IMPACT_BPS = 5000;
 const VOLATILITY_FLOOR_RATIO = 0.55;
+const BASE_NEUTRAL_PROBABILITY = 0.14;
+const SPARSE_DATA_NEUTRAL_PENALTY = 0.08;
+const STRONG_TREND_THRESHOLD_PCT = 0.65;
+const NEUTRAL_ALLOWED_MAX_MOVE_PCT = 0.28;
 const MANUAL_FALLBACK_HEADLINES = [
   '쿠로 전자 대형 매수세 유입',
   '쿠로 전자 차익 실현 물량 급증',
@@ -79,6 +83,7 @@ const MANUAL_FALLBACK_HEADLINES = [
 ];
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
 const toNumber = (value: unknown, fallback = 0) => {
   const n = typeof value === 'number' ? value : Number(value);
@@ -102,9 +107,36 @@ const pickDirectionalSentiment = (changePct: number): Exclude<Sentiment, 'neutra
   return Math.random() < 0.5 ? 'bullish' : 'bearish';
 };
 
-const forceDirectionalSentiment = (sentiment: Sentiment, changePct: number): Exclude<Sentiment, 'neutral'> => {
-  if (sentiment === 'neutral') return pickDirectionalSentiment(changePct);
-  return sentiment;
+const pickBalancedSentiment = (params: {
+  requested: Sentiment;
+  changePct: number;
+  dataIsSparse: boolean;
+}): Sentiment => {
+  const { requested, changePct, dataIsSparse } = params;
+  const absMove = Math.abs(changePct);
+
+  if (absMove >= STRONG_TREND_THRESHOLD_PCT) {
+    return changePct >= 0 ? 'bullish' : 'bearish';
+  }
+
+  const neutralProbability = clamp01(
+    BASE_NEUTRAL_PROBABILITY
+      - (dataIsSparse ? SPARSE_DATA_NEUTRAL_PENALTY : 0)
+      - Math.min(absMove, 0.6) * 0.12
+  );
+
+  if (requested === 'neutral') {
+    if (absMove <= NEUTRAL_ALLOWED_MAX_MOVE_PCT && Math.random() < neutralProbability) {
+      return 'neutral';
+    }
+    return pickDirectionalSentiment(changePct);
+  }
+
+  if (!dataIsSparse && absMove <= 0.06 && Math.random() < neutralProbability * 0.5) {
+    return 'neutral';
+  }
+
+  return requested;
 };
 
 const boostImpactForVolatility = (impactBpsAbs: number, minImpactBps: number, maxImpactBps: number) => {
@@ -176,10 +208,15 @@ const buildFallbackDraft = (params: {
   maxImpactBps: number;
   changePct: number;
   currentPrice: number;
+  dataIsSparse: boolean;
 }): StockNewsDraft => {
-  const { minImpactBps, maxImpactBps, changePct, currentPrice } = params;
+  const { minImpactBps, maxImpactBps, changePct, currentPrice, dataIsSparse } = params;
 
-  const sentiment = pickDirectionalSentiment(changePct);
+  const sentiment = pickBalancedSentiment({
+    requested: pickDirectionalSentiment(changePct),
+    changePct,
+    dataIsSparse
+  });
   const impactBpsAbs = pickHighVolatilityImpact(minImpactBps, maxImpactBps);
   const headline = MANUAL_FALLBACK_HEADLINES[Math.floor(Math.random() * MANUAL_FALLBACK_HEADLINES.length)] ?? '시장 변동성 확대';
 
@@ -196,21 +233,24 @@ const buildGeminiDraft = async (params: {
   currentPrice: number;
   changePct: number;
   recentSummary: string;
+  dataIsSparse: boolean;
   minImpactBps: number;
   maxImpactBps: number;
 }): Promise<StockNewsDraft | null> => {
   const ai = new GoogleGenAI({ apiKey: params.apiKey });
 
   const systemInstruction =
-    '당신은 게임 내 가상 종목 쿠로 전자 뉴스 에디터다. 반드시 JSON만 반환한다. 과장 없이 자연스러운 한국어를 사용한다. 약한 중립 표현보다 방향성과 변동성을 분명히 드러낸다.';
+    '당신은 디스코드 주식 게임의 가상 종목 쿠로 전자 뉴스 에디터다. 반드시 JSON만 반환한다. 과장 없이 자연스러운 한국어를 사용한다. 방향성과 변동성을 우선하고, neutral은 횡보 판단일 때만 제한적으로 사용한다.';
 
   const prompt = [
-    '쿠로 전자 종목 뉴스 1건을 작성해줘.',
+    '디스코드 주식 게임 종목인 쿠로 전자 뉴스 1건을 작성해줘.',
     `현재 가격: ${params.currentPrice.toFixed(0)}p`,
     `현재 등락률: ${params.changePct.toFixed(2)}%`,
     `최근 흐름 요약: ${params.recentSummary}`,
+    `캔들 데이터 상태: ${params.dataIsSparse ? '제한적' : '충분'}`,
+    '캔들 데이터가 제한적이어도 neutral을 기본값처럼 남발하지 말고 가격/등락 기반 방향성을 우선 판단.',
     `impact_bps는 절대값 정수로 ${params.minImpactBps}~${params.maxImpactBps} 범위만 허용하고, 가능하면 변동성이 강하게 보이도록 범위 상단을 우선 사용.`,
-    'sentiment는 bullish 또는 bearish 중 하나를 기본으로 사용. neutral은 극히 예외적인 상황에서만 사용.',
+    'sentiment는 bullish/bearish/neutral 중 하나. neutral은 횡보에 대한 확신이 있을 때만 사용.',
     'headline은 42자 이하, body는 2~3문장으로 작성.'
   ].join('\n');
 
@@ -240,7 +280,11 @@ const buildGeminiDraft = async (params: {
       body?: unknown;
     };
 
-    const sentiment = forceDirectionalSentiment(normalizeSentiment(parsed.sentiment), params.changePct);
+    const sentiment = pickBalancedSentiment({
+      requested: normalizeSentiment(parsed.sentiment),
+      changePct: params.changePct,
+      dataIsSparse: params.dataIsSparse
+    });
     const impactBpsAbs = boostImpactForVolatility(
       clamp(Math.abs(Math.floor(toNumber(parsed.impact_bps, 0))), params.minImpactBps, params.maxImpactBps),
       params.minImpactBps,
@@ -262,8 +306,17 @@ const buildGeminiDraft = async (params: {
   }
 };
 
-const getRecentSummary = (candlesRaw: unknown) => {
-  if (!Array.isArray(candlesRaw) || candlesRaw.length < 2) return '데이터 부족';
+const getMarketSignal = (candlesRaw: unknown) => {
+  if (!Array.isArray(candlesRaw) || candlesRaw.length < 2) {
+    return {
+      summary: '캔들 데이터 부족(초기 구간)',
+      dataIsSparse: true,
+      candleCount: Array.isArray(candlesRaw) ? candlesRaw.length : 0
+    };
+  }
+
+  const candleCount = candlesRaw.length;
+  const dataIsSparse = candleCount < 12;
   const candles = candlesRaw.slice(-12) as Array<Record<string, unknown>>;
   const first = candles[0] ?? {};
   const last = candles[candles.length - 1] ?? {};
@@ -272,7 +325,11 @@ const getRecentSummary = (candlesRaw: unknown) => {
   const maxHigh = candles.reduce((acc, row) => Math.max(acc, toNumber(row.h ?? row.high_price, acc)), open);
   const minLow = candles.reduce((acc, row) => Math.min(acc, toNumber(row.l ?? row.low_price, acc)), open || Infinity);
   const movePct = open > 0 ? ((close - open) / open) * 100 : 0;
-  return `최근 12캔들 기준 ${movePct >= 0 ? '+' : ''}${movePct.toFixed(2)}%, 고가 ${maxHigh.toFixed(0)}p / 저가 ${minLow.toFixed(0)}p`;
+  return {
+    summary: `최근 12캔들 기준 ${movePct >= 0 ? '+' : ''}${movePct.toFixed(2)}%, 고가 ${maxHigh.toFixed(0)}p / 저가 ${minLow.toFixed(0)}p`,
+    dataIsSparse,
+    candleCount
+  };
 };
 
 const shouldRunStockNews = (cfg: AppConfig, now: Date) => {
@@ -320,21 +377,38 @@ const sendNewsMessage = async (client: Client, params: {
   const impactLabel = `${signed > 0 ? '+' : ''}${signed} bps`;
   const color = signed > 0 ? 0x2ecc71 : signed < 0 ? 0xe74c3c : 0x95a5a6;
   const sentimentLabel = params.draft.sentiment === 'bullish' ? '호재' : params.draft.sentiment === 'bearish' ? '악재' : '중립';
+  const sentimentEmoji = params.draft.sentiment === 'bullish' ? '🟢' : params.draft.sentiment === 'bearish' ? '🔴' : '🟡';
+  const moveEmoji = signed > 0 ? '📈' : signed < 0 ? '📉' : '➖';
+  const priceDelta = params.applied.out_price_after - params.applied.out_price_before;
 
   const embed = new EmbedBuilder()
     .setColor(color)
-    .setTitle('쿠로 전자 뉴스')
-    .setDescription(`**${params.draft.headline}**\n${params.draft.body}`)
+    .setTitle('📰 쿠로 전자 뉴스')
+    .setDescription(
+      [
+        `> **${params.draft.headline}**`,
+        '',
+        `- ${sentimentEmoji} **분류:** **${sentimentLabel}**`,
+        `- ${moveEmoji} **영향:** \`${impactLabel}\``,
+        '- 🏷️ **종목:** **쿠로 전자**',
+        '',
+        '**브리핑**',
+        params.draft.body
+      ].join('\n')
+    )
     .addFields(
-      { name: '분류', value: sentimentLabel, inline: true },
-      { name: '영향', value: impactLabel, inline: true },
       {
-        name: '가격 변동',
-        value: `${params.applied.out_price_before.toLocaleString()}p -> ${params.applied.out_price_after.toLocaleString()}p`,
+        name: '💹 가격 반영',
+        value: `\`${params.applied.out_price_before.toLocaleString()}p\` -> \`${params.applied.out_price_after.toLocaleString()}p\`\n(${priceDelta >= 0 ? '+' : ''}${priceDelta.toLocaleString()}p)`,
         inline: false
+      },
+      {
+        name: '🧠 신호',
+        value: `${sentimentEmoji} ${sentimentLabel} / ${moveEmoji} ${impactLabel}`,
+        inline: true
       }
     )
-    .setFooter({ text: params.forced ? '수동 생성' : '자동 생성' })
+    .setFooter({ text: 'Kuro Electronics Market Feed' })
     .setTimestamp(new Date());
 
   await channel.send({ embeds: [embed] });
@@ -385,6 +459,7 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
   const maxImpactBps = clamp(Math.floor(toNumber(cfg.stock_news_max_impact_bps, 260)), minImpactBps, MAX_IMPACT_BPS);
   const currentPrice = toNumber(dashboard.price, 0);
   const changePct = toNumber(dashboard.change_pct, 0);
+  const marketSignal = getMarketSignal(dashboard.candles);
 
   const apiKey = ctx.env.STOCK_NEWS_GEMINI_API_KEY || ctx.env.GEMINI_API_KEY;
   const geminiDraft = apiKey
@@ -392,7 +467,8 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
         apiKey,
         currentPrice,
         changePct,
-        recentSummary: getRecentSummary(dashboard.candles),
+        recentSummary: marketSignal.summary,
+        dataIsSparse: marketSignal.dataIsSparse,
         minImpactBps,
         maxImpactBps
       })
@@ -403,7 +479,8 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
       minImpactBps,
       maxImpactBps,
       changePct,
-      currentPrice
+      currentPrice,
+      dataIsSparse: marketSignal.dataIsSparse
     });
 
   const { data: applyRows, error: applyError } = await rpc<ApplyStockNewsRpcRow>('apply_stock_news_impact', {
@@ -416,6 +493,8 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
     p_metadata: {
       trigger: decision.forced ? 'manual' : 'schedule',
       model: apiKey ? 'gemini-2.5-flash-lite' : 'fallback',
+      data_is_sparse: marketSignal.dataIsSparse,
+      candle_count: marketSignal.candleCount,
       generated_at: now.toISOString()
     }
   });
