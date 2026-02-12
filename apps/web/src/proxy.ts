@@ -12,5 +12,15 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ['/music/:path*', '/draw/:path*', '/inventory/:path*', '/admin/:path*']
+  matcher: [
+    '/music/:path*',
+    '/draw/:path*',
+    '/lotto/:path*',
+    '/stock/:path*',
+    '/forge/:path*',
+    '/inventory/:path*',
+    '/notifications/:path*',
+    '/me/:path*',
+    '/admin/:path*'
+  ]
 };

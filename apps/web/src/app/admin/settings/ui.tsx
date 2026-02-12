@@ -60,10 +60,14 @@ type AppConfig = {
   stock_news_daily_window_end_hour: number;
   stock_news_min_impact_bps: number;
   stock_news_max_impact_bps: number;
+  stock_news_bullish_scenarios: string[];
+  stock_news_bearish_scenarios: string[];
   stock_news_last_sent_at?: string | null;
   stock_news_next_run_at?: string | null;
   stock_news_force_run_at?: string | null;
 };
+
+type SettingsTab = 'general' | 'stock' | 'economy';
 
 type DiscordChannel = { id: string; name: string; type: number; parent_id?: string | null };
 
@@ -72,6 +76,42 @@ type StagedAsset = { stagedPath: string; publicUrl: string };
 
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
+}
+
+const MAX_SCENARIO_LINES = 64;
+
+const DEFAULT_BULLISH_SCENARIOS = [
+  '차세대 제품 쇼케이스 기대감 확산',
+  '대형 파트너십 체결 루머 확산',
+  '핵심 엔지니어 팀 합류 소식',
+  '기관성 매수세 유입 추정',
+  '해외 커뮤니티에서 기술력 재평가'
+];
+
+const DEFAULT_BEARISH_SCENARIOS = [
+  '생산 라인 점검 이슈 부각',
+  '핵심 부품 수급 지연 우려 확대',
+  '경영진 발언 해석 논란 확산',
+  '단기 차익 실현 물량 집중',
+  '경쟁사 공세 심화 관측'
+];
+
+function normalizeScenarioList(input: unknown, fallback: string[]) {
+  if (!Array.isArray(input)) return [...fallback];
+  const items = input.map((item) => String(item ?? '').trim()).filter(Boolean).slice(0, MAX_SCENARIO_LINES);
+  return items.length > 0 ? items : [...fallback];
+}
+
+function parseScenarioLines(raw: string) {
+  return raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, MAX_SCENARIO_LINES);
+}
+
+function formatScenarioLines(lines: string[]) {
+  return (lines ?? []).join('\n');
 }
 
 function useElementSize<T extends HTMLElement>() {
@@ -335,6 +375,7 @@ export default function SettingsClient() {
   const [rewardSaving, setRewardSaving] = useState(false);
   const [saving, setSaving] = useState(false);
   const [newsTriggering, setNewsTriggering] = useState(false);
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
 
   const [stagedBanner, setStagedBanner] = useState<StagedAsset | null>(null);
   const [stagedIcon, setStagedIcon] = useState<StagedAsset | null>(null);
@@ -394,6 +435,8 @@ export default function SettingsClient() {
       stock_news_daily_window_end_hour: Number(cfgBody.stock_news_daily_window_end_hour ?? 23),
       stock_news_min_impact_bps: Number(cfgBody.stock_news_min_impact_bps ?? 40),
       stock_news_max_impact_bps: Number(cfgBody.stock_news_max_impact_bps ?? 260),
+      stock_news_bullish_scenarios: normalizeScenarioList(cfgBody.stock_news_bullish_scenarios, DEFAULT_BULLISH_SCENARIOS),
+      stock_news_bearish_scenarios: normalizeScenarioList(cfgBody.stock_news_bearish_scenarios, DEFAULT_BEARISH_SCENARIOS),
       stock_news_last_sent_at: cfgBody.stock_news_last_sent_at ?? null,
       stock_news_next_run_at: cfgBody.stock_news_next_run_at ?? null,
       stock_news_force_run_at: cfgBody.stock_news_force_run_at ?? null,
@@ -717,6 +760,42 @@ export default function SettingsClient() {
           </button>
         </div>
 
+        <div className="mt-4 inline-flex flex-wrap rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] p-1 text-sm">
+          <button
+            type="button"
+            className={`rounded-xl px-3 py-2 transition ${
+              activeTab === 'general'
+                ? 'bg-[color:var(--card)] text-[color:var(--fg)] shadow-[0_8px_20px_rgba(0,0,0,0.12)]'
+                : 'text-[color:var(--muted)] hover:text-[color:var(--fg)]'
+            }`}
+            onClick={() => setActiveTab('general')}
+          >
+            기본
+          </button>
+          <button
+            type="button"
+            className={`rounded-xl px-3 py-2 transition ${
+              activeTab === 'stock'
+                ? 'bg-[color:var(--card)] text-[color:var(--fg)] shadow-[0_8px_20px_rgba(0,0,0,0.12)]'
+                : 'text-[color:var(--muted)] hover:text-[color:var(--fg)]'
+            }`}
+            onClick={() => setActiveTab('stock')}
+          >
+            주식
+          </button>
+          <button
+            type="button"
+            className={`rounded-xl px-3 py-2 transition ${
+              activeTab === 'economy'
+                ? 'bg-[color:var(--card)] text-[color:var(--fg)] shadow-[0_8px_20px_rgba(0,0,0,0.12)]'
+                : 'text-[color:var(--muted)] hover:text-[color:var(--fg)]'
+            }`}
+            onClick={() => setActiveTab('economy')}
+          >
+            보상/경제
+          </button>
+        </div>
+
         {crop ? (
           <CropModal
             title={crop.key === 'banner' ? '배너 이미지 자르기' : '아이콘 이미지 자르기'}
@@ -736,7 +815,7 @@ export default function SettingsClient() {
           />
         ) : null}
 
-        <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+        <section className={`${activeTab === 'general' ? '' : 'hidden '}mt-6 max-w-2xl rounded-3xl card-glass p-6`}>
           <h2 className="text-lg font-semibold">사이트 이미지</h2>
           <p className="mt-2 text-xs muted">배너/아이콘을 업로드하여 적용할 수 있습니다. (적용 전에는 임시 업로드 상태입니다.)</p>
 
@@ -866,7 +945,7 @@ export default function SettingsClient() {
           </div>
         </section>
 
-      <section className="mt-8 max-w-2xl rounded-3xl card-glass p-6">
+      <section className={`${activeTab === 'general' ? '' : 'hidden '}mt-8 max-w-2xl rounded-3xl card-glass p-6`}>
         <h2 className="text-lg font-semibold">서버 소개</h2>
         <p className="mt-2 text-xs muted">메인 페이지 배너 아래에 표시됩니다.</p>
         <textarea
@@ -888,7 +967,7 @@ export default function SettingsClient() {
         </div>
       </section>
 
-      <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+          <section className={`${activeTab === 'stock' ? '' : 'hidden '}mt-6 max-w-2xl rounded-3xl card-glass p-6`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">주식 뉴스</h2>
@@ -1002,6 +1081,56 @@ export default function SettingsClient() {
               onChange={(e) => setCfg({ ...cfg, stock_news_max_impact_bps: Number(e.target.value) })}
             />
           </label>
+
+          <label className="text-sm sm:col-span-2">
+            호재 시나리오 (줄바꿈으로 분리)
+            <textarea
+              className="mt-1 min-h-[140px] w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)] placeholder:text-[color:var(--muted-2)]"
+              value={formatScenarioLines(cfg.stock_news_bullish_scenarios)}
+              onChange={(e) =>
+                setCfg({
+                  ...cfg,
+                  stock_news_bullish_scenarios: parseScenarioLines(e.target.value)
+                })
+              }
+              placeholder="차세대 제품 쇼케이스 기대감 확산"
+            />
+            <div className="mt-2 flex items-center justify-between gap-2 text-xs muted-2">
+              <span>{cfg.stock_news_bullish_scenarios.length}개</span>
+              <button
+                type="button"
+                className="rounded-xl btn-soft px-2.5 py-1"
+                onClick={() => setCfg({ ...cfg, stock_news_bullish_scenarios: [...DEFAULT_BULLISH_SCENARIOS] })}
+              >
+                기본값 복원
+              </button>
+            </div>
+          </label>
+
+          <label className="text-sm sm:col-span-2">
+            악재 시나리오 (줄바꿈으로 분리)
+            <textarea
+              className="mt-1 min-h-[140px] w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)] placeholder:text-[color:var(--muted-2)]"
+              value={formatScenarioLines(cfg.stock_news_bearish_scenarios)}
+              onChange={(e) =>
+                setCfg({
+                  ...cfg,
+                  stock_news_bearish_scenarios: parseScenarioLines(e.target.value)
+                })
+              }
+              placeholder="생산 라인 점검 이슈 부각"
+            />
+            <div className="mt-2 flex items-center justify-between gap-2 text-xs muted-2">
+              <span>{cfg.stock_news_bearish_scenarios.length}개</span>
+              <button
+                type="button"
+                className="rounded-xl btn-soft px-2.5 py-1"
+                onClick={() => setCfg({ ...cfg, stock_news_bearish_scenarios: [...DEFAULT_BEARISH_SCENARIOS] })}
+              >
+                기본값 복원
+              </button>
+            </div>
+          </label>
         </div>
 
         <div className="mt-4 grid gap-2 rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] p-3 text-xs muted sm:grid-cols-3">
@@ -1024,7 +1153,7 @@ export default function SettingsClient() {
         </div>
       </section>
 
-      <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+      <section className={`${activeTab === 'general' ? '' : 'hidden '}mt-6 max-w-2xl rounded-3xl card-glass p-6`}>
         <h2 className="text-lg font-semibold">입장 메시지</h2>
         <label className="mt-3 block text-sm muted">채널</label>
         <div className="relative mt-1">
@@ -1057,7 +1186,7 @@ export default function SettingsClient() {
         <p className="mt-2 text-xs muted-2">사용 가능: {'{user}'} {'{username}'} {'{server}'}</p>
       </section>
 
-      <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+      <section className={`${activeTab === 'general' ? '' : 'hidden '}mt-6 max-w-2xl rounded-3xl card-glass p-6`}>
         <h2 className="text-lg font-semibold">음성방 자동 생성</h2>
         <p className="mt-2 text-xs muted">
           지정된 트리거 음성채널에 유저가 입장하면, 저장된 개인 설정으로 새 통화방을 자동 생성해 이동시킵니다.
@@ -1109,7 +1238,7 @@ export default function SettingsClient() {
         </div>
       </section>
 
-      <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+      <section className={`${activeTab === 'economy' ? '' : 'hidden '}mt-6 max-w-2xl rounded-3xl card-glass p-6`}>
         <h2 className="text-lg font-semibold">채팅 보상</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <label className="text-sm">
@@ -1165,7 +1294,7 @@ export default function SettingsClient() {
         </div>
       </section>
 
-      <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+      <section className={`${activeTab === 'economy' ? '' : 'hidden '}mt-6 max-w-2xl rounded-3xl card-glass p-6`}>
         <h2 className="text-lg font-semibold">음성 보상</h2>
         <p className="mt-2 text-xs muted">모든 음성 채널에 적용됩니다.</p>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -1213,7 +1342,7 @@ export default function SettingsClient() {
         </div>
       </section>
 
-      <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+      <section className={`${activeTab === 'economy' ? '' : 'hidden '}mt-6 max-w-2xl rounded-3xl card-glass p-6`}>
         <h2 className="text-lg font-semibold">일일 보물상자 보상</h2>
         <p className="mt-2 text-xs muted">/daily 보상 확률과 포인트 범위를 설정합니다.</p>
 
@@ -1348,7 +1477,7 @@ export default function SettingsClient() {
         </div>
       </section>
 
-      <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+      <section className={`${activeTab === 'economy' ? '' : 'hidden '}mt-6 max-w-2xl rounded-3xl card-glass p-6`}>
         <h2 className="text-lg font-semibold">참치캔의 기운 설정</h2>
         <p className="mt-2 text-xs muted">가챠 중복에서 SS/SSS 등급이 나올 때 지급할 강화 기운 수량입니다. 기운 3개를 소모하면 강화 비용이 50% 할인됩니다.</p>
 
@@ -1376,7 +1505,7 @@ export default function SettingsClient() {
         </div>
       </section>
 
-      <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+      <section className={`${activeTab === 'economy' ? '' : 'hidden '}mt-6 max-w-2xl rounded-3xl card-glass p-6`}>
         <h2 className="text-lg font-semibold">복권 설정</h2>
         <p className="mt-2 text-xs muted">
           /복권 확률, 티켓 가격, 등급별 보상, 쿨타임을 조절합니다. 꽝이 나오면 티켓 가격만큼 잭팟 풀에 누적되고, 잭팟 당첨 시 기본 잭팟 보상 +
@@ -1521,7 +1650,7 @@ export default function SettingsClient() {
         </p>
       </section>
 
-      <section className="mt-6 max-w-2xl rounded-3xl card-glass p-6">
+      <section className={`${activeTab === 'economy' ? '' : 'hidden '}mt-6 max-w-2xl rounded-3xl card-glass p-6`}>
         <h2 className="text-lg font-semibold">보상 채널(화이트리스트)</h2>
         <p className="mt-2 text-xs muted">선택된 채널에서만 채팅 보상이 적립됩니다.</p>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">

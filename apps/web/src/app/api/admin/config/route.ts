@@ -27,7 +27,7 @@ export async function PUT(req: Request) {
     // Ensure the singleton row exists before updating.
     await getOrInitAppConfig();
 
-  const body = (await req.json()) as {
+    const body = (await req.json()) as {
     server_intro?: string | null;
     banner_image_url?: string | null;
     icon_image_url?: string | null;
@@ -78,82 +78,94 @@ export async function PUT(req: Request) {
     stock_news_daily_window_end_hour?: number;
     stock_news_min_impact_bps?: number;
     stock_news_max_impact_bps?: number;
-  };
+      stock_news_bullish_scenarios?: string[];
+      stock_news_bearish_scenarios?: string[];
+    };
 
-  const patch: Record<string, unknown> = {};
+    const normalizeScenarioList = (input: string[] | undefined) => {
+      if (!Array.isArray(input)) return undefined;
+      return input.map((item) => String(item ?? '').trim()).filter(Boolean).slice(0, 64);
+    };
 
-  if (body.server_intro !== undefined) {
-    const v = typeof body.server_intro === 'string' ? body.server_intro : null;
-    patch.server_intro = v && v.trim().length ? v : null;
-  }
-  if (body.banner_image_url !== undefined) patch.banner_image_url = body.banner_image_url ?? null;
-  if (body.icon_image_url !== undefined) patch.icon_image_url = body.icon_image_url ?? null;
-  if (body.join_message_template !== undefined) patch.join_message_template = body.join_message_template ?? null;
-  if (body.join_message_channel_id !== undefined) patch.join_message_channel_id = body.join_message_channel_id ?? null;
-  if (body.reward_points_per_interval !== undefined) patch.reward_points_per_interval = body.reward_points_per_interval;
-  if (body.reward_interval_seconds !== undefined) patch.reward_interval_seconds = body.reward_interval_seconds;
-  if (body.reward_daily_cap_points !== undefined) patch.reward_daily_cap_points = body.reward_daily_cap_points ?? null;
-  if (body.reward_min_message_length !== undefined) patch.reward_min_message_length = body.reward_min_message_length;
-  if (body.voice_reward_points_per_interval !== undefined) patch.voice_reward_points_per_interval = body.voice_reward_points_per_interval;
-  if (body.voice_reward_interval_seconds !== undefined) patch.voice_reward_interval_seconds = body.voice_reward_interval_seconds;
-  if (body.voice_reward_daily_cap_points !== undefined) patch.voice_reward_daily_cap_points = body.voice_reward_daily_cap_points ?? null;
-  if (body.booster_chat_bonus_points !== undefined) patch.booster_chat_bonus_points = body.booster_chat_bonus_points;
-  if (body.booster_voice_bonus_points !== undefined) patch.booster_voice_bonus_points = body.booster_voice_bonus_points;
-  if (body.daily_chest_legendary_rate_pct !== undefined) patch.daily_chest_legendary_rate_pct = body.daily_chest_legendary_rate_pct;
-  if (body.daily_chest_epic_rate_pct !== undefined) patch.daily_chest_epic_rate_pct = body.daily_chest_epic_rate_pct;
-  if (body.daily_chest_rare_rate_pct !== undefined) patch.daily_chest_rare_rate_pct = body.daily_chest_rare_rate_pct;
-  if (body.daily_chest_common_min_points !== undefined) patch.daily_chest_common_min_points = body.daily_chest_common_min_points;
-  if (body.daily_chest_common_max_points !== undefined) patch.daily_chest_common_max_points = body.daily_chest_common_max_points;
-  if (body.daily_chest_rare_min_points !== undefined) patch.daily_chest_rare_min_points = body.daily_chest_rare_min_points;
-  if (body.daily_chest_rare_max_points !== undefined) patch.daily_chest_rare_max_points = body.daily_chest_rare_max_points;
-  if (body.daily_chest_epic_min_points !== undefined) patch.daily_chest_epic_min_points = body.daily_chest_epic_min_points;
-  if (body.daily_chest_epic_max_points !== undefined) patch.daily_chest_epic_max_points = body.daily_chest_epic_max_points;
-  if (body.daily_chest_legendary_min_points !== undefined) patch.daily_chest_legendary_min_points = body.daily_chest_legendary_min_points;
-  if (body.daily_chest_legendary_max_points !== undefined) patch.daily_chest_legendary_max_points = body.daily_chest_legendary_max_points;
-  if (body.daily_chest_item_drop_rate_pct !== undefined) patch.daily_chest_item_drop_rate_pct = body.daily_chest_item_drop_rate_pct;
-  if (body.duplicate_ss_tuna_energy !== undefined) patch.duplicate_ss_tuna_energy = body.duplicate_ss_tuna_energy;
-  if (body.duplicate_sss_tuna_energy !== undefined) patch.duplicate_sss_tuna_energy = body.duplicate_sss_tuna_energy;
-  if (body.voice_interface_trigger_channel_id !== undefined) patch.voice_interface_trigger_channel_id = body.voice_interface_trigger_channel_id ?? null;
-  if (body.voice_interface_category_id !== undefined) patch.voice_interface_category_id = body.voice_interface_category_id ?? null;
-  if (body.lottery_jackpot_rate_pct !== undefined) patch.lottery_jackpot_rate_pct = body.lottery_jackpot_rate_pct;
-  if (body.lottery_gold_rate_pct !== undefined) patch.lottery_gold_rate_pct = body.lottery_gold_rate_pct;
-  if (body.lottery_silver_rate_pct !== undefined) patch.lottery_silver_rate_pct = body.lottery_silver_rate_pct;
-  if (body.lottery_bronze_rate_pct !== undefined) patch.lottery_bronze_rate_pct = body.lottery_bronze_rate_pct;
-  if (body.lottery_ticket_cooldown_seconds !== undefined) patch.lottery_ticket_cooldown_seconds = body.lottery_ticket_cooldown_seconds;
-  if (body.lottery_ticket_price !== undefined) patch.lottery_ticket_price = body.lottery_ticket_price;
-  if (body.lottery_jackpot_base_points !== undefined) patch.lottery_jackpot_base_points = body.lottery_jackpot_base_points;
-  if (body.lottery_gold_payout_points !== undefined) patch.lottery_gold_payout_points = body.lottery_gold_payout_points;
-  if (body.lottery_silver_payout_points !== undefined) patch.lottery_silver_payout_points = body.lottery_silver_payout_points;
-  if (body.lottery_bronze_payout_points !== undefined) patch.lottery_bronze_payout_points = body.lottery_bronze_payout_points;
-  if (body.lottery_jackpot_pool_points !== undefined) patch.lottery_jackpot_pool_points = body.lottery_jackpot_pool_points;
-  if (body.lottery_activity_jackpot_rate_pct !== undefined) patch.lottery_activity_jackpot_rate_pct = body.lottery_activity_jackpot_rate_pct;
-  if (body.stock_news_enabled !== undefined) patch.stock_news_enabled = Boolean(body.stock_news_enabled);
-  if (body.stock_news_channel_id !== undefined) patch.stock_news_channel_id = body.stock_news_channel_id ?? null;
-  if (body.stock_news_schedule_mode !== undefined) {
-    patch.stock_news_schedule_mode = body.stock_news_schedule_mode === 'daily_random' ? 'daily_random' : 'interval';
-  }
-  if (body.stock_news_interval_minutes !== undefined) {
-    patch.stock_news_interval_minutes = Math.max(5, Math.min(1440, Math.floor(body.stock_news_interval_minutes)));
-  }
-  if (body.stock_news_daily_window_start_hour !== undefined) {
-    patch.stock_news_daily_window_start_hour = Math.max(0, Math.min(23, Math.floor(body.stock_news_daily_window_start_hour)));
-  }
-  if (body.stock_news_daily_window_end_hour !== undefined) {
-    patch.stock_news_daily_window_end_hour = Math.max(0, Math.min(23, Math.floor(body.stock_news_daily_window_end_hour)));
-  }
-  const nextMinImpact =
-    body.stock_news_min_impact_bps !== undefined
-      ? Math.max(0, Math.min(5000, Math.floor(body.stock_news_min_impact_bps)))
-      : undefined;
-  const nextMaxImpact =
-    body.stock_news_max_impact_bps !== undefined
-      ? Math.max(0, Math.min(5000, Math.floor(body.stock_news_max_impact_bps)))
-      : undefined;
-  if (nextMinImpact !== undefined) patch.stock_news_min_impact_bps = nextMinImpact;
-  if (nextMaxImpact !== undefined) patch.stock_news_max_impact_bps = nextMaxImpact;
-  if (nextMinImpact !== undefined && nextMaxImpact !== undefined && nextMaxImpact < nextMinImpact) {
-    patch.stock_news_max_impact_bps = nextMinImpact;
-  }
+    const patch: Record<string, unknown> = {};
+
+    if (body.server_intro !== undefined) {
+      const v = typeof body.server_intro === 'string' ? body.server_intro : null;
+      patch.server_intro = v && v.trim().length ? v : null;
+    }
+    if (body.banner_image_url !== undefined) patch.banner_image_url = body.banner_image_url ?? null;
+    if (body.icon_image_url !== undefined) patch.icon_image_url = body.icon_image_url ?? null;
+    if (body.join_message_template !== undefined) patch.join_message_template = body.join_message_template ?? null;
+    if (body.join_message_channel_id !== undefined) patch.join_message_channel_id = body.join_message_channel_id ?? null;
+    if (body.reward_points_per_interval !== undefined) patch.reward_points_per_interval = body.reward_points_per_interval;
+    if (body.reward_interval_seconds !== undefined) patch.reward_interval_seconds = body.reward_interval_seconds;
+    if (body.reward_daily_cap_points !== undefined) patch.reward_daily_cap_points = body.reward_daily_cap_points ?? null;
+    if (body.reward_min_message_length !== undefined) patch.reward_min_message_length = body.reward_min_message_length;
+    if (body.voice_reward_points_per_interval !== undefined) patch.voice_reward_points_per_interval = body.voice_reward_points_per_interval;
+    if (body.voice_reward_interval_seconds !== undefined) patch.voice_reward_interval_seconds = body.voice_reward_interval_seconds;
+    if (body.voice_reward_daily_cap_points !== undefined) patch.voice_reward_daily_cap_points = body.voice_reward_daily_cap_points ?? null;
+    if (body.booster_chat_bonus_points !== undefined) patch.booster_chat_bonus_points = body.booster_chat_bonus_points;
+    if (body.booster_voice_bonus_points !== undefined) patch.booster_voice_bonus_points = body.booster_voice_bonus_points;
+    if (body.daily_chest_legendary_rate_pct !== undefined) patch.daily_chest_legendary_rate_pct = body.daily_chest_legendary_rate_pct;
+    if (body.daily_chest_epic_rate_pct !== undefined) patch.daily_chest_epic_rate_pct = body.daily_chest_epic_rate_pct;
+    if (body.daily_chest_rare_rate_pct !== undefined) patch.daily_chest_rare_rate_pct = body.daily_chest_rare_rate_pct;
+    if (body.daily_chest_common_min_points !== undefined) patch.daily_chest_common_min_points = body.daily_chest_common_min_points;
+    if (body.daily_chest_common_max_points !== undefined) patch.daily_chest_common_max_points = body.daily_chest_common_max_points;
+    if (body.daily_chest_rare_min_points !== undefined) patch.daily_chest_rare_min_points = body.daily_chest_rare_min_points;
+    if (body.daily_chest_rare_max_points !== undefined) patch.daily_chest_rare_max_points = body.daily_chest_rare_max_points;
+    if (body.daily_chest_epic_min_points !== undefined) patch.daily_chest_epic_min_points = body.daily_chest_epic_min_points;
+    if (body.daily_chest_epic_max_points !== undefined) patch.daily_chest_epic_max_points = body.daily_chest_epic_max_points;
+    if (body.daily_chest_legendary_min_points !== undefined) patch.daily_chest_legendary_min_points = body.daily_chest_legendary_min_points;
+    if (body.daily_chest_legendary_max_points !== undefined) patch.daily_chest_legendary_max_points = body.daily_chest_legendary_max_points;
+    if (body.daily_chest_item_drop_rate_pct !== undefined) patch.daily_chest_item_drop_rate_pct = body.daily_chest_item_drop_rate_pct;
+    if (body.duplicate_ss_tuna_energy !== undefined) patch.duplicate_ss_tuna_energy = body.duplicate_ss_tuna_energy;
+    if (body.duplicate_sss_tuna_energy !== undefined) patch.duplicate_sss_tuna_energy = body.duplicate_sss_tuna_energy;
+    if (body.voice_interface_trigger_channel_id !== undefined) patch.voice_interface_trigger_channel_id = body.voice_interface_trigger_channel_id ?? null;
+    if (body.voice_interface_category_id !== undefined) patch.voice_interface_category_id = body.voice_interface_category_id ?? null;
+    if (body.lottery_jackpot_rate_pct !== undefined) patch.lottery_jackpot_rate_pct = body.lottery_jackpot_rate_pct;
+    if (body.lottery_gold_rate_pct !== undefined) patch.lottery_gold_rate_pct = body.lottery_gold_rate_pct;
+    if (body.lottery_silver_rate_pct !== undefined) patch.lottery_silver_rate_pct = body.lottery_silver_rate_pct;
+    if (body.lottery_bronze_rate_pct !== undefined) patch.lottery_bronze_rate_pct = body.lottery_bronze_rate_pct;
+    if (body.lottery_ticket_cooldown_seconds !== undefined) patch.lottery_ticket_cooldown_seconds = body.lottery_ticket_cooldown_seconds;
+    if (body.lottery_ticket_price !== undefined) patch.lottery_ticket_price = body.lottery_ticket_price;
+    if (body.lottery_jackpot_base_points !== undefined) patch.lottery_jackpot_base_points = body.lottery_jackpot_base_points;
+    if (body.lottery_gold_payout_points !== undefined) patch.lottery_gold_payout_points = body.lottery_gold_payout_points;
+    if (body.lottery_silver_payout_points !== undefined) patch.lottery_silver_payout_points = body.lottery_silver_payout_points;
+    if (body.lottery_bronze_payout_points !== undefined) patch.lottery_bronze_payout_points = body.lottery_bronze_payout_points;
+    if (body.lottery_jackpot_pool_points !== undefined) patch.lottery_jackpot_pool_points = body.lottery_jackpot_pool_points;
+    if (body.lottery_activity_jackpot_rate_pct !== undefined) patch.lottery_activity_jackpot_rate_pct = body.lottery_activity_jackpot_rate_pct;
+    if (body.stock_news_enabled !== undefined) patch.stock_news_enabled = Boolean(body.stock_news_enabled);
+    if (body.stock_news_channel_id !== undefined) patch.stock_news_channel_id = body.stock_news_channel_id ?? null;
+    if (body.stock_news_schedule_mode !== undefined) {
+      patch.stock_news_schedule_mode = body.stock_news_schedule_mode === 'daily_random' ? 'daily_random' : 'interval';
+    }
+    if (body.stock_news_interval_minutes !== undefined) {
+      patch.stock_news_interval_minutes = Math.max(5, Math.min(1440, Math.floor(body.stock_news_interval_minutes)));
+    }
+    if (body.stock_news_daily_window_start_hour !== undefined) {
+      patch.stock_news_daily_window_start_hour = Math.max(0, Math.min(23, Math.floor(body.stock_news_daily_window_start_hour)));
+    }
+    if (body.stock_news_daily_window_end_hour !== undefined) {
+      patch.stock_news_daily_window_end_hour = Math.max(0, Math.min(23, Math.floor(body.stock_news_daily_window_end_hour)));
+    }
+    const nextMinImpact =
+      body.stock_news_min_impact_bps !== undefined
+        ? Math.max(0, Math.min(5000, Math.floor(body.stock_news_min_impact_bps)))
+        : undefined;
+    const nextMaxImpact =
+      body.stock_news_max_impact_bps !== undefined
+        ? Math.max(0, Math.min(5000, Math.floor(body.stock_news_max_impact_bps)))
+        : undefined;
+    if (nextMinImpact !== undefined) patch.stock_news_min_impact_bps = nextMinImpact;
+    if (nextMaxImpact !== undefined) patch.stock_news_max_impact_bps = nextMaxImpact;
+    if (nextMinImpact !== undefined && nextMaxImpact !== undefined && nextMaxImpact < nextMinImpact) {
+      patch.stock_news_max_impact_bps = nextMinImpact;
+    }
+
+    const bullishScenarios = normalizeScenarioList(body.stock_news_bullish_scenarios);
+    const bearishScenarios = normalizeScenarioList(body.stock_news_bearish_scenarios);
+    if (bullishScenarios !== undefined) patch.stock_news_bullish_scenarios = bullishScenarios;
+    if (bearishScenarios !== undefined) patch.stock_news_bearish_scenarios = bearishScenarios;
 
     const supabase = createSupabaseAdminClient();
 

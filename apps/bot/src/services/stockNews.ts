@@ -60,6 +60,11 @@ type StockNewsDraft = {
   body: string;
 };
 
+type ScenarioSeeds = {
+  bullish: string[];
+  bearish: string[];
+};
+
 const STOCK_NEWS_SCHEMA: Schema = {
   type: Type.OBJECT,
   properties: {
@@ -104,7 +109,7 @@ const NEWS_TIER_META: Record<NewsTier, { label: string; emoji: string }> = {
   shock: { label: '충격', emoji: '🚨' }
 };
 
-const BULLISH_REASON_SEEDS = [
+const DEFAULT_BULLISH_REASON_SEEDS = [
   '차세대 제품 쇼케이스 기대감 확산',
   '대형 파트너십 체결 루머 확산',
   '핵심 엔지니어 팀 합류 소식',
@@ -112,7 +117,7 @@ const BULLISH_REASON_SEEDS = [
   '해외 커뮤니티에서 기술력 재평가'
 ];
 
-const BEARISH_REASON_SEEDS = [
+const DEFAULT_BEARISH_REASON_SEEDS = [
   '생산 라인 점검 이슈 부각',
   '핵심 부품 수급 지연 우려 확대',
   '경영진 발언 해석 논란 확산',
@@ -142,6 +147,18 @@ const parseMaybeDate = (value: string | null | undefined) => {
   const at = new Date(value);
   return Number.isNaN(at.getTime()) ? null : at;
 };
+
+const normalizeScenarioSeedList = (input: string[] | null | undefined, fallback: readonly string[]): string[] => {
+  const normalized = Array.isArray(input)
+    ? input.map((item) => String(item ?? '').trim()).filter(Boolean)
+    : [];
+  return normalized.length > 0 ? normalized : [...fallback];
+};
+
+const resolveScenarioSeeds = (cfg: AppConfig): ScenarioSeeds => ({
+  bullish: normalizeScenarioSeedList(cfg.stock_news_bullish_scenarios, DEFAULT_BULLISH_REASON_SEEDS),
+  bearish: normalizeScenarioSeedList(cfg.stock_news_bearish_scenarios, DEFAULT_BEARISH_REASON_SEEDS)
+});
 
 const pickNewsTier = (): NewsTierProfile => {
   const roll = Math.random();
@@ -173,9 +190,9 @@ const pickRandomSentiment = (): Sentiment => {
   return 'neutral';
 };
 
-const pickReasonSeed = (sentiment: Sentiment): string => {
-  if (sentiment === 'bullish') return pickOne(BULLISH_REASON_SEEDS);
-  if (sentiment === 'bearish') return pickOne(BEARISH_REASON_SEEDS);
+const pickReasonSeed = (sentiment: Sentiment, scenarioSeeds: ScenarioSeeds): string => {
+  if (sentiment === 'bullish') return pickOne(scenarioSeeds.bullish);
+  if (sentiment === 'bearish') return pickOne(scenarioSeeds.bearish);
   return pickOne(NEUTRAL_REASON_SEEDS);
 };
 
@@ -260,12 +277,13 @@ const buildFallbackDraft = (params: {
   minImpactBps: number;
   maxImpactBps: number;
   displayName: string;
+  scenarioSeeds: ScenarioSeeds;
 }): StockNewsDraft => {
-  const { minImpactBps, maxImpactBps, displayName } = params;
+  const { minImpactBps, maxImpactBps, displayName, scenarioSeeds } = params;
 
   const sentiment = pickRandomSentiment();
   const tierProfile = pickNewsTier();
-  const reasonSeed = pickReasonSeed(sentiment);
+  const reasonSeed = pickReasonSeed(sentiment, scenarioSeeds);
   const impactBpsAbs = pickTierImpact(tierProfile, minImpactBps, maxImpactBps);
   const headline = buildGameHeadline(displayName, reasonSeed);
 
@@ -288,13 +306,14 @@ const buildGeminiDraft = async (params: {
   dataIsSparse: boolean;
   minImpactBps: number;
   maxImpactBps: number;
+  scenarioSeeds: ScenarioSeeds;
 }): Promise<StockNewsDraft | null> => {
   const ai = new GoogleGenAI({ apiKey: params.apiKey });
   const forcedSentiment = pickRandomSentiment();
   const forcedTierProfile = pickNewsTier();
   const forcedTier = forcedTierProfile.key;
   const tierBounds = getTierImpactBounds(forcedTierProfile, params.minImpactBps, params.maxImpactBps);
-  const reasonSeed = pickReasonSeed(forcedSentiment);
+  const reasonSeed = pickReasonSeed(forcedSentiment, params.scenarioSeeds);
   const forcedSentimentLabel = forcedSentiment === 'bullish' ? '호재' : forcedSentiment === 'bearish' ? '악재' : '중립';
 
   const systemInstruction =
@@ -488,6 +507,7 @@ const sendNewsMessage = async (client: Client, params: {
 export async function runStockNewsCycle(client: Client): Promise<void> {
   const cfg = await getAppConfig();
   if (!cfg.stock_news_enabled || !cfg.stock_news_channel_id) return;
+  const scenarioSeeds = resolveScenarioSeeds(cfg);
 
   const now = new Date();
   const decision = shouldRunStockNews(cfg, now);
@@ -544,7 +564,8 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
         recentSummary: marketSignal.summary,
         dataIsSparse: marketSignal.dataIsSparse,
         minImpactBps,
-        maxImpactBps
+        maxImpactBps,
+        scenarioSeeds
       })
     : null;
 
@@ -552,7 +573,8 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
     buildFallbackDraft({
       minImpactBps,
       maxImpactBps,
-      displayName: stockTicker.displayName
+      displayName: stockTicker.displayName,
+      scenarioSeeds
     });
 
   const { data: applyRows, error: applyError } = await rpc<ApplyStockNewsRpcRow>('apply_stock_news_impact', {
