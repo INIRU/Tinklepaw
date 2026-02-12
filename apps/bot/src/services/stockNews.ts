@@ -349,7 +349,7 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
   ) => RpcResult<T>;
 
   const { data: dashboardRows, error: dashboardError } = await rpc<StockDashboardRpcRow>('get_stock_dashboard', {
-    p_user_discord_id: '__stock_news_worker__'
+    p_discord_user_id: '__stock_news_worker__'
   });
   if (dashboardError) {
     throw new Error(`[StockNews] get_stock_dashboard failed: ${dashboardError.message}`);
