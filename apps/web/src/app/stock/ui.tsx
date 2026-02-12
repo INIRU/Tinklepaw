@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUpDown, CandlestickChart, Coins, RefreshCcw, Wallet } from 'lucide-react';
 
 type StockCandle = {
@@ -358,8 +358,11 @@ export default function StockClient() {
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [lastTrade, setLastTrade] = useState<TradeResult | null>(null);
+  const requestSeqRef = useRef(0);
 
   const loadStatus = useCallback(async () => {
+    const requestSeq = ++requestSeqRef.current;
+
     try {
       const res = await fetch('/api/stock/status', { cache: 'no-store' });
       const body = await res.json().catch(() => ({}));
@@ -367,21 +370,41 @@ export default function StockClient() {
         throw new Error(typeof body?.error === 'string' ? body.error : `HTTP ${res.status}`);
       }
 
+      if (requestSeq !== requestSeqRef.current) return;
+
       setStatus(normalizeDashboard(body));
       setError(null);
     } catch (e) {
+      if (requestSeq !== requestSeqRef.current) return;
       setError(e instanceof Error ? e.message : '주식 정보를 불러오지 못했습니다.');
     } finally {
+      if (requestSeq !== requestSeqRef.current) return;
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadStatus();
-    const id = setInterval(() => {
-      void loadStatus();
-    }, 15000);
-    return () => clearInterval(id);
+    const tick = () => {
+      if (document.visibilityState === 'visible') {
+        void loadStatus();
+      }
+    };
+
+    tick();
+    const id = window.setInterval(tick, 15000);
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void loadStatus();
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      requestSeqRef.current += 1;
+    };
   }, [loadStatus]);
 
   const handleManualRefresh = useCallback(async () => {
@@ -450,20 +473,25 @@ export default function StockClient() {
   const quickQuantities = [1, 5, 10, 50, 100, 500];
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10">
-      <section className="rounded-3xl border border-[color:color-mix(in_srgb,var(--accent-sky)_28%,var(--border))] bg-[linear-gradient(145deg,color-mix(in_srgb,var(--accent-sky)_14%,var(--card)),color-mix(in_srgb,var(--accent-pink)_8%,var(--card)))] p-6 shadow-[0_22px_54px_rgba(8,12,28,0.16)]">
+    <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
+      <section className="relative overflow-hidden rounded-3xl border border-[color:color-mix(in_srgb,var(--accent-sky)_28%,var(--border))] bg-[linear-gradient(145deg,color-mix(in_srgb,var(--accent-sky)_14%,var(--card)),color-mix(in_srgb,var(--accent-pink)_8%,var(--card)))] p-5 shadow-[0_22px_54px_rgba(8,12,28,0.16)] sm:p-6">
+        <div className="pointer-events-none absolute -right-10 -top-16 h-52 w-52 rounded-full bg-[radial-gradient(circle,rgba(236,72,153,0.20),transparent_68%)] blur-lg" />
+        <div className="pointer-events-none absolute -bottom-24 -left-14 h-64 w-64 rounded-full bg-[radial-gradient(circle,rgba(56,189,248,0.20),transparent_72%)] blur-lg" />
+
+        <div className="relative">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold tracking-[0.16em] text-[color:color-mix(in_srgb,var(--fg)_74%,transparent)]">TRADING PANEL</p>
             <h1 className="mt-1 text-3xl font-black tracking-tight font-bangul text-[color:var(--fg)]">{status?.displayName ?? '쿠로 주식'}</h1>
             <p className="mt-2 text-sm text-[color:color-mix(in_srgb,var(--fg)_74%,transparent)]">웹에서 5분봉 차트를 보면서 바로 매수/매도할 수 있어요.</p>
+            <p className="mt-1 text-[11px] font-medium text-[color:color-mix(in_srgb,var(--fg)_64%,transparent)]">실시간 체결 반영 · 15초 자동 갱신</p>
           </div>
 
           <button
             type="button"
             disabled={manualRefreshing}
             onClick={() => void handleManualRefresh()}
-            className="inline-flex items-center gap-2 rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_84%,transparent)] px-4 py-2 text-sm font-semibold text-[color:var(--fg)] transition hover:brightness-105 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
+            className="inline-flex items-center gap-2 rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_84%,transparent)] px-4 py-2 text-sm font-semibold text-[color:var(--fg)] transition motion-safe:hover:-translate-y-0.5 hover:brightness-105 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
           >
             <RefreshCcw className={`h-4 w-4 ${manualRefreshing ? 'animate-spin' : ''}`} />
             새로고침
@@ -471,28 +499,28 @@ export default function StockClient() {
         </div>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] px-4 py-3">
-            <p className="text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]">현재가</p>
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] px-4 py-3 transition motion-safe:hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(8,12,28,0.12)]">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]"><CandlestickChart className="h-3.5 w-3.5" />현재가</p>
             <p className="mt-1 text-xl font-black text-[color:var(--fg)]">{status ? `${status.price.toLocaleString('ko-KR')}P` : '...'}</p>
             <p className={`mt-1 text-xs font-semibold ${status && status.changePct >= 0 ? 'text-[#e11d48] dark:text-[#fb7185]' : 'text-[#2563eb] dark:text-[#7dd3fc]'}`}>
               {status ? signedPct(status.changePct) : '-'}
             </p>
           </div>
 
-          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] px-4 py-3">
-            <p className="text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]">내 포인트</p>
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] px-4 py-3 transition motion-safe:hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(8,12,28,0.12)]">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]"><Coins className="h-3.5 w-3.5" />내 포인트</p>
             <p className="mt-1 text-xl font-black text-[color:var(--fg)]">{status ? `${status.balance.toLocaleString('ko-KR')}P` : '...'}</p>
             <p className="mt-1 text-xs text-[color:color-mix(in_srgb,var(--fg)_68%,transparent)]">수수료 {(toSafeNumber(status?.feeBps, 150) / 100).toFixed(2)}%</p>
           </div>
 
-          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] px-4 py-3">
-            <p className="text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]">보유 수량</p>
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] px-4 py-3 transition motion-safe:hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(8,12,28,0.12)]">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]"><Wallet className="h-3.5 w-3.5" />보유 수량</p>
             <p className="mt-1 text-xl font-black text-[color:var(--fg)]">{status ? `${status.holdingQty.toLocaleString('ko-KR')}주` : '...'}</p>
             <p className="mt-1 text-xs text-[color:color-mix(in_srgb,var(--fg)_68%,transparent)]">평단 {status ? `${status.holdingAvgPrice.toLocaleString('ko-KR')}P` : '-'}</p>
           </div>
 
-          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] px-4 py-3">
-            <p className="text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]">평가손익</p>
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] px-4 py-3 transition motion-safe:hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(8,12,28,0.12)]">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]"><ArrowUpDown className="h-3.5 w-3.5" />평가손익</p>
             <p className={`mt-1 text-xl font-black ${status && status.unrealizedPnl >= 0 ? 'text-[#e11d48] dark:text-[#fb7185]' : 'text-[#2563eb] dark:text-[#7dd3fc]'}`}>
               {status ? `${signed(status.unrealizedPnl)}P` : '...'}
             </p>
@@ -505,7 +533,7 @@ export default function StockClient() {
         </div>
 
         <div className="mt-5 grid gap-4 lg:grid-cols-[1.18fr,0.82fr]">
-          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_90%,transparent)] p-4">
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_90%,transparent)] p-4 transition motion-safe:hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(8,12,28,0.12)]">
             <div className="flex items-center gap-2">
               <ArrowUpDown className="h-4 w-4 text-[color:var(--muted)]" />
               <p className="text-sm font-semibold text-[color:var(--fg)]">거래</p>
@@ -566,7 +594,7 @@ export default function StockClient() {
             {error ? <p className="mt-3 text-sm font-semibold text-[#f87171]">{error}</p> : null}
           </div>
 
-          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_90%,transparent)] p-4">
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_90%,transparent)] p-4 transition motion-safe:hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(8,12,28,0.12)]">
             <p className="text-sm font-semibold text-[color:var(--fg)]">최근 거래</p>
             {lastTrade ? (
               <div className="mt-3 space-y-2 text-sm text-[color:var(--fg)]">
@@ -604,6 +632,7 @@ export default function StockClient() {
               </Link>
             </div>
           </div>
+        </div>
         </div>
       </section>
     </main>

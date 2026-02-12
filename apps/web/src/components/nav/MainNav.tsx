@@ -47,7 +47,19 @@ export default function MainNav(props: {
 
   useEffect(() => {
     setOpenDesktopGroup(null);
+    setIsMenuOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isMenuOpen]);
 
   useEffect(() => {
     const onPointerDown = (event: MouseEvent) => {
