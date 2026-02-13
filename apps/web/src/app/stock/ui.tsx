@@ -34,6 +34,8 @@ type TradeResult = {
   gross: number;
   fee: number;
   settlement: number;
+  holdingQty: number;
+  holdingAvgPrice: number;
 };
 
 type ThemeMode = 'light' | 'dark';
@@ -180,6 +182,42 @@ function signedPct(value: number) {
   return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
 }
 
+function tradeImpactBpsForQty(qty: number) {
+  return Math.min(320, Math.max(12, Math.ceil(Math.sqrt(Math.max(qty, 0)) * 12)));
+}
+
+function estimateTrade(side: 'buy' | 'sell', qty: number, price: number, feeBps: number) {
+  const q = Math.max(Math.floor(qty), 0);
+  const p = Math.max(Math.floor(price), 1);
+  const feeRate = Math.max(feeBps, 0);
+
+  if (q <= 0) {
+    return {
+      impactBps: 0,
+      execPrice: p,
+      gross: 0,
+      fee: 0,
+      settlement: 0,
+    };
+  }
+
+  const impactBps = tradeImpactBpsForQty(q);
+  const priceDelta = Math.max(1, Math.round((p * impactBps) / 10000));
+  const postPrice = side === 'buy' ? p + priceDelta : Math.max(50, p - priceDelta);
+  const execPrice = Math.max(1, Math.round((p + postPrice) / 2));
+  const gross = execPrice * q;
+  const fee = Math.ceil((gross * feeRate) / 10000);
+  const settlement = side === 'buy' ? gross + fee : Math.max(gross - fee, 0);
+
+  return {
+    impactBps,
+    execPrice,
+    gross,
+    fee,
+    settlement,
+  };
+}
+
 function StockChart({ status }: { status: StockDashboard | null }) {
   const theme = useThemeMode();
   const palette = useMemo(
@@ -199,6 +237,8 @@ function StockChart({ status }: { status: StockDashboard | null }) {
             downVolume: 'rgba(96,165,250,0.58)',
             maFast: 'rgba(250,204,21,0.96)',
             maSlow: 'rgba(248,250,252,0.84)',
+            avgLine: 'rgba(45,212,191,0.9)',
+            avgLabel: 'rgba(94,234,212,0.96)',
           }
         : {
             pricePanelBg: 'rgba(255,255,255,0.96)',
@@ -214,6 +254,8 @@ function StockChart({ status }: { status: StockDashboard | null }) {
             downVolume: 'rgba(37,99,235,0.34)',
             maFast: 'rgba(217,119,6,0.92)',
             maSlow: 'rgba(71,85,105,0.82)',
+            avgLine: 'rgba(13,148,136,0.86)',
+            avgLabel: 'rgba(15,118,110,0.96)',
           },
     [theme],
   );
@@ -225,10 +267,16 @@ function StockChart({ status }: { status: StockDashboard | null }) {
 
   const ma5 = useMemo(() => movingAverage(candles, 5), [candles]);
   const ma20 = useMemo(() => movingAverage(candles, 20), [candles]);
+  const holdingAvgPrice =
+    status && status.holdingQty > 0 && status.holdingAvgPrice > 0 ? status.holdingAvgPrice : null;
 
   const { priceTop, priceBottom, plotW, plotH, volH, maxVolume } = useMemo(() => {
     const highs = candles.map((c) => c.h);
     const lows = candles.map((c) => c.l);
+    if (holdingAvgPrice != null) {
+      highs.push(holdingAvgPrice);
+      lows.push(holdingAvgPrice);
+    }
     const top = Math.max(...highs);
     const bottom = Math.min(...lows);
     const range = Math.max(1, top - bottom);
@@ -241,7 +289,7 @@ function StockChart({ status }: { status: StockDashboard | null }) {
       volH: 90,
       maxVolume: Math.max(1, ...candles.map((c) => c.v)),
     };
-  }, [candles]);
+  }, [candles, holdingAvgPrice]);
 
   const x0 = 24;
   const y0 = 16;
@@ -331,6 +379,29 @@ function StockChart({ status }: { status: StockDashboard | null }) {
           ) : null;
         })()}
 
+        {holdingAvgPrice != null ? (
+          (() => {
+            const y = yAtPrice(holdingAvgPrice);
+            const labelY = Math.max(y0 + 12, Math.min(y0 + plotH - 6, y - 6));
+            return (
+              <g>
+                <line
+                  x1={x0}
+                  y1={y}
+                  x2={x0 + plotW}
+                  y2={y}
+                  stroke={palette.avgLine}
+                  strokeWidth={1.4}
+                  strokeDasharray="7 5"
+                />
+                <text x={x0 + 10} y={labelY} fontSize={11} fontWeight={700} fill={palette.avgLabel}>
+                  평단 {Math.round(holdingAvgPrice).toLocaleString('ko-KR')}P
+                </text>
+              </g>
+            );
+          })()
+        ) : null}
+
         {candles
           .filter((_, index) => index % Math.max(1, Math.floor(candles.length / 8)) === 0)
           .map((candle, i) => {
@@ -358,6 +429,7 @@ export default function StockClient() {
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [lastTrade, setLastTrade] = useState<TradeResult | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const requestSeqRef = useRef(0);
 
   const loadStatus = useCallback(async () => {
@@ -373,6 +445,7 @@ export default function StockClient() {
       if (requestSeq !== requestSeqRef.current) return;
 
       setStatus(normalizeDashboard(body));
+      setLastSyncedAt(new Date().toISOString());
       setError(null);
     } catch (e) {
       if (requestSeq !== requestSeqRef.current) return;
@@ -449,6 +522,8 @@ export default function StockClient() {
           gross: toSafeNumber(trade.gross),
           fee: toSafeNumber(trade.fee),
           settlement: toSafeNumber(trade.settlement),
+          holdingQty: toSafeNumber(trade.holdingQty),
+          holdingAvgPrice: toSafeNumber(trade.holdingAvgPrice),
         });
 
         if (body.dashboard) {
@@ -472,6 +547,55 @@ export default function StockClient() {
 
   const quickQuantities = [1, 5, 10, 50, 100, 500];
 
+  const previewQty = Math.max(0, Math.floor(Number(qtyInput.replaceAll(',', '')) || 0));
+  const unitPrice = Math.max(toSafeNumber(status?.price, 0), 1);
+  const feeBps = Math.max(toSafeNumber(status?.feeBps, 150), 0);
+  const buyPreview = estimateTrade('buy', previewQty, unitPrice, feeBps);
+  const sellPreview = estimateTrade('sell', previewQty, unitPrice, feeBps);
+
+  const maxAffordableQty = useMemo(() => {
+    const balance = toSafeNumber(status?.balance, 0);
+    if (balance <= 0) return 0;
+
+    const naiveUpper = Math.max(Math.floor(balance / Math.max(unitPrice, 1)), 0);
+    if (naiveUpper <= 0) return 0;
+
+    let lo = 0;
+    let hi = naiveUpper;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi + 1) / 2);
+      const estimate = estimateTrade('buy', mid, unitPrice, feeBps);
+      if (estimate.settlement <= balance) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+
+    return lo;
+  }, [feeBps, status?.balance, unitPrice]);
+
+  const buyRatioQuantities = useMemo(() => {
+    const ratios = [0.25, 0.5, 1];
+    const values = ratios.map((r) => Math.max(Math.floor(maxAffordableQty * r), 0)).filter((v) => v > 0);
+    return [...new Set(values)];
+  }, [maxAffordableQty]);
+
+  const sellRatioQuantities = useMemo(() => {
+    const base = Math.max(toSafeNumber(status?.holdingQty, 0), 0);
+    const ratios = [0.25, 0.5, 1];
+    const values = ratios.map((r) => Math.max(Math.floor(base * r), 0)).filter((v) => v > 0);
+    return [...new Set(values)];
+  }, [status?.holdingQty]);
+
+  const holdingDeltaPct = useMemo(() => {
+    const holdingQty = toSafeNumber(status?.holdingQty, 0);
+    const avg = toSafeNumber(status?.holdingAvgPrice, 0);
+    const price = toSafeNumber(status?.price, 0);
+    if (holdingQty <= 0 || avg <= 0 || price <= 0) return null;
+    return ((price - avg) / avg) * 100;
+  }, [status?.holdingAvgPrice, status?.holdingQty, status?.price]);
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
       <section className="relative overflow-hidden rounded-3xl border border-[color:color-mix(in_srgb,var(--accent-sky)_28%,var(--border))] bg-[linear-gradient(145deg,color-mix(in_srgb,var(--accent-sky)_14%,var(--card)),color-mix(in_srgb,var(--accent-pink)_8%,var(--card)))] p-5 shadow-[0_22px_54px_rgba(8,12,28,0.16)] sm:p-6">
@@ -484,7 +608,10 @@ export default function StockClient() {
             <p className="text-xs font-semibold tracking-[0.16em] text-[color:color-mix(in_srgb,var(--fg)_74%,transparent)]">TRADING PANEL</p>
             <h1 className="mt-1 text-3xl font-black tracking-tight font-bangul text-[color:var(--fg)]">{status?.displayName ?? '쿠로 주식'}</h1>
             <p className="mt-2 text-sm text-[color:color-mix(in_srgb,var(--fg)_74%,transparent)]">웹에서 5분봉 차트를 보면서 바로 매수/매도할 수 있어요.</p>
-            <p className="mt-1 text-[11px] font-medium text-[color:color-mix(in_srgb,var(--fg)_64%,transparent)]">실시간 체결 반영 · 15초 자동 갱신</p>
+            <p className="mt-1 text-[11px] font-medium text-[color:color-mix(in_srgb,var(--fg)_64%,transparent)]">
+              실시간 체결 반영 · 15초 자동 갱신
+              {lastSyncedAt ? ` · 마지막 동기화 ${formatTime(lastSyncedAt)}` : ''}
+            </p>
           </div>
 
           <button
@@ -517,6 +644,11 @@ export default function StockClient() {
             <p className="flex items-center gap-1.5 text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]"><Wallet className="h-3.5 w-3.5" />보유 수량</p>
             <p className="mt-1 text-xl font-black text-[color:var(--fg)]">{status ? `${status.holdingQty.toLocaleString('ko-KR')}주` : '...'}</p>
             <p className="mt-1 text-xs text-[color:color-mix(in_srgb,var(--fg)_68%,transparent)]">평단 {status ? `${status.holdingAvgPrice.toLocaleString('ko-KR')}P` : '-'}</p>
+            {holdingDeltaPct != null ? (
+              <p className={`mt-1 text-xs font-semibold ${holdingDeltaPct >= 0 ? 'text-[#e11d48] dark:text-[#fb7185]' : 'text-[#2563eb] dark:text-[#7dd3fc]'}`}>
+                평단 대비 {signedPct(holdingDeltaPct)}
+              </p>
+            ) : null}
           </div>
 
           <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] px-4 py-3 transition motion-safe:hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(8,12,28,0.12)]">
@@ -551,17 +683,78 @@ export default function StockClient() {
                 onChange={(e) => setQtyInput(e.target.value.replace(/[^0-9]/g, ''))}
                 className="h-10 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)] px-3 text-sm font-semibold text-[color:var(--fg)] outline-none focus:border-[color:var(--accent-sky)] sm:max-w-[180px]"
               />
-              <div className="flex flex-wrap gap-1.5">
-                {quickQuantities.map((qty) => (
-                  <button
-                    key={qty}
-                    type="button"
-                    onClick={() => setQtyInput(String(qty))}
-                    className="rounded-full border border-[color:var(--border)] bg-[color:var(--chip)] px-2.5 py-1 text-xs font-semibold text-[color:var(--fg)] transition hover:brightness-105"
-                  >
-                    {qty}
-                  </button>
-                ))}
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {quickQuantities.map((qty) => (
+                    <button
+                      key={qty}
+                      type="button"
+                      onClick={() => setQtyInput(String(qty))}
+                      className="rounded-full border border-[color:var(--border)] bg-[color:var(--chip)] px-2.5 py-1 text-xs font-semibold text-[color:var(--fg)] transition hover:brightness-105"
+                    >
+                      {qty}주
+                    </button>
+                  ))}
+                </div>
+
+                <div className="grid gap-2 rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_84%,transparent)] p-2.5">
+                  <div>
+                    <p className="text-[10px] font-semibold tracking-[0.08em] text-[color:color-mix(in_srgb,var(--fg)_64%,transparent)]">잔고 기반 빠른 매수</p>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {buyRatioQuantities.length > 0 ? (
+                        buyRatioQuantities.map((qty) => (
+                          <button
+                            key={`buy-${qty}`}
+                            type="button"
+                            onClick={() => setQtyInput(String(qty))}
+                            className="rounded-full border border-[color:color-mix(in_srgb,#ef4444_35%,var(--border))] bg-[color:color-mix(in_srgb,#ef4444_10%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[#dc2626] transition hover:brightness-105 dark:text-[#fb7185]"
+                          >
+                            {qty}주
+                          </button>
+                        ))
+                      ) : (
+                        <span className="text-[11px] text-[color:color-mix(in_srgb,var(--fg)_58%,transparent)]">잔고 부족</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-[10px] font-semibold tracking-[0.08em] text-[color:color-mix(in_srgb,var(--fg)_64%,transparent)]">보유 기반 빠른 매도</p>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {sellRatioQuantities.length > 0 ? (
+                        sellRatioQuantities.map((qty) => (
+                          <button
+                            key={`sell-${qty}`}
+                            type="button"
+                            onClick={() => setQtyInput(String(qty))}
+                            className="rounded-full border border-[color:color-mix(in_srgb,#2563eb_35%,var(--border))] bg-[color:color-mix(in_srgb,#2563eb_10%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[#1d4ed8] transition hover:brightness-105 dark:text-[#7dd3fc]"
+                          >
+                            {qty}주
+                          </button>
+                        ))
+                      ) : (
+                        <span className="text-[11px] text-[color:color-mix(in_srgb,var(--fg)_58%,transparent)]">보유 수량 없음</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <div className="rounded-xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,#ef4444_8%,var(--card))] px-3 py-2">
+                  <p className="text-[10px] font-semibold tracking-[0.08em] text-[color:color-mix(in_srgb,var(--fg)_64%,transparent)]">매수 예상</p>
+                  <p className="mt-1 text-sm font-semibold text-[color:var(--fg)]">총 {buyPreview.settlement.toLocaleString('ko-KR')}P</p>
+                  <p className="text-[11px] text-[color:color-mix(in_srgb,var(--fg)_62%,transparent)]">
+                    체결가 {buyPreview.execPrice.toLocaleString('ko-KR')}P · 수수료 {buyPreview.fee.toLocaleString('ko-KR')}P
+                  </p>
+                </div>
+                <div className="rounded-xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,#2563eb_8%,var(--card))] px-3 py-2">
+                  <p className="text-[10px] font-semibold tracking-[0.08em] text-[color:color-mix(in_srgb,var(--fg)_64%,transparent)]">매도 예상</p>
+                  <p className="mt-1 text-sm font-semibold text-[color:var(--fg)]">순수령 {sellPreview.settlement.toLocaleString('ko-KR')}P</p>
+                  <p className="text-[11px] text-[color:color-mix(in_srgb,var(--fg)_62%,transparent)]">
+                    체결가 {sellPreview.execPrice.toLocaleString('ko-KR')}P · 수수료 {sellPreview.fee.toLocaleString('ko-KR')}P
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -606,6 +799,12 @@ export default function StockClient() {
                 </p>
                 <p>
                   단가: <span className="font-black">{lastTrade.price.toLocaleString('ko-KR')}P</span>
+                </p>
+                <p>
+                  보유 수량: <span className="font-black">{lastTrade.holdingQty.toLocaleString('ko-KR')}주</span>
+                </p>
+                <p>
+                  현재 평단: <span className="font-black">{lastTrade.holdingAvgPrice.toLocaleString('ko-KR')}P</span>
                 </p>
                 <p>
                   거래금액: <span className="font-black">{lastTrade.gross.toLocaleString('ko-KR')}P</span>

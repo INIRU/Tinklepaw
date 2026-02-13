@@ -174,6 +174,8 @@ function tradeResultEmbed(row: StockTradeRow) {
       { name: totalLabel, value: `${toNumber(row.out_settlement).toLocaleString()}P`, inline: true },
       { name: '거래 금액', value: `${toNumber(row.out_gross).toLocaleString()}P`, inline: true },
       { name: '수수료', value: `${toNumber(row.out_fee).toLocaleString()}P`, inline: true },
+      { name: '보유 수량', value: `${toNumber(row.out_holding_qty).toLocaleString()}주`, inline: true },
+      { name: '평균 단가', value: `${toNumber(row.out_holding_avg_price).toLocaleString()}P`, inline: true },
       { name: '남은 포인트', value: `${toNumber(row.out_new_balance).toLocaleString()}P`, inline: true },
     )
     .setFooter({ text: '패널은 자동으로 새로고침됩니다.' })
@@ -208,6 +210,7 @@ export const stockCommand: SlashCommand = {
         currentPrice: board.price,
         changePct: board.changePct,
         candles: board.candles,
+        holdingAvgPrice: board.holdingQty > 0 ? board.holdingAvgPrice : undefined,
       });
 
       const embed = new EmbedBuilder()

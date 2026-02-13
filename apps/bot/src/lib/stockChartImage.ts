@@ -38,6 +38,7 @@ const PANEL_GAP = 18;
 
 const UP_COLOR = '#ef4444';
 const DOWN_COLOR = '#3b82f6';
+const AVG_COLOR = 'rgba(45,212,191,0.95)';
 const GRID_COLOR = 'rgba(148,163,184,0.18)';
 const CANDLE_WINDOW = 72;
 const FIVE_MINUTE_MS = 5 * 60 * 1000;
@@ -198,11 +199,16 @@ export async function generateStockChartImage(params: {
   currentPrice: number;
   changePct: number;
   candles: StockCandle[];
+  holdingAvgPrice?: number;
 }) {
   const realCandles = [...params.candles]
     .sort((a, b) => new Date(a.t).getTime() - new Date(b.t).getTime())
     .slice(-CANDLE_WINDOW);
   const candles = normalizeCandles(realCandles, params.currentPrice);
+  const holdingAvgPrice =
+    typeof params.holdingAvgPrice === 'number' && Number.isFinite(params.holdingAvgPrice) && params.holdingAvgPrice > 0
+      ? params.holdingAvgPrice
+      : null;
 
   const canvas = createCanvas(WIDTH, HEIGHT);
   const ctx = canvas.getContext('2d');
@@ -233,8 +239,14 @@ export async function generateStockChartImage(params: {
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  const maxHigh = Math.max(...candles.map((c) => c.h));
-  const minLow = Math.min(...candles.map((c) => c.l));
+  const highs = candles.map((c) => c.h);
+  const lows = candles.map((c) => c.l);
+  if (holdingAvgPrice != null) {
+    highs.push(holdingAvgPrice);
+    lows.push(holdingAvgPrice);
+  }
+  const maxHigh = Math.max(...highs);
+  const minLow = Math.min(...lows);
   const pad = Math.max(16, (maxHigh - minLow) * 0.08);
   const topPrice = maxHigh + pad;
   const bottomPrice = Math.max(1, minLow - pad);
@@ -349,6 +361,26 @@ export async function generateStockChartImage(params: {
   ctx.font = "600 11px 'Noto Sans KR', sans-serif";
   ctx.textAlign = 'left';
   ctx.fillText(`현재가 ${last.c.toLocaleString()}P`, priceX + 10, Math.max(priceY + 14, lastY - 10));
+
+  if (holdingAvgPrice != null) {
+    const avgY = yAtPrice(holdingAvgPrice);
+    ctx.strokeStyle = AVG_COLOR;
+    ctx.setLineDash([7, 5]);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(priceX, avgY);
+    ctx.lineTo(priceX + priceW, avgY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = AVG_COLOR;
+    ctx.font = "700 11px 'Noto Sans KR', sans-serif";
+    ctx.fillText(
+      `평단 ${Math.round(holdingAvgPrice).toLocaleString()}P`,
+      priceX + 10,
+      Math.max(priceY + 30, Math.min(priceY + priceH - 8, avgY - 8)),
+    );
+  }
 
   const trendColor = params.changePct >= 0 ? '#fecaca' : '#bfdbfe';
 

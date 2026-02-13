@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { ArrowLeft, ChartColumnBig, MessageCircle, UserPlus, UserMinus, Phone } from 'lucide-react';
+import { ArrowLeft, ChartColumnBig, Clock3, Database, MessageCircle, Phone, RefreshCw, Sparkles, UserMinus, UserPlus } from 'lucide-react';
 
 import { CustomSelect } from '@/components/ui/CustomSelect';
 
@@ -113,6 +113,11 @@ type ChannelOption = {
 
 type AnalyticsResponse = {
   generatedAt: string;
+  cache: {
+    source: 'snapshot' | 'live';
+    snapshotIntervalMinutes: number;
+    ageSeconds: number;
+  };
   filters: {
     rangeDays: number;
     channelId: string | null;
@@ -230,6 +235,14 @@ const ECONOMY_METRICS: Array<{
   },
 ];
 
+const formatSignedPct = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
+
+const formatSnapshotAge = (ageSeconds: number) => {
+  if (ageSeconds < 60) return `${ageSeconds}초 전`;
+  if (ageSeconds < 3600) return `${Math.floor(ageSeconds / 60)}분 전`;
+  return `${Math.floor(ageSeconds / 3600)}시간 전`;
+};
+
 function MetricChart({
   title,
   icon: Icon,
@@ -250,18 +263,20 @@ function MetricChart({
   const latest = values.at(-1) ?? 0;
 
   return (
-    <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-5">
+    <div className="rounded-3xl border border-[color:var(--border)]/80 bg-[linear-gradient(160deg,var(--surface),var(--chip))] p-5 shadow-[0_14px_34px_rgba(15,23,42,0.12)]">
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="inline-flex items-center gap-2">
-          <span className="rounded-xl bg-[color:var(--chip)] p-2 border border-[color:var(--border)]">
+          <span className="rounded-xl bg-[color:var(--surface)]/90 p-2 border border-[color:var(--border)] shadow-sm">
             <Icon className="h-4 w-4" />
           </span>
           <h3 className="text-sm font-semibold">{title}</h3>
         </div>
-        <div className="text-xs muted">최근 {formatter(latest)}</div>
+        <div className="rounded-full border border-[color:var(--border)]/70 bg-[color:var(--surface)]/80 px-3 py-1 text-xs">
+          최근 {formatter(latest)}
+        </div>
       </div>
 
-      <div className="h-36 rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 px-2 py-2">
+      <div className="h-36 rounded-2xl border border-[color:var(--border)]/80 bg-[color:var(--surface)]/45 px-2 py-2">
         <div className="flex h-full items-end gap-1">
           {points.map((point, index) => {
             const value = point[metric];
@@ -272,7 +287,7 @@ function MetricChart({
               <div key={point.key} className="flex h-full min-w-0 flex-1 flex-col justify-end items-center gap-1">
                 <div
                   title={`${point.label} · ${formatter(value)}`}
-                  className={`w-full rounded-t-md ${colorClass}`}
+                  className={`w-full rounded-t-md shadow-[0_0_16px_rgba(15,23,42,0.14)] ${colorClass}`}
                   style={{ height: `${heightPercent}%` }}
                 />
                 <div className="h-3 text-[10px] muted">{showLabel ? point.label : ''}</div>
@@ -307,18 +322,20 @@ function EconomyMetricChart({
   const latest = values.at(-1) ?? 0;
 
   return (
-    <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-5">
+    <div className="rounded-3xl border border-[color:var(--border)]/80 bg-[linear-gradient(160deg,var(--surface),var(--chip))] p-5 shadow-[0_14px_34px_rgba(15,23,42,0.12)]">
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="inline-flex items-center gap-2">
-          <span className="rounded-xl bg-[color:var(--chip)] p-2 border border-[color:var(--border)]">
+          <span className="rounded-xl bg-[color:var(--surface)]/90 p-2 border border-[color:var(--border)] shadow-sm">
             <Icon className="h-4 w-4" />
           </span>
           <h3 className="text-sm font-semibold">{title}</h3>
         </div>
-        <div className="text-xs muted">최근 {formatter(latest)}</div>
+        <div className="rounded-full border border-[color:var(--border)]/70 bg-[color:var(--surface)]/80 px-3 py-1 text-xs">
+          최근 {formatter(latest)}
+        </div>
       </div>
 
-      <div className="h-36 rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 px-2 py-2">
+      <div className="h-36 rounded-2xl border border-[color:var(--border)]/80 bg-[color:var(--surface)]/45 px-2 py-2">
         <div className="flex h-full items-end gap-1">
           {points.map((point, index) => {
             const value = point[metric];
@@ -330,7 +347,7 @@ function EconomyMetricChart({
               <div key={point.key} className="flex h-full min-w-0 flex-1 flex-col justify-end items-center gap-1">
                 <div
                   title={`${point.label} · ${formatter(value)}`}
-                  className={`w-full rounded-t-md ${colorClass}`}
+                  className={`w-full rounded-t-md shadow-[0_0_16px_rgba(15,23,42,0.14)] ${colorClass}`}
                   style={{ height: `${heightPercent}%` }}
                 />
                 <div className="h-3 text-[10px] muted">{showLabel ? point.label : ''}</div>
@@ -358,16 +375,18 @@ function NetTrendChart({ points }: { points: EconomyPoint[] }) {
   const trendPath = points.map((point, index) => `${toX(index)},${toY(point.netTrend)}`).join(' ');
 
   return (
-    <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-5">
+    <div className="rounded-3xl border border-[color:var(--border)]/80 bg-[linear-gradient(160deg,var(--surface),var(--chip))] p-5 shadow-[0_14px_34px_rgba(15,23,42,0.12)]">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold">순증감 추세 (7기간 이동평균 + 추세선)</h3>
           <p className="mt-1 text-xs muted">막대: 순증감 · 청록선: 7기간 이동평균 · 주황선: 선형 추세선</p>
         </div>
-        <div className="text-xs muted">최근 {points.at(-1)?.net.toLocaleString() ?? 0}p</div>
+        <div className="rounded-full border border-[color:var(--border)]/70 bg-[color:var(--surface)]/80 px-3 py-1 text-xs">
+          최근 {points.at(-1)?.net.toLocaleString() ?? 0}p
+        </div>
       </div>
 
-      <div className="relative h-48 rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 px-2 py-2">
+      <div className="relative h-48 rounded-2xl border border-[color:var(--border)]/80 bg-[color:var(--surface)]/45 px-2 py-2">
         <div className="absolute left-2 right-2 border-t border-dashed border-[color:var(--border)]/80" style={{ top: `${baseline}%` }} />
 
         <div className="absolute inset-0 px-2 py-2">
@@ -525,132 +544,169 @@ export default function AdminAnalyticsClient() {
     [data, period]
   );
 
-  return (
-    <main className="p-6 pb-20">
-      <div className="mx-auto max-w-6xl space-y-6">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-[11px] font-bold tracking-[0.3em] text-[color:var(--accent-mint)] opacity-80">ADMIN ANALYTICS</div>
-            <h1 className="mt-3 text-3xl font-bold tracking-tight font-bangul text-[color:var(--fg)]">활동 통계</h1>
-            <p className="mt-2 text-sm muted">유저 입장/이탈, 채팅량, 통화 시간, 상위 활동 유저를 일/주/월 단위로 확인합니다.</p>
-          </div>
-          <Link href="/admin" className="inline-flex items-center gap-2 rounded-xl border border-[color:var(--border)] px-3 py-2 text-sm hover:bg-[color:var(--chip)]/60">
-            <ArrowLeft className="h-4 w-4" />
-            관리자 홈
-          </Link>
-        </div>
+  const selectedChannelLabel =
+    channelId === 'all' ? '전체 채널' : `#${channels.find((channel) => channel.id === channelId)?.name ?? channelId}`;
+  const snapshotSourceLabel = data?.cache.source === 'snapshot' ? 'DB 스냅샷' : '실시간 재집계';
+  const snapshotAgeLabel = data?.cache ? formatSnapshotAge(data.cache.ageSeconds) : '-';
 
-        <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+  return (
+    <main className="relative overflow-hidden px-4 pb-20 pt-6 sm:px-6">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_top,rgba(45,212,191,0.18),transparent_62%)]" />
+      <div className="pointer-events-none absolute -right-20 top-28 h-72 w-72 rounded-full bg-sky-400/12 blur-3xl" />
+      <div className="pointer-events-none absolute -left-20 bottom-20 h-72 w-72 rounded-full bg-cyan-400/10 blur-3xl" />
+
+      <div className="relative mx-auto max-w-6xl space-y-6">
+        <section className="rounded-[30px] border border-[color:var(--border)]/80 bg-[linear-gradient(145deg,var(--surface),var(--chip))] p-6 shadow-[0_20px_45px_rgba(15,23,42,0.12)]">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-[color:var(--border)]/70 bg-[color:var(--surface)]/75 px-3 py-1 text-[11px] font-bold tracking-[0.18em] text-[color:var(--accent-mint)]">
+                <Sparkles className="h-3.5 w-3.5" />
+                ADMIN ANALYTICS
+              </div>
+              <h1 className="mt-4 text-3xl font-bold tracking-tight font-bangul text-[color:var(--fg)]">활동 통계</h1>
+              <p className="mt-2 text-sm muted">10분 간격 DB 스냅샷 기반으로 로딩을 줄이고, 기간별 활동/경제 흐름을 한눈에 확인합니다.</p>
+            </div>
+            <Link href="/admin" className="inline-flex items-center gap-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)]/75 px-3 py-2 text-sm font-semibold hover:bg-[color:var(--chip)]/80">
+              <ArrowLeft className="h-4 w-4" />
+              관리자 홈
+            </Link>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-2xl border border-[color:var(--border)]/75 bg-[color:var(--surface)]/70 p-4">
+              <div className="text-xs uppercase tracking-[0.12em] muted">마지막 생성</div>
+              <div className="mt-2 text-sm font-semibold">{data?.generatedAt ? new Date(data.generatedAt).toLocaleString() : '-'}</div>
+            </div>
+            <div className="rounded-2xl border border-[color:var(--border)]/75 bg-[color:var(--surface)]/70 p-4">
+              <div className="text-xs uppercase tracking-[0.12em] muted">데이터 소스</div>
+              <div className="mt-2 inline-flex items-center gap-2 text-sm font-semibold">
+                <Database className="h-4 w-4 text-[color:var(--accent-mint)]" />
+                {snapshotSourceLabel}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-[color:var(--border)]/75 bg-[color:var(--surface)]/70 p-4">
+              <div className="text-xs uppercase tracking-[0.12em] muted">스냅샷 주기</div>
+              <div className="mt-2 text-sm font-semibold">{data?.cache.snapshotIntervalMinutes ?? 10}분</div>
+            </div>
+            <div className="rounded-2xl border border-[color:var(--border)]/75 bg-[color:var(--surface)]/70 p-4">
+              <div className="text-xs uppercase tracking-[0.12em] muted">데이터 나이</div>
+              <div className="mt-2 inline-flex items-center gap-2 text-sm font-semibold">
+                <Clock3 className="h-4 w-4 text-[color:var(--accent-mint)]" />
+                {snapshotAgeLabel}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div className="rounded-3xl border border-[color:var(--border)]/80 bg-[linear-gradient(145deg,var(--surface),var(--chip))] p-4 shadow-[0_14px_30px_rgba(15,23,42,0.1)]">
           <div className="flex flex-wrap items-center gap-2">
             {(['day', 'week', 'month'] as const).map((item) => (
               <button
                 key={item}
                 type="button"
                 onClick={() => setPeriod(item)}
-                className={`rounded-xl px-4 py-2 text-sm font-semibold border ${
+                className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${
                   period === item
-                    ? 'bg-[color:var(--accent-mint)]/20 border-[color:var(--accent-mint)] text-[color:var(--accent-mint)]'
-                    : 'border-[color:var(--border)] hover:bg-[color:var(--chip)]/60'
+                    ? 'border-[color:var(--accent-mint)] bg-[color:var(--accent-mint)]/18 text-[color:var(--accent-mint)] shadow-[0_0_0_1px_rgba(45,212,191,0.35)]'
+                    : 'border-[color:var(--border)] bg-[color:var(--surface)]/70 hover:bg-[color:var(--chip)]/80'
                 }`}
               >
                 {PERIOD_LABEL[item]}
               </button>
             ))}
 
-            <div className="ml-auto w-[170px]">
-              <CustomSelect
-                value={String(rangeDays)}
-                onChange={(value) => setRangeDays(Number(value) || 365)}
-                options={RANGE_OPTIONS.map((option) => ({ value: String(option.value), label: option.label }))}
-                label="기간"
-              />
+            <div className="ml-auto flex w-full flex-wrap items-end gap-2 sm:w-auto">
+              <div className="w-[170px]">
+                <CustomSelect
+                  value={String(rangeDays)}
+                  onChange={(value) => setRangeDays(Number(value) || 365)}
+                  options={RANGE_OPTIONS.map((option) => ({ value: String(option.value), label: option.label }))}
+                  label="기간"
+                />
+              </div>
+
+              <div className="w-[200px]">
+                <CustomSelect
+                  value={channelId}
+                  onChange={setChannelId}
+                  options={[{ value: 'all', label: '전체 채널' }, ...channels.map((channel) => ({ value: channel.id, label: `#${channel.name}` }))]}
+                  label="채널"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  void reloadRef.current?.();
+                }}
+                disabled={refreshing}
+                className="inline-flex h-[38px] items-center justify-center gap-2 self-end rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)]/80 px-4 text-sm font-semibold hover:bg-[color:var(--chip)]/80 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                {refreshing ? '새로고침 중...' : '새로고침'}
+              </button>
             </div>
-
-            <div className="w-[200px]">
-              <CustomSelect
-                value={channelId}
-                onChange={setChannelId}
-                options={[{ value: 'all', label: '전체 채널' }, ...channels.map((channel) => ({ value: channel.id, label: `#${channel.name}` }))]}
-                label="채널"
-              />
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                void reloadRef.current?.();
-              }}
-              disabled={refreshing}
-              className="inline-flex items-center justify-center rounded-xl border border-[color:var(--border)] px-4 py-2 text-sm font-semibold hover:bg-[color:var(--chip)]/60 disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {refreshing ? '새로고침 중...' : '새로고침'}
-            </button>
-
           </div>
+
           <div className="mt-3 text-xs muted">
-            집계 단위: {PERIOD_LABEL[period]} · 채널: {channelId === 'all' ? '전체' : `#${channels.find((channel) => channel.id === channelId)?.name ?? channelId}`} · 마지막 업데이트:{' '}
-            {data?.generatedAt ? new Date(data.generatedAt).toLocaleString() : '-'}
+            집계 단위: {PERIOD_LABEL[period]} · 범위: 최근 {rangeDays}일 · 채널: {selectedChannelLabel}
           </div>
         </div>
 
         {loading && !data ? (
-          <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-10 text-center muted">통계를 불러오는 중...</div>
+          <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)]/80 p-10 text-center muted">통계를 불러오는 중...</div>
         ) : error && !data ? (
           <div className="rounded-3xl border border-rose-400/40 bg-rose-500/10 p-6 text-rose-300">{error}</div>
         ) : (
           <>
             {error ? (
               <div className="rounded-2xl border border-amber-300/35 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">
-                최신 통계 갱신 실패: {error}
+                최신 통계 갱신 실패: {error} (저장된 스냅샷 표시 중)
               </div>
             ) : null}
 
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+              <div className="rounded-2xl border border-[color:var(--border)]/80 bg-[linear-gradient(150deg,rgba(45,212,191,0.18),rgba(15,23,42,0.02))] p-4">
                 <div className="text-xs uppercase tracking-[0.12em] muted">총 입장</div>
-                <div className="mt-1 text-xl font-bold">{selected.totals.joins.toLocaleString()}명</div>
+                <div className="mt-2 text-2xl font-bold">{selected.totals.joins.toLocaleString()}명</div>
               </div>
-              <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+              <div className="rounded-2xl border border-[color:var(--border)]/80 bg-[linear-gradient(150deg,rgba(251,113,133,0.16),rgba(15,23,42,0.02))] p-4">
                 <div className="text-xs uppercase tracking-[0.12em] muted">총 이탈</div>
-                <div className="mt-1 text-xl font-bold">{selected.totals.leaves.toLocaleString()}명</div>
+                <div className="mt-2 text-2xl font-bold">{selected.totals.leaves.toLocaleString()}명</div>
               </div>
-              <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+              <div className="rounded-2xl border border-[color:var(--border)]/80 bg-[linear-gradient(150deg,rgba(56,189,248,0.18),rgba(15,23,42,0.02))] p-4">
                 <div className="text-xs uppercase tracking-[0.12em] muted">총 채팅</div>
-                <div className="mt-1 text-xl font-bold">{selected.totals.chatMessages.toLocaleString()}개</div>
+                <div className="mt-2 text-2xl font-bold">{selected.totals.chatMessages.toLocaleString()}개</div>
               </div>
-              <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+              <div className="rounded-2xl border border-[color:var(--border)]/80 bg-[linear-gradient(150deg,rgba(192,132,252,0.18),rgba(15,23,42,0.02))] p-4">
                 <div className="text-xs uppercase tracking-[0.12em] muted">총 통화 시간</div>
-                <div className="mt-1 text-xl font-bold">{selected.totals.voiceHours.toFixed(1)}시간</div>
+                <div className="mt-2 text-2xl font-bold">{selected.totals.voiceHours.toFixed(1)}시간</div>
               </div>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+              <div className="rounded-2xl border border-[color:var(--border)]/80 bg-[color:var(--surface)]/75 p-4">
                 <div className="text-xs uppercase tracking-[0.12em] muted">입장 증감</div>
-                <div className={`mt-1 text-lg font-semibold ${selected.comparison.joinsPct >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                  {selected.comparison.joinsPct >= 0 ? '+' : ''}
-                  {selected.comparison.joinsPct.toFixed(1)}%
+                <div className={`mt-2 text-lg font-semibold ${selected.comparison.joinsPct >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                  {formatSignedPct(selected.comparison.joinsPct)}
                 </div>
               </div>
-              <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+              <div className="rounded-2xl border border-[color:var(--border)]/80 bg-[color:var(--surface)]/75 p-4">
                 <div className="text-xs uppercase tracking-[0.12em] muted">이탈 증감</div>
-                <div className={`mt-1 text-lg font-semibold ${selected.comparison.leavesPct >= 0 ? 'text-rose-300' : 'text-emerald-300'}`}>
-                  {selected.comparison.leavesPct >= 0 ? '+' : ''}
-                  {selected.comparison.leavesPct.toFixed(1)}%
+                <div className={`mt-2 text-lg font-semibold ${selected.comparison.leavesPct >= 0 ? 'text-rose-300' : 'text-emerald-300'}`}>
+                  {formatSignedPct(selected.comparison.leavesPct)}
                 </div>
               </div>
-              <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+              <div className="rounded-2xl border border-[color:var(--border)]/80 bg-[color:var(--surface)]/75 p-4">
                 <div className="text-xs uppercase tracking-[0.12em] muted">채팅 증감</div>
-                <div className={`mt-1 text-lg font-semibold ${selected.comparison.chatMessagesPct >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                  {selected.comparison.chatMessagesPct >= 0 ? '+' : ''}
-                  {selected.comparison.chatMessagesPct.toFixed(1)}%
+                <div className={`mt-2 text-lg font-semibold ${selected.comparison.chatMessagesPct >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                  {formatSignedPct(selected.comparison.chatMessagesPct)}
                 </div>
               </div>
-              <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)] p-4">
+              <div className="rounded-2xl border border-[color:var(--border)]/80 bg-[color:var(--surface)]/75 p-4">
                 <div className="text-xs uppercase tracking-[0.12em] muted">통화 증감</div>
-                <div className={`mt-1 text-lg font-semibold ${selected.comparison.voiceHoursPct >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                  {selected.comparison.voiceHoursPct >= 0 ? '+' : ''}
-                  {selected.comparison.voiceHoursPct.toFixed(1)}%
+                <div className={`mt-2 text-lg font-semibold ${selected.comparison.voiceHoursPct >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                  {formatSignedPct(selected.comparison.voiceHoursPct)}
                 </div>
               </div>
             </div>
@@ -669,61 +725,58 @@ export default function AdminAnalyticsClient() {
               ))}
             </div>
 
-            <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6 space-y-5">
+            <div className="rounded-3xl border border-[color:var(--border)]/80 bg-[linear-gradient(165deg,var(--surface),var(--chip))] p-6 shadow-[0_18px_35px_rgba(15,23,42,0.1)] space-y-5">
               <div>
                 <h2 className="text-lg font-semibold">경제 리포트</h2>
-                <p className="mt-1 text-sm muted">포인트 발행/소각/순증감/누적 추이를 자동 집계합니다. (수동 새로고침)</p>
+                <p className="mt-1 text-sm muted">포인트 발행/소각/순증감/누적 추이와 주요 소각 채널을 같은 화면에서 확인합니다.</p>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 p-4">
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)]/70 p-4">
                   <div className="text-xs uppercase tracking-[0.12em] muted">총 발행 p</div>
-                  <div className="mt-1 text-xl font-bold text-emerald-300">+{selected.economy.totals.issued.toLocaleString()}p</div>
+                  <div className="mt-2 text-xl font-bold text-emerald-300">+{selected.economy.totals.issued.toLocaleString()}p</div>
                 </div>
-                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 p-4">
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)]/70 p-4">
                   <div className="text-xs uppercase tracking-[0.12em] muted">총 소각 p</div>
-                  <div className="mt-1 text-xl font-bold text-rose-300">-{selected.economy.totals.burned.toLocaleString()}p</div>
+                  <div className="mt-2 text-xl font-bold text-rose-300">-{selected.economy.totals.burned.toLocaleString()}p</div>
                 </div>
-                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 p-4">
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)]/70 p-4">
                   <div className="text-xs uppercase tracking-[0.12em] muted">순증감 p</div>
-                  <div className={`mt-1 text-xl font-bold ${selected.economy.totals.net >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                  <div className={`mt-2 text-xl font-bold ${selected.economy.totals.net >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
                     {selected.economy.totals.net >= 0 ? '+' : ''}
                     {selected.economy.totals.net.toLocaleString()}p
                   </div>
                 </div>
-                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 p-4">
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)]/70 p-4">
                   <div className="text-xs uppercase tracking-[0.12em] muted">누적 순증감 p</div>
-                  <div className={`mt-1 text-xl font-bold ${selected.economy.totals.cumulative >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                  <div className={`mt-2 text-xl font-bold ${selected.economy.totals.cumulative >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
                     {selected.economy.totals.cumulative >= 0 ? '+' : ''}
                     {selected.economy.totals.cumulative.toLocaleString()}p
                   </div>
                 </div>
-                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 p-4">
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)]/70 p-4">
                   <div className="text-xs uppercase tracking-[0.12em] muted">경제 활동 유저</div>
-                  <div className="mt-1 text-xl font-bold">{selected.economy.totals.activeUsers.toLocaleString()}명</div>
+                  <div className="mt-2 text-xl font-bold">{selected.economy.totals.activeUsers.toLocaleString()}명</div>
                 </div>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 p-4">
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)]/70 p-4">
                   <div className="text-xs uppercase tracking-[0.12em] muted">발행 증감</div>
                   <div className={`mt-1 text-lg font-semibold ${selected.economy.comparison.issuedPct >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                    {selected.economy.comparison.issuedPct >= 0 ? '+' : ''}
-                    {selected.economy.comparison.issuedPct.toFixed(1)}%
+                    {formatSignedPct(selected.economy.comparison.issuedPct)}
                   </div>
                 </div>
-                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 p-4">
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)]/70 p-4">
                   <div className="text-xs uppercase tracking-[0.12em] muted">소각 증감</div>
                   <div className={`mt-1 text-lg font-semibold ${selected.economy.comparison.burnedPct >= 0 ? 'text-rose-300' : 'text-emerald-300'}`}>
-                    {selected.economy.comparison.burnedPct >= 0 ? '+' : ''}
-                    {selected.economy.comparison.burnedPct.toFixed(1)}%
+                    {formatSignedPct(selected.economy.comparison.burnedPct)}
                   </div>
                 </div>
-                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 p-4">
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)]/70 p-4">
                   <div className="text-xs uppercase tracking-[0.12em] muted">순증감 변동</div>
                   <div className={`mt-1 text-lg font-semibold ${selected.economy.comparison.netPct >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                    {selected.economy.comparison.netPct >= 0 ? '+' : ''}
-                    {selected.economy.comparison.netPct.toFixed(1)}%
+                    {formatSignedPct(selected.economy.comparison.netPct)}
                   </div>
                 </div>
               </div>
@@ -745,14 +798,14 @@ export default function AdminAnalyticsClient() {
               </div>
 
               <div className="grid gap-4 lg:grid-cols-2">
-                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/30 p-4">
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)]/60 p-4">
                   <h3 className="text-sm font-semibold">발행 카테고리</h3>
                   <div className="mt-3 space-y-2">
                     {selected.economy.sourceCategories.length === 0 ? (
                       <div className="text-sm muted">발행 카테고리 데이터가 없습니다.</div>
                     ) : (
                       selected.economy.sourceCategories.map((category) => (
-                        <div key={category.category} className="rounded-xl border border-[color:var(--border)]/70 bg-[color:var(--surface)]/40 px-3 py-2">
+                        <div key={category.category} className="rounded-xl border border-[color:var(--border)]/70 bg-[color:var(--surface)]/70 px-3 py-2">
                           <div className="flex items-center justify-between text-sm">
                             <span className="font-semibold">{category.label}</span>
                             <span className="text-emerald-300">+{category.issued.toLocaleString()}p</span>
@@ -763,14 +816,14 @@ export default function AdminAnalyticsClient() {
                     )}
                   </div>
                 </div>
-                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/30 p-4">
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)]/60 p-4">
                   <h3 className="text-sm font-semibold">소각 카테고리</h3>
                   <div className="mt-3 space-y-2">
                     {selected.economy.sinkCategories.length === 0 ? (
                       <div className="text-sm muted">소각 카테고리 데이터가 없습니다.</div>
                     ) : (
                       selected.economy.sinkCategories.map((category) => (
-                        <div key={category.category} className="rounded-xl border border-[color:var(--border)]/70 bg-[color:var(--surface)]/40 px-3 py-2">
+                        <div key={category.category} className="rounded-xl border border-[color:var(--border)]/70 bg-[color:var(--surface)]/70 px-3 py-2">
                           <div className="flex items-center justify-between text-sm">
                             <span className="font-semibold">{category.label}</span>
                             <span className="text-rose-300">-{category.burned.toLocaleString()}p</span>
@@ -784,7 +837,7 @@ export default function AdminAnalyticsClient() {
               </div>
 
               <div className="grid gap-4 lg:grid-cols-2">
-                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/20 p-4">
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)]/50 p-4">
                   <h3 className="text-sm font-semibold">세부 발행 이벤트 (kind)</h3>
                   <div className="mt-3 space-y-2">
                     {selected.economy.topSources.length === 0 ? (
@@ -799,7 +852,7 @@ export default function AdminAnalyticsClient() {
                     )}
                   </div>
                 </div>
-                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/20 p-4">
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--surface)]/50 p-4">
                   <h3 className="text-sm font-semibold">세부 소각 이벤트 (kind)</h3>
                   <div className="mt-3 space-y-2">
                     {selected.economy.topSinks.length === 0 ? (
@@ -817,21 +870,21 @@ export default function AdminAnalyticsClient() {
               </div>
             </div>
 
-            <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6">
+            <div className="rounded-3xl border border-[color:var(--border)]/80 bg-[linear-gradient(160deg,var(--surface),var(--chip))] p-6 shadow-[0_18px_35px_rgba(15,23,42,0.1)]">
               <h2 className="text-lg font-semibold">활동 상위 유저</h2>
               <p className="mt-1 text-sm muted">채팅 수 + 통화 분으로 계산한 활동 점수 기준입니다.</p>
 
-              <div className="mt-4 overflow-x-auto">
+              <div className="mt-4 overflow-x-auto rounded-2xl border border-[color:var(--border)]/70 bg-[color:var(--surface)]/70">
                 <table className="min-w-full text-sm">
                   <thead>
-                    <tr className="text-left text-xs uppercase tracking-[0.12em] muted border-b border-[color:var(--border)]">
-                      <th className="py-2 pr-3">순위</th>
+                    <tr className="text-left text-xs uppercase tracking-[0.12em] muted border-b border-[color:var(--border)]/80 bg-[color:var(--chip)]/45">
+                      <th className="py-2 pr-3 pl-3">순위</th>
                       <th className="py-2 pr-3">유저</th>
                       <th className="py-2 pr-3">채팅</th>
                       <th className="py-2 pr-3">통화 시간</th>
                       <th className="py-2 pr-3">입장</th>
                       <th className="py-2 pr-3">퇴장</th>
-                      <th className="py-2">점수</th>
+                      <th className="py-2 pr-3">점수</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -841,13 +894,13 @@ export default function AdminAnalyticsClient() {
                       </tr>
                     ) : (
                       selected.topUsers.map((user, index) => (
-                        <tr key={user.userId} className="border-b border-[color:var(--border)]/60">
-                          <td className="py-3 pr-3 font-semibold">#{index + 1}</td>
+                        <tr key={user.userId} className="border-b border-[color:var(--border)]/55 last:border-b-0">
+                          <td className="py-3 pr-3 pl-3 font-semibold">#{index + 1}</td>
                           <td className="py-3 pr-3">
                             <div className="inline-flex items-center gap-2">
-                              <span className="w-7 h-7 rounded-full overflow-hidden bg-[color:var(--chip)] border border-[color:var(--border)]">
+                              <span className="h-7 w-7 overflow-hidden rounded-full border border-[color:var(--border)] bg-[color:var(--chip)]">
                                 {user.avatarUrl ? (
-                                  <Image src={user.avatarUrl} alt="" width={28} height={28} className="w-full h-full object-cover" unoptimized />
+                                  <Image src={user.avatarUrl} alt="" width={28} height={28} className="h-full w-full object-cover" unoptimized />
                                 ) : null}
                               </span>
                               <span>{user.username}</span>
@@ -857,7 +910,7 @@ export default function AdminAnalyticsClient() {
                           <td className="py-3 pr-3">{user.voiceHours.toFixed(1)}h</td>
                           <td className="py-3 pr-3">{user.joins.toLocaleString()}</td>
                           <td className="py-3 pr-3">{user.leaves.toLocaleString()}</td>
-                          <td className="py-3 font-semibold">{user.score.toLocaleString()}</td>
+                          <td className="py-3 pr-3 font-semibold">{user.score.toLocaleString()}</td>
                         </tr>
                       ))
                     )}

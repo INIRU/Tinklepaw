@@ -128,6 +128,25 @@ export type Database = {
         Update: Partial<Database['nyang']['Tables']['activity_events']['Row']>;
         Relationships: [];
       };
+      admin_analytics_snapshots: {
+        Row: {
+          snapshot_key: string;
+          range_days: number;
+          channel_id: string | null;
+          generated_at: string;
+          payload: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database['nyang']['Tables']['admin_analytics_snapshots']['Row']> & {
+          snapshot_key: string;
+          range_days: number;
+          generated_at: string;
+          payload: Json;
+        };
+        Update: Partial<Database['nyang']['Tables']['admin_analytics_snapshots']['Row']>;
+        Relationships: [];
+      };
       music_control_jobs: {
         Row: {
           job_id: string;

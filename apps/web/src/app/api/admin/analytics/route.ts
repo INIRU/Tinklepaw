@@ -123,7 +123,7 @@ type EconomyPayload = {
   sinkCategories: EconomyCategoryTotal[];
 };
 
-type AnalyticsResponsePayload = {
+type AnalyticsSnapshotPayload = {
   generatedAt: string;
   filters: {
     rangeDays: number;
@@ -141,12 +141,28 @@ type AnalyticsResponsePayload = {
   >;
 };
 
+type AnalyticsResponsePayload = AnalyticsSnapshotPayload & {
+  cache: {
+    source: 'snapshot' | 'live';
+    snapshotIntervalMinutes: number;
+    ageSeconds: number;
+  };
+};
+
 type CachedUserProfile = {
   username: string;
   avatarUrl: string | null;
 };
 
+type AnalyticsSnapshotRow = {
+  snapshot_key: string;
+  generated_at: string;
+  payload: Json | null;
+};
+
 const ANALYTICS_CACHE_TTL_MS = 120_000;
+const ANALYTICS_SNAPSHOT_INTERVAL_MS = 10 * 60 * 1000;
+const ANALYTICS_SNAPSHOT_INTERVAL_MINUTES = Math.floor(ANALYTICS_SNAPSHOT_INTERVAL_MS / (60 * 1000));
 const USER_PROFILE_CACHE_TTL_MS = 1_800_000;
 
 const analyticsCache = new Map<
@@ -204,6 +220,88 @@ const pruneExpiredCaches = (nowMs: number) => {
   }
   for (const [key, entry] of userProfileCache.entries()) {
     if (entry.expiresAt <= nowMs) userProfileCache.delete(key);
+  }
+};
+
+const isAnalyticsSnapshotPayload = (value: Json | null): value is AnalyticsSnapshotPayload => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as Partial<AnalyticsSnapshotPayload>;
+  if (typeof candidate.generatedAt !== 'string') return false;
+  if (!candidate.filters || typeof candidate.filters !== 'object') return false;
+  if (!candidate.periods || typeof candidate.periods !== 'object') return false;
+  return true;
+};
+
+const toAnalyticsResponsePayload = (
+  payload: AnalyticsSnapshotPayload,
+  source: AnalyticsResponsePayload['cache']['source'],
+  nowMs: number,
+): AnalyticsResponsePayload => {
+  const generatedMs = Date.parse(payload.generatedAt);
+  const ageSeconds = Number.isFinite(generatedMs)
+    ? Math.max(0, Math.floor((nowMs - generatedMs) / 1000))
+    : 0;
+  return {
+    ...payload,
+    cache: {
+      source,
+      snapshotIntervalMinutes: ANALYTICS_SNAPSHOT_INTERVAL_MINUTES,
+      ageSeconds,
+    },
+  };
+};
+
+const loadAnalyticsSnapshotFromDb = async (snapshotKey: string): Promise<AnalyticsSnapshotPayload | null> => {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from('admin_analytics_snapshots')
+    .select('snapshot_key, generated_at, payload')
+    .eq('snapshot_key', snapshotKey)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[AdminAnalytics] snapshot read failed:', error.message);
+    return null;
+  }
+
+  const snapshot = (data ?? null) as AnalyticsSnapshotRow | null;
+  if (!snapshot || !isAnalyticsSnapshotPayload(snapshot.payload)) {
+    return null;
+  }
+
+  if (snapshot.payload.generatedAt !== snapshot.generated_at) {
+    return {
+      ...snapshot.payload,
+      generatedAt: snapshot.generated_at,
+    };
+  }
+
+  return snapshot.payload;
+};
+
+const saveAnalyticsSnapshotToDb = async (params: {
+  snapshotKey: string;
+  rangeDays: number;
+  channelId: string | null;
+  payload: AnalyticsSnapshotPayload;
+}): Promise<void> => {
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase.from('admin_analytics_snapshots').upsert(
+    {
+      snapshot_key: params.snapshotKey,
+      range_days: params.rangeDays,
+      channel_id: params.channelId,
+      generated_at: params.payload.generatedAt,
+      payload: params.payload,
+      updated_at: new Date().toISOString(),
+    },
+    {
+      onConflict: 'snapshot_key',
+    },
+  );
+
+  if (error) {
+    console.error('[AdminAnalytics] snapshot write failed:', error.message);
   }
 };
 
@@ -718,6 +816,26 @@ export async function GET(request: Request) {
     return NextResponse.json(cached.payload);
   }
 
+  const dbSnapshotPayload = await loadAnalyticsSnapshotFromDb(cacheKey);
+  const dbSnapshotResponse = dbSnapshotPayload
+    ? toAnalyticsResponsePayload(dbSnapshotPayload, 'snapshot', nowMs)
+    : null;
+
+  if (dbSnapshotResponse) {
+    const generatedMs = Date.parse(dbSnapshotResponse.generatedAt);
+    const ageMs = Number.isFinite(generatedMs)
+      ? Math.max(0, nowMs - generatedMs)
+      : Number.POSITIVE_INFINITY;
+    if (ageMs <= ANALYTICS_SNAPSHOT_INTERVAL_MS) {
+      const snapshotRemainingMs = Math.max(5_000, ANALYTICS_SNAPSHOT_INTERVAL_MS - ageMs);
+      analyticsCache.set(cacheKey, {
+        expiresAt: nowMs + Math.min(ANALYTICS_CACHE_TTL_MS, snapshotRemainingMs),
+        payload: dbSnapshotResponse,
+      });
+      return NextResponse.json(dbSnapshotResponse);
+    }
+  }
+
   const env = getServerEnv();
   const now = new Date();
   const earliestDay = addUtcDays(startOfUtcDay(now), -rangeDays);
@@ -733,6 +851,9 @@ export async function GET(request: Request) {
     events = activityRows;
     pointEvents = pointRows;
   } catch (error) {
+    if (dbSnapshotResponse) {
+      return NextResponse.json(dbSnapshotResponse);
+    }
     const message = error instanceof Error ? error.message : 'Failed to load activity events';
     return NextResponse.json({ error: message }, { status: 500 });
   }
@@ -782,7 +903,7 @@ export async function GET(request: Request) {
     resolveTopUsers(monthBase.topUsers, usersById),
   ]);
 
-  const payload: AnalyticsResponsePayload = {
+  const snapshotPayload: AnalyticsSnapshotPayload = {
     generatedAt: now.toISOString(),
     filters: {
       rangeDays,
@@ -813,10 +934,19 @@ export async function GET(request: Request) {
     },
   };
 
-  analyticsCache.set(cacheKey, {
-    expiresAt: nowMs + ANALYTICS_CACHE_TTL_MS,
-    payload,
+  await saveAnalyticsSnapshotToDb({
+    snapshotKey: cacheKey,
+    rangeDays,
+    channelId: channelIdFilter,
+    payload: snapshotPayload,
   });
 
-  return NextResponse.json(payload);
+  const responsePayload = toAnalyticsResponsePayload(snapshotPayload, 'live', nowMs);
+
+  analyticsCache.set(cacheKey, {
+    expiresAt: nowMs + ANALYTICS_CACHE_TTL_MS,
+    payload: responsePayload,
+  });
+
+  return NextResponse.json(responsePayload);
 }
