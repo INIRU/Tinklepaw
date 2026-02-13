@@ -9,6 +9,11 @@ type RpcResult<T> = Promise<{ data: T[] | null; error: { message: string } | nul
 type DynamicSupabase = {
   rpc: (fn: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>;
   from: (table: string) => {
+    select: (columns: string) => {
+      order: (column: string, options?: { ascending?: boolean }) => {
+        limit: (count: number) => Promise<{ data: Record<string, unknown>[] | null; error: { message: string } | null }>;
+      };
+    };
     update: (values: Record<string, unknown>) => {
       eq: (column: string, value: unknown) => Promise<{ error: { message: string } | null }>;
     };
@@ -65,6 +70,14 @@ type ScenarioSeeds = {
   bearish: string[];
 };
 
+type RecentNewsPromptRow = {
+  createdAt: string;
+  sentiment: Sentiment;
+  impactBps: number;
+  headline: string;
+  body: string;
+};
+
 const STOCK_NEWS_SCHEMA: Schema = {
   type: Type.OBJECT,
   properties: {
@@ -96,6 +109,8 @@ const DEFAULT_STOCK_SYMBOL = 'KURO';
 const DEFAULT_STOCK_DISPLAY_NAME = '쿠로 전자';
 const SENTIMENT_BULLISH_PROBABILITY = 0.44;
 const SENTIMENT_BEARISH_PROBABILITY = 0.44;
+const RECENT_NEWS_PROMPT_COUNT = 6;
+const RECENT_NEWS_BODY_SNIPPET_MAX = 88;
 
 const NEWS_TIER_PROFILES: readonly NewsTierProfile[] = [
   { key: 'general', label: '일반', emoji: '📰', weight: 0.68, minRatio: 0.0, maxRatio: 0.44 },
@@ -216,6 +231,71 @@ const sanitizeGeneratedBody = (body: string) => {
   return '수급 변화와 투자 심리 변동이 단기 흐름에 반영되고 있습니다. 변동성 구간에서는 분할 대응이 유리할 수 있습니다.';
 };
 
+const truncateText = (value: string, max: number) => {
+  if (value.length <= max) return value;
+  return `${value.slice(0, max)}...`;
+};
+
+const normalizeSentiment = (value: unknown): Sentiment => {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (raw === 'bullish' || raw === 'bearish' || raw === 'neutral') return raw;
+  return 'neutral';
+};
+
+const sentimentLabelForPrompt = (sentiment: Sentiment) => {
+  if (sentiment === 'bullish') return '호재';
+  if (sentiment === 'bearish') return '악재';
+  return '중립';
+};
+
+const formatRecentNewsContext = (rows: RecentNewsPromptRow[]): string => {
+  if (rows.length === 0) return '없음';
+  return rows
+    .map((row, index) => {
+      const created = parseMaybeDate(row.createdAt);
+      const when = created
+        ? created.toISOString().replace('T', ' ').slice(0, 16)
+        : row.createdAt;
+      const impact = row.impactBps >= 0 ? `+${row.impactBps}` : String(row.impactBps);
+      const bodySnippet = truncateText(row.body.replace(/\s+/g, ' ').trim(), RECENT_NEWS_BODY_SNIPPET_MAX);
+      return `${index + 1}) ${when} | ${sentimentLabelForPrompt(row.sentiment)} | ${impact}bps | ${row.headline}\n- ${bodySnippet}`;
+    })
+    .join('\n');
+};
+
+const loadRecentNewsContext = async (dynamicSupabase: DynamicSupabase): Promise<string> => {
+  const { data, error } = await dynamicSupabase
+    .from('stock_news_events')
+    .select('created_at, sentiment, impact_bps, headline, body')
+    .order('created_at', { ascending: false })
+    .limit(RECENT_NEWS_PROMPT_COUNT);
+
+  if (error) {
+    console.warn('[StockNews] failed to load recent news context:', error.message);
+    return '없음';
+  }
+
+  const rows = Array.isArray(data)
+    ? data
+      .map((row): RecentNewsPromptRow | null => {
+        const createdAt = String(row.created_at ?? '').trim();
+        const headline = String(row.headline ?? '').trim();
+        const body = String(row.body ?? '').trim();
+        if (!createdAt || !headline || !body) return null;
+        return {
+          createdAt,
+          sentiment: normalizeSentiment(row.sentiment),
+          impactBps: Math.trunc(toNumber(row.impact_bps, 0)),
+          headline,
+          body,
+        };
+      })
+      .filter((row): row is RecentNewsPromptRow => row !== null)
+    : [];
+
+  return formatRecentNewsContext(rows);
+};
+
 const resolveStockTicker = (row: StockDashboardRpcRow | null | undefined) => {
   const symbolRaw = String(row?.out_symbol ?? row?.symbol ?? DEFAULT_STOCK_SYMBOL).trim();
   const displayNameRaw = String(row?.out_display_name ?? row?.display_name ?? DEFAULT_STOCK_DISPLAY_NAME).trim();
@@ -303,6 +383,7 @@ const buildGeminiDraft = async (params: {
   currentPrice: number;
   changePct: number;
   recentSummary: string;
+  recentNewsContext: string;
   dataIsSparse: boolean;
   minImpactBps: number;
   maxImpactBps: number;
@@ -324,9 +405,11 @@ const buildGeminiDraft = async (params: {
     `현재 가격: ${params.currentPrice.toFixed(0)}p`,
     `현재 등락률: ${params.changePct.toFixed(2)}%`,
     `최근 흐름 요약: ${params.recentSummary}`,
+    `직전 뉴스 기록(최신순):\n${params.recentNewsContext}`,
     `캔들 데이터 상태: ${params.dataIsSparse ? '제한적' : '충분'}`,
     `이번 기사 티어는 반드시 \`${forcedTier}\`(${forcedTierProfile.label})로 고정해.`,
     `이번 기사 감정은 반드시 \`${forcedSentiment}\`(${forcedSentimentLabel})로 고정하고, 이유 키워드 \`${reasonSeed}\`를 반드시 포함해.`,
+    '최근 뉴스와 headline/핵심 이유가 과도하게 중복되지 않도록, 자연스러운 다음 전개처럼 작성.',
     'body에는 가격/등락률/bps 같은 정확한 숫자를 쓰지 말고, 방향성과 분위기만 서술형으로 작성.',
     '뉴스 이유는 실제 사실일 필요 없이, 게임 내에서 발생한 이슈처럼 자연스럽게 작성.',
     `impact_bps는 절대값 정수로 ${tierBounds.lower}~${tierBounds.upper} 범위만 사용.`,
@@ -552,6 +635,7 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
   const currentPrice = Math.max(50, toNumber(dashboard.out_price ?? dashboard.price, 0));
   const changePct = toNumber(dashboard.out_change_pct ?? dashboard.change_pct, 0);
   const marketSignal = getMarketSignal(dashboard.out_candles ?? dashboard.candles);
+  const recentNewsContext = await loadRecentNewsContext(dynamicSupabase);
 
   const apiKey = ctx.env.STOCK_NEWS_GEMINI_API_KEY || ctx.env.GEMINI_API_KEY;
   const geminiDraft = apiKey
@@ -562,6 +646,7 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
         currentPrice,
         changePct,
         recentSummary: marketSignal.summary,
+        recentNewsContext,
         dataIsSparse: marketSignal.dataIsSparse,
         minImpactBps,
         maxImpactBps,
