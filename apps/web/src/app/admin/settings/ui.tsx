@@ -65,7 +65,13 @@ type AppConfig = {
   stock_news_last_sent_at?: string | null;
   stock_news_next_run_at?: string | null;
   stock_news_force_run_at?: string | null;
+  stock_news_force_sentiment?: 'bullish' | 'bearish' | 'neutral' | null;
+  stock_news_force_tier?: 'general' | 'rare' | 'shock' | null;
+  stock_news_force_scenario?: string | null;
 };
+
+type StockNewsForceSentimentOption = 'auto' | 'bullish' | 'bearish' | 'neutral';
+type StockNewsForceTierOption = 'auto' | 'general' | 'rare' | 'shock';
 
 type SettingsTab = 'general' | 'stock' | 'economy';
 
@@ -79,6 +85,7 @@ function clamp(n: number, min: number, max: number) {
 }
 
 const MAX_SCENARIO_LINES = 64;
+const MAX_FORCE_SCENARIO_LENGTH = 120;
 
 const DEFAULT_BULLISH_SCENARIOS = [
   '차세대 제품 쇼케이스 기대감 확산',
@@ -378,6 +385,9 @@ export default function SettingsClient() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [bullishScenarioDraft, setBullishScenarioDraft] = useState('');
   const [bearishScenarioDraft, setBearishScenarioDraft] = useState('');
+  const [forcedNewsSentiment, setForcedNewsSentiment] = useState<StockNewsForceSentimentOption>('auto');
+  const [forcedNewsTier, setForcedNewsTier] = useState<StockNewsForceTierOption>('auto');
+  const [forcedNewsScenario, setForcedNewsScenario] = useState('');
 
   const [stagedBanner, setStagedBanner] = useState<StagedAsset | null>(null);
   const [stagedIcon, setStagedIcon] = useState<StagedAsset | null>(null);
@@ -406,6 +416,24 @@ export default function SettingsClient() {
     () => [
       { value: 'interval', label: '간격 반복' },
       { value: 'daily_random', label: '하루 1회 랜덤' }
+    ],
+    []
+  );
+  const stockNewsForceSentimentOptions = useMemo(
+    () => [
+      { value: 'auto', label: '자동(랜덤)' },
+      { value: 'bullish', label: '호재' },
+      { value: 'bearish', label: '악재' },
+      { value: 'neutral', label: '중립' }
+    ],
+    []
+  );
+  const stockNewsForceTierOptions = useMemo(
+    () => [
+      { value: 'auto', label: '자동(랜덤)' },
+      { value: 'general', label: '일반' },
+      { value: 'rare', label: '희귀' },
+      { value: 'shock', label: '충격' }
     ],
     []
   );
@@ -446,6 +474,9 @@ export default function SettingsClient() {
       stock_news_last_sent_at: cfgBody.stock_news_last_sent_at ?? null,
       stock_news_next_run_at: cfgBody.stock_news_next_run_at ?? null,
       stock_news_force_run_at: cfgBody.stock_news_force_run_at ?? null,
+      stock_news_force_sentiment: cfgBody.stock_news_force_sentiment ?? null,
+      stock_news_force_tier: cfgBody.stock_news_force_tier ?? null,
+      stock_news_force_scenario: cfgBody.stock_news_force_scenario ?? null,
       lottery_activity_jackpot_rate_pct: Number(cfgBody.lottery_activity_jackpot_rate_pct ?? 10),
     });
     setBullishScenarioDraft(formatScenarioLines(bullishScenarios));
@@ -547,6 +578,32 @@ export default function SettingsClient() {
       setNewsTriggering(false);
     }
   }, [loadAll, toast]);
+
+  const triggerForcedStockNews = useCallback(async () => {
+    const compactScenario = forcedNewsScenario.replace(/\s+/g, ' ').trim();
+    const payload = {
+      sentiment: forcedNewsSentiment === 'auto' ? null : forcedNewsSentiment,
+      tier: forcedNewsTier === 'auto' ? null : forcedNewsTier,
+      scenario: compactScenario ? compactScenario.slice(0, MAX_FORCE_SCENARIO_LENGTH) : null,
+    };
+
+    setNewsTriggering(true);
+    try {
+      const res = await fetch('/api/admin/stock/news/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+      toast.success('조작 기사 생성 요청을 등록했습니다. 잠시 후 지정 채널에 전송됩니다.');
+      await loadAll();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '조작 기사 생성 요청에 실패했습니다.');
+    } finally {
+      setNewsTriggering(false);
+    }
+  }, [forcedNewsScenario, forcedNewsSentiment, forcedNewsTier, loadAll, toast]);
 
   const toggleRewardChannel = useCallback(
     (channelId: string) => {
@@ -1012,6 +1069,61 @@ export default function SettingsClient() {
         </div>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2 rounded-2xl border border-[color:var(--line)] bg-[color:var(--chip)]/70 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold">기사 조작 박스</h3>
+                <p className="mt-1 text-xs muted">감정/티어/시나리오를 강제로 지정해서 1회성 기사를 생성합니다.</p>
+              </div>
+              <button
+                type="button"
+                className="rounded-2xl btn-bangul px-4 py-2 text-xs font-semibold disabled:opacity-60"
+                disabled={newsTriggering || !cfg.stock_news_enabled || !cfg.stock_news_channel_id}
+                onClick={() => void triggerForcedStockNews()}
+              >
+                {newsTriggering ? '요청 중…' : '조작 기사 생성'}
+              </button>
+            </div>
+
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div className="text-sm">
+                <CustomSelect
+                  label="강제 감정"
+                  value={forcedNewsSentiment}
+                  options={stockNewsForceSentimentOptions}
+                  onChange={(value) => {
+                    const next: StockNewsForceSentimentOption =
+                      value === 'bullish' || value === 'bearish' || value === 'neutral' ? value : 'auto';
+                    setForcedNewsSentiment(next);
+                  }}
+                />
+              </div>
+              <div className="text-sm">
+                <CustomSelect
+                  label="강제 티어"
+                  value={forcedNewsTier}
+                  options={stockNewsForceTierOptions}
+                  onChange={(value) => {
+                    const next: StockNewsForceTierOption =
+                      value === 'general' || value === 'rare' || value === 'shock' ? value : 'auto';
+                    setForcedNewsTier(next);
+                  }}
+                />
+              </div>
+            </div>
+
+            <label className="mt-3 block text-sm">
+              강제 시나리오 (선택)
+              <textarea
+                className="mt-1 min-h-[96px] w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)] placeholder:text-[color:var(--muted-2)]"
+                value={forcedNewsScenario}
+                onChange={(e) => setForcedNewsScenario(e.target.value.slice(0, MAX_FORCE_SCENARIO_LENGTH))}
+                placeholder="예: 공급망 루머가 퍼지며 투자 심리가 급격히 위축"
+              />
+            </label>
+            <div className="mt-2 text-xs muted-2">{forcedNewsScenario.length}/{MAX_FORCE_SCENARIO_LENGTH}</div>
+          </div>
+
           <label className="text-sm sm:col-span-2">
             <span className="inline-flex items-center gap-2">
               <input

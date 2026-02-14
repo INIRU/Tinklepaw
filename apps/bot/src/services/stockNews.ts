@@ -78,6 +78,13 @@ type RecentNewsPromptRow = {
   body: string;
 };
 
+type ForcedNewsOverrides = {
+  sentiment: Sentiment | null;
+  tier: NewsTier | null;
+  scenario: string | null;
+  hasAny: boolean;
+};
+
 const STOCK_NEWS_SCHEMA: Schema = {
   type: Type.OBJECT,
   properties: {
@@ -111,6 +118,7 @@ const SENTIMENT_BULLISH_PROBABILITY = 0.44;
 const SENTIMENT_BEARISH_PROBABILITY = 0.44;
 const RECENT_NEWS_PROMPT_COUNT = 6;
 const RECENT_NEWS_BODY_SNIPPET_MAX = 88;
+const FORCED_SCENARIO_MAX = 120;
 
 const NEWS_TIER_PROFILES: readonly NewsTierProfile[] = [
   { key: 'general', label: '일반', emoji: '📰', weight: 0.68, minRatio: 0.0, maxRatio: 0.44 },
@@ -248,6 +256,42 @@ const sentimentLabelForPrompt = (sentiment: Sentiment) => {
   return '중립';
 };
 
+const normalizeForcedSentiment = (value: unknown): Sentiment | null => {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (raw === 'bullish' || raw === 'bearish' || raw === 'neutral') return raw;
+  return null;
+};
+
+const normalizeForcedTier = (value: unknown): NewsTier | null => {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (raw === 'general' || raw === 'rare' || raw === 'shock') return raw;
+  return null;
+};
+
+const normalizeForcedScenario = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const compact = value.replace(/\s+/g, ' ').trim();
+  if (!compact) return null;
+  return compact.slice(0, FORCED_SCENARIO_MAX);
+};
+
+const getTierProfile = (tier: NewsTier | null): NewsTierProfile | null => {
+  if (!tier) return null;
+  return NEWS_TIER_PROFILES.find((profile) => profile.key === tier) ?? null;
+};
+
+const resolveForcedNewsOverrides = (cfg: AppConfig): ForcedNewsOverrides => {
+  const sentiment = normalizeForcedSentiment(cfg.stock_news_force_sentiment);
+  const tier = normalizeForcedTier(cfg.stock_news_force_tier);
+  const scenario = normalizeForcedScenario(cfg.stock_news_force_scenario);
+  return {
+    sentiment,
+    tier,
+    scenario,
+    hasAny: Boolean(sentiment || tier || scenario)
+  };
+};
+
 const formatRecentNewsContext = (rows: RecentNewsPromptRow[]): string => {
   if (rows.length === 0) return '없음';
   return rows
@@ -358,12 +402,15 @@ const buildFallbackDraft = (params: {
   maxImpactBps: number;
   displayName: string;
   scenarioSeeds: ScenarioSeeds;
+  forcedSentiment?: Sentiment | null;
+  forcedTier?: NewsTier | null;
+  forcedScenario?: string | null;
 }): StockNewsDraft => {
-  const { minImpactBps, maxImpactBps, displayName, scenarioSeeds } = params;
+  const { minImpactBps, maxImpactBps, displayName, scenarioSeeds, forcedSentiment, forcedTier, forcedScenario } = params;
 
-  const sentiment = pickRandomSentiment();
-  const tierProfile = pickNewsTier();
-  const reasonSeed = pickReasonSeed(sentiment, scenarioSeeds);
+  const sentiment = forcedSentiment ?? pickRandomSentiment();
+  const tierProfile = getTierProfile(forcedTier ?? null) ?? pickNewsTier();
+  const reasonSeed = forcedScenario ?? pickReasonSeed(sentiment, scenarioSeeds);
   const impactBpsAbs = pickTierImpact(tierProfile, minImpactBps, maxImpactBps);
   const headline = buildGameHeadline(displayName, reasonSeed);
 
@@ -388,13 +435,16 @@ const buildGeminiDraft = async (params: {
   minImpactBps: number;
   maxImpactBps: number;
   scenarioSeeds: ScenarioSeeds;
+  forcedSentiment?: Sentiment | null;
+  forcedTier?: NewsTier | null;
+  forcedScenario?: string | null;
 }): Promise<StockNewsDraft | null> => {
   const ai = new GoogleGenAI({ apiKey: params.apiKey });
-  const forcedSentiment = pickRandomSentiment();
-  const forcedTierProfile = pickNewsTier();
+  const forcedSentiment = params.forcedSentiment ?? pickRandomSentiment();
+  const forcedTierProfile = getTierProfile(params.forcedTier ?? null) ?? pickNewsTier();
   const forcedTier = forcedTierProfile.key;
   const tierBounds = getTierImpactBounds(forcedTierProfile, params.minImpactBps, params.maxImpactBps);
-  const reasonSeed = pickReasonSeed(forcedSentiment, params.scenarioSeeds);
+  const reasonSeed = params.forcedScenario ?? pickReasonSeed(forcedSentiment, params.scenarioSeeds);
   const forcedSentimentLabel = forcedSentiment === 'bullish' ? '호재' : forcedSentiment === 'bearish' ? '악재' : '중립';
 
   const systemInstruction =
@@ -636,6 +686,7 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
   const changePct = toNumber(dashboard.out_change_pct ?? dashboard.change_pct, 0);
   const marketSignal = getMarketSignal(dashboard.out_candles ?? dashboard.candles);
   const recentNewsContext = await loadRecentNewsContext(dynamicSupabase);
+  const forcedOverrides = resolveForcedNewsOverrides(cfg);
 
   const apiKey = ctx.env.STOCK_NEWS_GEMINI_API_KEY || ctx.env.GEMINI_API_KEY;
   const geminiDraft = apiKey
@@ -650,7 +701,10 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
         dataIsSparse: marketSignal.dataIsSparse,
         minImpactBps,
         maxImpactBps,
-        scenarioSeeds
+        scenarioSeeds,
+        forcedSentiment: forcedOverrides.sentiment,
+        forcedTier: forcedOverrides.tier,
+        forcedScenario: forcedOverrides.scenario
       })
     : null;
 
@@ -659,7 +713,10 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
       minImpactBps,
       maxImpactBps,
       displayName: stockTicker.displayName,
-      scenarioSeeds
+      scenarioSeeds,
+      forcedSentiment: forcedOverrides.sentiment,
+      forcedTier: forcedOverrides.tier,
+      forcedScenario: forcedOverrides.scenario
     });
 
   const { data: applyRows, error: applyError } = await rpc<ApplyStockNewsRpcRow>('apply_stock_news_impact', {
@@ -675,6 +732,10 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
       tier: draft.tier,
       data_is_sparse: marketSignal.dataIsSparse,
       candle_count: marketSignal.candleCount,
+      forced_sentiment: forcedOverrides.sentiment,
+      forced_tier: forcedOverrides.tier,
+      forced_scenario: forcedOverrides.scenario,
+      manipulated: forcedOverrides.hasAny,
       generated_at: now.toISOString()
     }
   });
@@ -717,7 +778,10 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
     .update({
       stock_news_last_sent_at: now.toISOString(),
       stock_news_next_run_at: nextRunAt.toISOString(),
-      stock_news_force_run_at: null
+      stock_news_force_run_at: null,
+      stock_news_force_sentiment: null,
+      stock_news_force_tier: null,
+      stock_news_force_scenario: null
     })
     .eq('id', 1);
   if (scheduleUpdateError) {
