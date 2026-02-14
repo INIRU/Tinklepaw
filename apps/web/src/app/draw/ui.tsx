@@ -389,15 +389,6 @@ export default function DrawClient() {
   }, [fetchStatus]);
 
   useEffect(() => {
-    document.documentElement.style.overflow = 'hidden';
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.documentElement.style.overflow = '';
-      document.body.style.overflow = '';
-    };
-  }, []);
-
-  useEffect(() => {
     if (!showProbModal || !selectedPoolId) return;
     let canceled = false;
 
@@ -767,7 +758,7 @@ export default function DrawClient() {
   };
 
   return (
-    <main className='flex h-[calc(100vh-64px)] overflow-hidden'>
+    <main className='flex h-[calc(100vh-64px)] h-[calc(100dvh-64px)] min-h-[calc(100svh-64px)] overflow-hidden overflow-x-hidden'>
       {/* Left Sidebar - Pool List */}
       <aside
         className={`w-80 border-r border-[color:var(--border)] bg-[color:var(--card)] p-4 flex-shrink-0 z-10 hidden md:block ${
@@ -859,10 +850,10 @@ export default function DrawClient() {
 
         {/* Overlay UI */}
         <div
-          className={`absolute inset-0 z-10 pointer-events-none flex flex-col justify-between p-8 transition-opacity duration-500 ${isDrawing ? 'opacity-0' : 'opacity-100'}`}
+          className={`absolute inset-0 z-10 pointer-events-none flex flex-col justify-between p-4 sm:p-8 transition-opacity duration-500 ${isDrawing ? 'opacity-0' : 'opacity-100'}`}
         >
           {/* Top Left Info (Mobile) */}
-          <div className='absolute top-4 left-4 pointer-events-auto flex md:hidden items-center gap-2'>
+          <div className='absolute top-[calc(env(safe-area-inset-top)+0.75rem)] left-4 pointer-events-auto flex md:hidden items-center gap-2'>
             <button
               onClick={() => setShowProbModal(true)}
               className='flex h-9 w-9 items-center justify-center rounded-xl bg-[color:var(--card)]/80 backdrop-blur-md border border-[color:var(--border)] text-[color:var(--muted)] shadow-sm cursor-pointer'
@@ -882,7 +873,7 @@ export default function DrawClient() {
             </button>
           </div>
 
-          <div className='absolute top-4 right-4 pointer-events-auto flex items-center gap-2 bg-[color:var(--card)]/80 backdrop-blur-md px-3 py-2 rounded-xl border border-[color:var(--border)] shadow-sm'>
+          <div className='absolute top-[calc(env(safe-area-inset-top)+0.75rem)] right-4 pointer-events-auto flex items-center gap-2 bg-[color:var(--card)]/80 backdrop-blur-md px-3 py-2 rounded-xl border border-[color:var(--border)] shadow-sm'>
             <Coins className='w-3.5 h-3.5 text-[color:var(--accent-pink)] sm:hidden' />
             <span className='text-[10px] sm:text-xs text-[color:var(--muted)] mr-1 sm:mr-2'>
               보유 포인트
@@ -956,7 +947,7 @@ export default function DrawClient() {
           </div>
 
           {/* Footer / Controls */}
-          <div className='flex justify-center pb-8 gap-3 pointer-events-auto'>
+          <div className='flex justify-center gap-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:pb-8 pointer-events-auto'>
             <button
               type='button'
               onClick={() => void onDraw(1)}

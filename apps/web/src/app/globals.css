@@ -43,6 +43,12 @@ html[data-theme='dark'] {
   --font-mono: var(--font-app-mono);
 }
 
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   background: var(--bg);
   color: var(--fg);

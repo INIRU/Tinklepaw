@@ -167,7 +167,7 @@ export default function MainNav(props: {
   return (
     <nav>
       <m.div
-        className="sticky top-0 z-30 border-b border-[color:var(--border)] bg-[color:var(--bg)]/72 backdrop-blur-xl supports-[backdrop-filter]:bg-[color:var(--bg)]/64 shadow-[0_8px_24px_rgba(9,12,24,0.08)] dark:shadow-none"
+        className="sticky top-0 z-30 border-b border-[color:var(--border)] bg-[color:var(--bg)]/72 pt-[env(safe-area-inset-top)] backdrop-blur-xl supports-[backdrop-filter]:bg-[color:var(--bg)]/64 shadow-[0_8px_24px_rgba(9,12,24,0.08)] dark:shadow-none"
         initial={{ y: -10, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
@@ -296,7 +296,7 @@ export default function MainNav(props: {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-x-0 top-[61px] z-20 border-b border-[color:var(--border)] bg-[color:var(--bg)]/95 p-4 backdrop-blur-lg lg:hidden"
+            className="fixed inset-x-0 top-[calc(61px+env(safe-area-inset-top))] z-20 max-h-[calc(100dvh-61px-env(safe-area-inset-top))] overflow-y-auto border-b border-[color:var(--border)] bg-[color:var(--bg)]/95 p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] backdrop-blur-lg lg:hidden"
           >
             <div className="flex flex-col gap-2">
               {mobileSections.map((section) => (
