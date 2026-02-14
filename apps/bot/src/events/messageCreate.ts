@@ -69,20 +69,16 @@ export function registerMessageCreate(client: Client) {
         p_is_booster: isBooster
       });
 
-      // eslint-disable-next-line no-console
-      console.log(`[Points] Channel: ${message.channelId}, User: ${message.author.id}, Result:`, data);
+      // 디버그 시에만 활성화 (프로덕션에서 메시지마다 로그 방지)
+      // console.debug(`[Points] Channel: ${message.channelId}, User: ${message.author.id}, Result:`, data);
 
       const results = Array.isArray(data) ? data : [data];
       const earned = results.find((r) => r && r.granted_points > 0);
       if (earned) {
-        // 이모지 반응 설정 확인
-        const { data: config } = await ctx.supabase
-          .from('app_config')
-          .select('reward_emoji_enabled')
-          .single();
-        
-        if (config?.reward_emoji_enabled !== false) {
-          await message.react('💰'); 
+        // 캐시된 config 사용 (매번 DB 쿼리 대신)
+        const appCfg = await getAppConfig().catch(() => null);
+        if (appCfg?.reward_emoji_enabled !== false) {
+          await message.react('💰');
         }
       }
     } catch (e) {
@@ -229,7 +225,7 @@ export function registerMessageCreate(client: Client) {
     if (!botId) return;
     if (!isMentionOrReplyToBot(message, botId)) return;
 
-    const text = message.content.replace(new RegExp(`^\s*<@!?${botId}>\s*`), '').trim();
+    const text = message.content.replace(new RegExp(`^\\s*<@!?${botId}>\\s*`), '').trim();
     if (!text) {
       await message.reply('할 말 있어? 메시지를 같이 보내줘.');
       return;

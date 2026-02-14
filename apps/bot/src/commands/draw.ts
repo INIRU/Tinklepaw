@@ -99,6 +99,9 @@ export async function triggerGachaUI(
     stock_news_last_sent_at: null,
     stock_news_next_run_at: null,
     stock_news_force_run_at: null,
+    stock_market_maker_interval_ms: null,
+    stock_news_worker_interval_ms: null,
+    reward_emoji_enabled: true,
     show_traceback_to_user: true,
   }));
 

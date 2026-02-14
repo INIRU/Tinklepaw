@@ -352,12 +352,15 @@ function StockChart({ status }: { status: StockDashboard | null }) {
         })}
 
         {(() => {
+          let started = false;
           const path = ma5
             .map((value, index) => {
               if (value == null) return null;
               const x = x0 + index * xStep + xStep / 2;
               const y = yAtPrice(value);
-              return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
+              const cmd = started ? 'L' : 'M';
+              started = true;
+              return `${cmd} ${x} ${y}`;
             })
             .filter(Boolean)
             .join(' ');
@@ -365,12 +368,15 @@ function StockChart({ status }: { status: StockDashboard | null }) {
         })()}
 
         {(() => {
+          let started = false;
           const path = ma20
             .map((value, index) => {
               if (value == null) return null;
               const x = x0 + index * xStep + xStep / 2;
               const y = yAtPrice(value);
-              return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
+              const cmd = started ? 'L' : 'M';
+              started = true;
+              return `${cmd} ${x} ${y}`;
             })
             .filter(Boolean)
             .join(' ');
@@ -457,25 +463,38 @@ export default function StockClient() {
   }, []);
 
   useEffect(() => {
-    const tick = () => {
-      if (document.visibilityState === 'visible') {
-        void loadStatus();
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const startPolling = () => {
+      if (intervalId) return;
+      void loadStatus();
+      intervalId = setInterval(() => void loadStatus(), 15_000);
+    };
+
+    const stopPolling = () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
       }
     };
 
-    tick();
-    const id = window.setInterval(tick, 15000);
-
-    const onVisible = () => {
+    const onVisibility = () => {
       if (document.visibilityState === 'visible') {
-        void loadStatus();
+        startPolling();
+      } else {
+        stopPolling();
       }
     };
 
-    document.addEventListener('visibilitychange', onVisible);
+    // 최초 로드
+    if (document.visibilityState === 'visible') {
+      startPolling();
+    }
+
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
-      window.clearInterval(id);
-      document.removeEventListener('visibilitychange', onVisible);
+      stopPolling();
+      document.removeEventListener('visibilitychange', onVisibility);
       requestSeqRef.current += 1;
     };
   }, [loadStatus]);
@@ -671,19 +690,19 @@ export default function StockClient() {
               <p className="text-sm font-semibold text-[color:var(--fg)]">거래</p>
             </div>
 
-            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
-              <label className="text-sm font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]" htmlFor="stock-qty">
-                수량
-              </label>
-              <input
-                id="stock-qty"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                value={qtyInput}
-                onChange={(e) => setQtyInput(e.target.value.replace(/[^0-9]/g, ''))}
-                className="h-10 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)] px-3 text-sm font-semibold text-[color:var(--fg)] outline-none focus:border-[color:var(--accent-sky)] sm:max-w-[180px]"
-              />
-              <div className="space-y-2">
+            <div className="mt-3 space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="text-sm font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]" htmlFor="stock-qty">
+                  수량
+                </label>
+                <input
+                  id="stock-qty"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={qtyInput}
+                  onChange={(e) => setQtyInput(e.target.value.replace(/[^0-9]/g, ''))}
+                  className="h-10 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)] px-3 text-sm font-semibold text-[color:var(--fg)] outline-none focus:border-[color:var(--accent-sky)] sm:max-w-[180px]"
+                />
                 <div className="flex flex-wrap gap-1.5">
                   {quickQuantities.map((qty) => (
                     <button
@@ -696,51 +715,51 @@ export default function StockClient() {
                     </button>
                   ))}
                 </div>
+              </div>
 
-                <div className="grid gap-2 rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_84%,transparent)] p-2.5">
-                  <div>
-                    <p className="text-[10px] font-semibold tracking-[0.08em] text-[color:color-mix(in_srgb,var(--fg)_64%,transparent)]">잔고 기반 빠른 매수</p>
-                    <div className="mt-1 flex flex-wrap gap-1.5">
-                      {buyRatioQuantities.length > 0 ? (
-                        buyRatioQuantities.map((qty) => (
-                          <button
-                            key={`buy-${qty}`}
-                            type="button"
-                            onClick={() => setQtyInput(String(qty))}
-                            className="rounded-full border border-[color:color-mix(in_srgb,#ef4444_35%,var(--border))] bg-[color:color-mix(in_srgb,#ef4444_10%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[#dc2626] transition hover:brightness-105 dark:text-[#fb7185]"
-                          >
-                            {qty}주
-                          </button>
-                        ))
-                      ) : (
-                        <span className="text-[11px] text-[color:color-mix(in_srgb,var(--fg)_58%,transparent)]">잔고 부족</span>
-                      )}
-                    </div>
+              <div className="grid gap-2 rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_84%,transparent)] p-2.5 sm:grid-cols-2">
+                <div>
+                  <p className="text-[10px] font-semibold tracking-[0.08em] text-[color:color-mix(in_srgb,var(--fg)_64%,transparent)]">잔고 기반 빠른 매수</p>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {buyRatioQuantities.length > 0 ? (
+                      buyRatioQuantities.map((qty) => (
+                        <button
+                          key={`buy-${qty}`}
+                          type="button"
+                          onClick={() => setQtyInput(String(qty))}
+                          className="rounded-full border border-[color:color-mix(in_srgb,#ef4444_35%,var(--border))] bg-[color:color-mix(in_srgb,#ef4444_10%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[#dc2626] transition hover:brightness-105 dark:text-[#fb7185]"
+                        >
+                          {qty}주
+                        </button>
+                      ))
+                    ) : (
+                      <span className="text-[11px] text-[color:color-mix(in_srgb,var(--fg)_58%,transparent)]">잔고 부족</span>
+                    )}
                   </div>
+                </div>
 
-                  <div>
-                    <p className="text-[10px] font-semibold tracking-[0.08em] text-[color:color-mix(in_srgb,var(--fg)_64%,transparent)]">보유 기반 빠른 매도</p>
-                    <div className="mt-1 flex flex-wrap gap-1.5">
-                      {sellRatioQuantities.length > 0 ? (
-                        sellRatioQuantities.map((qty) => (
-                          <button
-                            key={`sell-${qty}`}
-                            type="button"
-                            onClick={() => setQtyInput(String(qty))}
-                            className="rounded-full border border-[color:color-mix(in_srgb,#2563eb_35%,var(--border))] bg-[color:color-mix(in_srgb,#2563eb_10%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[#1d4ed8] transition hover:brightness-105 dark:text-[#7dd3fc]"
-                          >
-                            {qty}주
-                          </button>
-                        ))
-                      ) : (
-                        <span className="text-[11px] text-[color:color-mix(in_srgb,var(--fg)_58%,transparent)]">보유 수량 없음</span>
-                      )}
-                    </div>
+                <div>
+                  <p className="text-[10px] font-semibold tracking-[0.08em] text-[color:color-mix(in_srgb,var(--fg)_64%,transparent)]">보유 기반 빠른 매도</p>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {sellRatioQuantities.length > 0 ? (
+                      sellRatioQuantities.map((qty) => (
+                        <button
+                          key={`sell-${qty}`}
+                          type="button"
+                          onClick={() => setQtyInput(String(qty))}
+                          className="rounded-full border border-[color:color-mix(in_srgb,#2563eb_35%,var(--border))] bg-[color:color-mix(in_srgb,#2563eb_10%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[#1d4ed8] transition hover:brightness-105 dark:text-[#7dd3fc]"
+                        >
+                          {qty}주
+                        </button>
+                      ))
+                    ) : (
+                      <span className="text-[11px] text-[color:color-mix(in_srgb,var(--fg)_58%,transparent)]">보유 수량 없음</span>
+                    )}
                   </div>
                 </div>
               </div>
 
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div className="grid gap-2 sm:grid-cols-2">
                 <div className="rounded-xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,#ef4444_8%,var(--card))] px-3 py-2">
                   <p className="text-[10px] font-semibold tracking-[0.08em] text-[color:color-mix(in_srgb,var(--fg)_64%,transparent)]">매수 예상</p>
                   <p className="mt-1 text-sm font-semibold text-[color:var(--fg)]">총 {buyPreview.settlement.toLocaleString('ko-KR')}P</p>
