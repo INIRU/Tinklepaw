@@ -54,9 +54,15 @@ async function syncHeartbeat() {
 }
 
 const STATUS_SAMPLE_INTERVAL_MS = 10 * 60 * 1000;
+const STATUS_SAMPLE_CRON_MINUTE_STEP = 10;
 const MONITOR_ALERT_STREAK = 3;
 const MONITOR_ALERT_COOLDOWN_MS = 15 * 60 * 1000;
 const MONITOR_LOG_INTERVAL_MS = 2 * 60 * 1000;
+
+type SyncStatusOptions = {
+  recordSamples: boolean;
+  recordMonitoring: boolean;
+};
 
 type StatusSample = {
   service: 'bot' | 'lavalink';
@@ -182,7 +188,10 @@ const logMonitoringEvent = async (client: Client, health: ServiceHealth, streak:
   serviceLastAlertAt.set(key, now);
 };
 
-async function syncStatusSamples(client: Client) {
+async function syncStatusSamples(
+  client: Client,
+  options: SyncStatusOptions = { recordSamples: true, recordMonitoring: true }
+) {
   const samples: ServiceHealth[] = [{ service: 'bot', status: 'operational', message: 'running', latencyMs: null }];
 
   try {
@@ -201,7 +210,14 @@ async function syncStatusSamples(client: Client) {
   }
 
   await Promise.all(samples.map(async (sample) => {
-    await recordStatusSample({ service: sample.service, status: sample.status });
+    if (options.recordSamples) {
+      await recordStatusSample({ service: sample.service, status: sample.status });
+    }
+
+    if (!options.recordMonitoring) {
+      return;
+    }
+
     const streak = trackFailure(sample.service, sample.status);
     await logMonitoringEvent(client, sample, streak).catch((error) => {
       console.warn('[StatusSamples] Failed to write monitoring event:', error);
@@ -209,8 +225,42 @@ async function syncStatusSamples(client: Client) {
   }));
 }
 
+const getDelayToNextStatusSampleCron = () => {
+  const now = new Date();
+  const next = new Date(now);
+  next.setSeconds(0, 0);
+
+  const currentMinute = now.getMinutes();
+  const nextMinute = Math.floor(currentMinute / STATUS_SAMPLE_CRON_MINUTE_STEP) * STATUS_SAMPLE_CRON_MINUTE_STEP
+    + STATUS_SAMPLE_CRON_MINUTE_STEP;
+
+  if (nextMinute >= 60) {
+    next.setHours(now.getHours() + 1, 0, 0, 0);
+  } else {
+    next.setMinutes(nextMinute, 0, 0);
+  }
+
+  const delay = next.getTime() - now.getTime();
+  return delay > 0 ? delay : STATUS_SAMPLE_INTERVAL_MS;
+};
+
+function startStatusSampleCron(client: Client) {
+  const scheduleNext = () => {
+    setTimeout(() => {
+      void syncStatusSamples(client, { recordSamples: true, recordMonitoring: false })
+        .catch((error) => {
+          console.warn('[StatusSamples] Cron run failed:', error);
+        })
+        .finally(scheduleNext);
+    }, getDelayToNextStatusSampleCron());
+  };
+
+  scheduleNext();
+}
+
 export function startRoleSyncWorker(client: Client) {
   let isRunning = false;
+  startStatusSampleCron(client);
 
   const tick = async () => {
     if (isRunning) return;
@@ -220,7 +270,7 @@ export function startRoleSyncWorker(client: Client) {
       const ctx = getBotContext();
       
       await syncHeartbeat();
-      await syncStatusSamples(client);
+      await syncStatusSamples(client, { recordSamples: false, recordMonitoring: true });
 
       const { data: jobs, error } = await ctx.supabase
         .from('role_sync_jobs')
