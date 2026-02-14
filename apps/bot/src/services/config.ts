@@ -89,11 +89,7 @@ export async function getAppConfig(): Promise<AppConfig> {
     .maybeSingle();
 
   if (error) throw error;
-  const normalizedData =
-    data && typeof data === 'object'
-      ? Object.fromEntries(Object.entries(data).map(([key, value]) => [key, value === null ? undefined : value]))
-      : {};
-  const parsed = AppConfigSchema.safeParse(normalizedData);
+  const parsed = AppConfigSchema.safeParse(data ?? {});
   const value = parsed.success ? parsed.data : {
     bot_sync_interval_ms: 5000,
     gacha_embed_color: '#5865F2',
