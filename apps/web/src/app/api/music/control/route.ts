@@ -12,6 +12,7 @@ const CONTROL_ACTIONS = new Set([
   'stop',
   'skip',
   'previous',
+  'seek',
   'reorder',
   'add',
   'remove',
@@ -21,12 +22,13 @@ const JOB_ACK_TIMEOUT_MS = 12000;
 const JOB_POLL_INTERVAL_MS = 180;
 
 type ControlPayload = {
-  action: 'play' | 'pause' | 'stop' | 'skip' | 'previous' | 'reorder' | 'add' | 'remove' | 'clear';
+  action: 'play' | 'pause' | 'stop' | 'skip' | 'previous' | 'seek' | 'reorder' | 'add' | 'remove' | 'clear';
   payload?: {
     order?: string[];
     query?: string;
     trackId?: string;
     index?: number;
+    positionMs?: number;
     requester?: {
       id: string;
       username: string;
@@ -47,7 +49,7 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
 
 const validatePayload = (action: ControlPayload['action'], payload: unknown): string | null => {
   if (!isObject(payload)) {
-    return ['add', 'reorder', 'remove'].includes(action) ? 'INVALID_PAYLOAD' : null;
+    return ['add', 'reorder', 'remove', 'seek'].includes(action) ? 'INVALID_PAYLOAD' : null;
   }
 
   if (action === 'add') {
@@ -63,6 +65,12 @@ const validatePayload = (action: ControlPayload['action'], payload: unknown): st
     if (typeof payload.trackId === 'string' && payload.trackId.length > 0) return null;
     if (typeof payload.index === 'number' && Number.isInteger(payload.index)) return null;
     return 'INVALID_REMOVE_TARGET';
+  }
+
+  if (action === 'seek') {
+    return typeof payload.positionMs === 'number' && Number.isInteger(payload.positionMs) && payload.positionMs >= 0
+      ? null
+      : 'INVALID_SEEK_POSITION';
   }
 
   return null;

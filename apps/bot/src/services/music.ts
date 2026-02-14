@@ -33,6 +33,9 @@ type StoredTrackState = {
   title?: unknown;
   author?: unknown;
   uri?: unknown;
+  position_ms?: unknown;
+  is_playing?: unknown;
+  is_paused?: unknown;
   requester?: unknown;
 };
 
@@ -339,15 +342,31 @@ export const updateMusicSetupMessage = async (
   await message.edit({ embeds: [embed], files: [attachment], components: rows });
 };
 
-const mapTrackState = (track: KazagumoTrack) => ({
+const mapTrackState = (
+  track: KazagumoTrack,
+  options?: {
+    positionMs?: number;
+    isPlaying?: boolean;
+    isPaused?: boolean;
+  } | number
+) => {
+  const metadata = typeof options === 'object' && options !== null
+    ? options
+    : undefined;
+
+  return {
   id: track.track,
   title: track.title,
   author: track.author,
   uri: track.uri,
   length: track.length,
   thumbnail: track.thumbnail,
-  requester: mapRequesterState(track.requester)
-});
+  requester: mapRequesterState(track.requester),
+  ...(typeof metadata?.positionMs === 'number' ? { position_ms: Math.max(0, Math.floor(metadata.positionMs)) } : {}),
+  ...(typeof metadata?.isPlaying === 'boolean' ? { is_playing: metadata.isPlaying } : {}),
+  ...(typeof metadata?.isPaused === 'boolean' ? { is_paused: metadata.isPaused } : {})
+  };
+};
 
 export const updateMusicState = async (player: {
   guildId: string;
@@ -357,13 +376,23 @@ export const updateMusicState = async (player: {
   data?: Map<string, unknown>;
   playing?: boolean;
   paused?: boolean;
+  position?: number;
   queue: { current?: KazagumoTrack | null; slice: (start?: number, end?: number) => KazagumoTrack[] };
 }) => {
   const ctx = getBotContext();
   const queueTracks = player.queue.slice(0);
   if (!player.queue.current) return;
-  const current = player.queue.current ? mapTrackState(player.queue.current) : null;
-  const queue = queueTracks.map(mapTrackState);
+  const positionMs = typeof player.position === 'number' && Number.isFinite(player.position)
+    ? Math.max(0, Math.floor(player.position))
+    : 0;
+  const current = player.queue.current
+    ? mapTrackState(player.queue.current, {
+      positionMs,
+      isPlaying: player.playing === true,
+      isPaused: player.paused === true
+    })
+    : null;
+  const queue = queueTracks.map((track) => mapTrackState(track));
   await ctx.supabase.from('music_state').upsert({
     guild_id: player.guildId,
     current_track: current,

@@ -21,6 +21,7 @@ export async function GET() {
     .from('music_control_logs')
     .select('log_id, action, status, message, payload, requested_by, created_at')
     .eq('guild_id', env.NYARU_GUILD_ID)
+    .neq('action', 'monitor')
     .order('created_at', { ascending: false })
     .limit(10);
 

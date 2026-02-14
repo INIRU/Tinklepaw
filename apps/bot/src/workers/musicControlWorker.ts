@@ -6,6 +6,13 @@ import { getAppConfig } from '../services/config.js';
 import { isSpotifyQuery, searchTracksWithFallback } from '../services/musicSearch.js';
 import { clearMusicState, getMusic, updateMusicSetupMessage, updateMusicState } from '../services/music.js';
 
+const formatSeekPosition = (ms: number) => {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+};
+
 type MusicControlJob = {
   job_id: string;
   guild_id: string;
@@ -110,6 +117,7 @@ const handleJob = async (job: MusicControlJob) => {
       } else {
         await activePlayer.play();
       }
+      await updateMusicState(activePlayer).catch(() => {});
       await logAction(job, 'success', '재생을 시작했어요.');
       break;
     case 'pause':
@@ -117,6 +125,7 @@ const handleJob = async (job: MusicControlJob) => {
         failJob('이미 일시정지 상태입니다.');
       }
       activePlayer.pause(true);
+      await updateMusicState(activePlayer).catch(() => {});
       await logAction(job, 'success', '일시정지했어요.');
       break;
     case 'stop':
@@ -151,6 +160,35 @@ const handleJob = async (job: MusicControlJob) => {
         updateMusicState(activePlayer).catch(() => {});
       }, 700);
       await logAction(job, 'success', '이전 곡으로 이동했어요.');
+      break;
+    }
+    case 'seek': {
+      const payload = asPayloadObject(job.payload) as { positionMs?: Json } | null;
+      const positionMsRaw = typeof payload?.positionMs === 'number' ? payload.positionMs : null;
+      const requestedPositionMs = ensureInteger(positionMsRaw, '이동할 재생 위치가 올바르지 않습니다.');
+
+      if (requestedPositionMs < 0) {
+        failJob('이동할 재생 위치가 올바르지 않습니다.');
+      }
+
+      const currentTrack = activePlayer.queue.current;
+      const rawTrackLength = currentTrack?.length;
+      const trackLength = typeof rawTrackLength === 'number' && Number.isFinite(rawTrackLength) ? rawTrackLength : 0;
+      if (!currentTrack || trackLength <= 0) {
+        failJob('현재 곡은 위치 이동을 지원하지 않습니다.');
+        return;
+      }
+
+      const maxPositionMs = Math.max(0, trackLength - 1000);
+      const targetPositionMs = Math.min(requestedPositionMs, maxPositionMs);
+
+      await activePlayer.seek(targetPositionMs);
+      const currentAfterSeek = activePlayer.queue.current;
+      if (currentAfterSeek) {
+        await updateMusicSetupMessage(activePlayer, currentAfterSeek).catch(() => {});
+      }
+      await updateMusicState(activePlayer).catch(() => {});
+      await logAction(job, 'success', `재생 위치를 ${formatSeekPosition(targetPositionMs)}로 이동했어요.`);
       break;
     }
     case 'reorder': {

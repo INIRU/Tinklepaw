@@ -77,6 +77,9 @@ type ControlResult = {
   error?: string;
 };
 
+type LogStatusTone = 'success' | 'pending' | 'error' | 'neutral';
+type LogFilter = 'all' | 'success' | 'pending' | 'error';
+
 const resolveControlErrorMessage = (error: string | undefined, fallback: string) => {
   if (!error) return fallback;
 
@@ -138,6 +141,45 @@ const STATUS_DOT: Record<MonitorStatus, string> = {
 
 const statusLabel = (value: string) => STATUS_LABEL[normalizeStatus(value)];
 
+const classifyLogStatus = (status: string): LogStatusTone => {
+  const normalized = status.toLowerCase();
+
+  if (['error', 'failed', 'fail', 'timeout', 'rejected'].some((keyword) => normalized.includes(keyword))) {
+    return 'error';
+  }
+
+  if (['pending', 'queued', 'waiting', 'accepted', 'processing'].some((keyword) => normalized.includes(keyword))) {
+    return 'pending';
+  }
+
+  if (['ok', 'success', 'done', 'completed'].some((keyword) => normalized.includes(keyword))) {
+    return 'success';
+  }
+
+  return 'neutral';
+};
+
+const LOG_FILTER_LABEL: Record<LogFilter, string> = {
+  all: '전체',
+  success: '성공',
+  pending: '대기',
+  error: '실패'
+};
+
+const LOG_STATUS_LABEL: Record<LogStatusTone, string> = {
+  success: '성공',
+  pending: '대기',
+  error: '실패',
+  neutral: '기타'
+};
+
+const LOG_STATUS_BADGE: Record<LogStatusTone, string> = {
+  success: 'border-emerald-400/40 bg-emerald-500/10 text-emerald-300',
+  pending: 'border-sky-400/40 bg-sky-500/10 text-sky-300',
+  error: 'border-rose-400/40 bg-rose-500/10 text-rose-300',
+  neutral: 'border-zinc-400/40 bg-zinc-500/10 text-zinc-300'
+};
+
 const ServiceStatusCard = ({ title, samples }: { title: string; samples: MonitorSample[] }) => {
   const latest = samples.at(-1);
   const status = normalizeStatus(latest?.status ?? 'unknown');
@@ -191,7 +233,17 @@ const ServiceStatusCard = ({ title, samples }: { title: string; samples: Monitor
   );
 };
 
-const QueueRow = ({ track, disabled, onRemove }: { track: MusicTrack; disabled: boolean; onRemove: (track: MusicTrack) => void }) => {
+const QueueRow = ({
+  track,
+  index,
+  disabled,
+  onRemove
+}: {
+  track: MusicTrack;
+  index: number;
+  disabled: boolean;
+  onRemove: (track: MusicTrack) => void;
+}) => {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: track.id });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -203,6 +255,9 @@ const QueueRow = ({ track, disabled, onRemove }: { track: MusicTrack; disabled: 
       <button type="button" className="text-[color:var(--muted)]" {...attributes} {...listeners}>
         <GripVertical className="w-4 h-4" />
       </button>
+      <div className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-[color:var(--border)] px-1 text-[11px] font-semibold text-[color:var(--muted)]">
+        {index + 1}
+      </div>
       <div className="w-12 h-12 rounded-xl overflow-hidden bg-black/40 shrink-0">
         {track.thumbnail && (
           <Image
@@ -216,7 +271,19 @@ const QueueRow = ({ track, disabled, onRemove }: { track: MusicTrack; disabled: 
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold truncate">{truncateText(track.title, 44)}</div>
+        {track.uri ? (
+          <a
+            href={track.uri}
+            target="_blank"
+            rel="noreferrer"
+            className="block truncate text-sm font-semibold decoration-dotted underline-offset-2 hover:underline"
+            title={track.title}
+          >
+            {truncateText(track.title, 44)}
+          </a>
+        ) : (
+          <div className="text-sm font-semibold truncate">{truncateText(track.title, 44)}</div>
+        )}
         <div className="text-xs muted truncate">{truncateText(track.author, 34)}</div>
         <div className="mt-1 inline-flex items-center gap-1.5 text-[11px] muted">
           <span className="w-4 h-4 rounded-full overflow-hidden bg-black/30 shrink-0">
@@ -254,6 +321,7 @@ export default function MusicControlClient() {
   const [isLoading, setIsLoading] = useState(false);
   const [pendingAction, setPendingAction] = useState<ControlAction | null>(null);
   const [query, setQuery] = useState('');
+  const [logFilter, setLogFilter] = useState<LogFilter>('all');
   const [feedback, setFeedback] = useState<{ open: boolean; title: string; message: string; kind: 'success' | 'error' }>({
     open: false,
     title: '',
@@ -295,7 +363,7 @@ export default function MusicControlClient() {
       const res = await fetch('/api/music/logs', { cache: 'no-store' });
       if (!res.ok) return false;
       const json = await res.json();
-      setLogs(json.logs ?? []);
+      setLogs((json.logs ?? []).filter((entry: MusicLog) => entry.action !== 'monitor'));
       return true;
     } catch (error) {
       console.error('[Music] Failed to fetch logs:', error);
@@ -461,11 +529,13 @@ export default function MusicControlClient() {
     }
   };
 
-  const submitAdd = async () => {
+  const submitAdd = async (overrideQuery?: string) => {
     if (isActionPending) return;
 
-    const trimmed = query.trim();
+    const trimmed = (overrideQuery ?? query).trim();
     if (!trimmed) return;
+    if (overrideQuery !== undefined) setQuery(trimmed);
+
     if (!canAdd) {
       showFeedback('error', '추가 불가', '현재 재생 중인 곡이 없어서 노래를 추가할 수 없습니다.');
       return;
@@ -488,6 +558,32 @@ export default function MusicControlClient() {
       showFeedback('error', '추가 실패', result.error ?? '요청 실패');
     } finally {
       setPendingAction(null);
+    }
+  };
+
+  const pasteAndAdd = async () => {
+    if (isActionPending) return;
+    if (!canAdd) {
+      showFeedback('error', '추가 불가', '현재 재생 중인 곡이 없어서 노래를 추가할 수 없습니다.');
+      return;
+    }
+
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.readText) {
+      showFeedback('error', '클립보드 미지원', '브라우저 클립보드 권한이 필요합니다.');
+      return;
+    }
+
+    try {
+      const clipboardText = (await navigator.clipboard.readText()).trim();
+      if (!clipboardText) {
+        showFeedback('error', '붙여넣기 실패', '클립보드에서 노래 제목이나 URL을 찾지 못했어요.');
+        return;
+      }
+
+      await submitAdd(clipboardText);
+    } catch (error) {
+      console.error('[Music] Failed to read clipboard:', error);
+      showFeedback('error', '붙여넣기 실패', '클립보드 읽기에 실패했습니다. 권한을 확인해 주세요.');
     }
   };
 
@@ -584,6 +680,33 @@ export default function MusicControlClient() {
   };
 
   const currentDuration = useMemo(() => formatDuration(current?.length), [current?.length]);
+  const queueDurationMs = useMemo(
+    () => queue.reduce((total, track) => total + (typeof track.length === 'number' ? track.length : 0), 0),
+    [queue]
+  );
+  const queueDuration = useMemo(() => formatDuration(queueDurationMs), [queueDurationMs]);
+  const totalSessionDuration = useMemo(
+    () => formatDuration((typeof current?.length === 'number' ? current.length : 0) + queueDurationMs),
+    [current?.length, queueDurationMs]
+  );
+  const queueRequesterCount = useMemo(
+    () => new Set(queue.map((track) => requesterName(track))).size,
+    [queue]
+  );
+  const logSummary = useMemo(() => {
+    const summary: Record<LogFilter, number> = { all: logs.length, success: 0, pending: 0, error: 0 };
+    logs.forEach((log) => {
+      const tone = classifyLogStatus(log.status);
+      if (tone === 'success' || tone === 'pending' || tone === 'error') {
+        summary[tone] += 1;
+      }
+    });
+    return summary;
+  }, [logs]);
+  const filteredLogs = useMemo(() => {
+    if (logFilter === 'all') return logs;
+    return logs.filter((log) => classifyLogStatus(log.status) === logFilter);
+  }, [logFilter, logs]);
   const latestBotStatus = monitor.services.bot.at(-1);
   const latestLavalinkStatus = monitor.services.lavalink.at(-1);
   const activeIncidents = monitor.incidents.filter((incident) => {
@@ -667,24 +790,56 @@ export default function MusicControlClient() {
                 placeholder={canAdd ? '노래 제목 또는 URL을 입력하세요' : '재생 중인 곡이 없어서 추가할 수 없어요'}
                 className="flex-1 rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-[color:var(--accent-pink)]/20 disabled:cursor-not-allowed disabled:opacity-60"
               />
-              <button
-                type="button"
-                onClick={submitAdd}
-                disabled={!canAdd || isActionPending}
-                className="rounded-2xl border border-[color:var(--border)] px-4 py-2 text-sm font-semibold hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
-              >
-                노래 추가
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={pasteAndAdd}
+                  disabled={!canAdd || isActionPending}
+                  className="rounded-2xl border border-[color:var(--border)] px-3 py-2 text-xs font-semibold hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
+                >
+                  붙여넣기 추가
+                </button>
+                <button
+                  type="button"
+                  onClick={() => submitAdd()}
+                  disabled={!canAdd || isActionPending}
+                  className="rounded-2xl border border-[color:var(--border)] px-4 py-2 text-sm font-semibold hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
+                >
+                  노래 추가
+                </button>
+              </div>
             </div>
 
-            <div className="grid grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+              <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)]/60 px-3 py-2">
+                <div className="muted">대기열 곡 수</div>
+                <div className="mt-1 text-sm font-semibold">{queue.length}곡</div>
+              </div>
+              <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)]/60 px-3 py-2">
+                <div className="muted">대기열 길이</div>
+                <div className="mt-1 text-sm font-semibold">{queueDuration}</div>
+              </div>
+              <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)]/60 px-3 py-2">
+                <div className="muted">세션 총 길이</div>
+                <div className="mt-1 text-sm font-semibold">{totalSessionDuration}</div>
+              </div>
+              <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)]/60 px-3 py-2">
+                <div className="muted">요청자 수</div>
+                <div className="mt-1 text-sm font-semibold">{queueRequesterCount}명</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
               <button
                 type="button"
                 onClick={() => runAction('previous', '이전 곡으로 이동했어요.')}
                 disabled={!canStop || isActionPending}
                 className="rounded-2xl border border-[color:var(--border)] py-3 hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
               >
-                <SkipBack className="w-5 h-5 mx-auto" />
+                <div className="flex flex-col items-center gap-1">
+                  <SkipBack className="w-5 h-5" />
+                  <span className="text-[11px] font-semibold">이전</span>
+                </div>
               </button>
               <button
                 type="button"
@@ -692,7 +847,10 @@ export default function MusicControlClient() {
                 disabled={!canStop || isActionPending}
                 className="rounded-2xl border border-[color:var(--border)] py-3 hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
               >
-                <Play className="w-5 h-5 mx-auto" />
+                <div className="flex flex-col items-center gap-1">
+                  <Play className="w-5 h-5" />
+                  <span className="text-[11px] font-semibold">재생</span>
+                </div>
               </button>
               <button
                 type="button"
@@ -700,7 +858,10 @@ export default function MusicControlClient() {
                 disabled={!canStop || isActionPending}
                 className="rounded-2xl border border-[color:var(--border)] py-3 hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
               >
-                <Pause className="w-5 h-5 mx-auto" />
+                <div className="flex flex-col items-center gap-1">
+                  <Pause className="w-5 h-5" />
+                  <span className="text-[11px] font-semibold">일시정지</span>
+                </div>
               </button>
               <button
                 type="button"
@@ -708,24 +869,37 @@ export default function MusicControlClient() {
                 disabled={!canStop || isActionPending}
                 className="rounded-2xl border border-red-500/40 text-red-400 py-3 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
               >
-                <Square className="w-5 h-5 mx-auto" />
+                <div className="flex flex-col items-center gap-1">
+                  <Square className="w-5 h-5" />
+                  <span className="text-[11px] font-semibold">정지</span>
+                </div>
               </button>
               <button
                 type="button"
                 onClick={() => runAction('skip', '다음 곡으로 이동했어요.')}
                 disabled={!canSkip || isActionPending}
-                className="rounded-2xl border border-[color:var(--border)] py-3 hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
+                className="col-span-2 rounded-2xl border border-[color:var(--border)] py-3 hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent sm:col-span-1"
               >
-                <SkipForward className="w-5 h-5 mx-auto" />
+                <div className="flex flex-col items-center gap-1">
+                  <SkipForward className="w-5 h-5" />
+                  <span className="text-[11px] font-semibold">다음</span>
+                </div>
               </button>
             </div>
           </div>
 
           <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6">
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <div className="flex items-center gap-2">
-                <ListMusic className="w-4 h-4" />
-                <h2 className="text-sm font-semibold">대기열 (드래그로 순서 변경)</h2>
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <ListMusic className="w-4 h-4" />
+                  <h2 className="text-sm font-semibold">대기열 (드래그로 순서 변경)</h2>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                  <span className="rounded-full border border-[color:var(--border)] bg-[color:var(--chip)]/70 px-2.5 py-1 text-[color:var(--muted)]">총 {queue.length}곡</span>
+                  <span className="rounded-full border border-[color:var(--border)] bg-[color:var(--chip)]/70 px-2.5 py-1 text-[color:var(--muted)]">총 길이 {queueDuration}</span>
+                  <span className="rounded-full border border-[color:var(--border)] bg-[color:var(--chip)]/70 px-2.5 py-1 text-[color:var(--muted)]">마지막 갱신 {state?.updated_at ? new Date(state.updated_at).toLocaleTimeString() : '-'}</span>
+                </div>
               </div>
               <button
                 type="button"
@@ -744,8 +918,8 @@ export default function MusicControlClient() {
                       대기열이 비어있습니다.
                     </div>
                   ) : (
-                    queue.map((track) => (
-                      <QueueRow key={track.id} track={track} disabled={isActionPending} onRemove={removeFromQueue} />
+                    queue.map((track, index) => (
+                      <QueueRow key={track.id} track={track} index={index} disabled={isActionPending} onRemove={removeFromQueue} />
                     ))
                   )}
                 </div>
@@ -814,37 +988,67 @@ export default function MusicControlClient() {
         </section>
 
         <section className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6">
-          <h2 className="text-sm font-semibold mb-4">조작 로그</h2>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold">조작 로그</h2>
+            <div className="inline-flex flex-wrap items-center gap-1 rounded-full border border-[color:var(--border)] bg-[color:var(--chip)]/70 p-1">
+              {(['all', 'success', 'pending', 'error'] as const).map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  onClick={() => setLogFilter(filter)}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+                    logFilter === filter
+                      ? 'bg-[color:var(--accent-pink)]/20 text-[color:var(--fg)]'
+                      : 'text-[color:var(--muted)] hover:bg-[color:var(--chip)]'
+                  }`}
+                >
+                  {LOG_FILTER_LABEL[filter]} {logSummary[filter]}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="space-y-2">
-            {logs.length === 0 && <div className="text-xs muted">아직 로그가 없습니다.</div>}
-            {logs.map((log) => (
-              <div key={log.log_id} className="flex flex-col gap-2 rounded-2xl border border-[color:var(--border)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-full overflow-hidden bg-[color:var(--chip)] shrink-0">
-                    {log.requested_by_user?.avatarUrl && (
-                      <Image
-                        src={log.requested_by_user.avatarUrl}
-                        alt=""
-                        width={36}
-                        height={36}
-                        className="w-full h-full object-cover"
-                        unoptimized
-                      />
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold truncate">{log.action}</div>
-                    <div className="text-xs muted truncate">
-                      {log.message ? truncateText(log.message, 60) : log.status}
-                    </div>
-                    <div className="text-[11px] muted truncate">
-                      {log.requested_by_user ? `${log.requested_by_user.name} · ${log.requested_by_user.id}` : 'system'}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-xs muted">{new Date(log.created_at).toLocaleString()}</div>
+            {filteredLogs.length === 0 && (
+              <div className="text-xs muted">
+                {logs.length === 0 ? '아직 로그가 없습니다.' : '선택한 필터에 해당하는 로그가 없습니다.'}
               </div>
-            ))}
+            )}
+            {filteredLogs.map((log) => {
+              const logTone = classifyLogStatus(log.status);
+              return (
+                <div key={log.log_id} className="flex flex-col gap-2 rounded-2xl border border-[color:var(--border)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-full overflow-hidden bg-[color:var(--chip)] shrink-0">
+                      {log.requested_by_user?.avatarUrl && (
+                        <Image
+                          src={log.requested_by_user.avatarUrl}
+                          alt=""
+                          width={36}
+                          height={36}
+                          className="w-full h-full object-cover"
+                          unoptimized
+                        />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <div className="text-sm font-semibold truncate">{log.action}</div>
+                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${LOG_STATUS_BADGE[logTone]}`}>
+                          {LOG_STATUS_LABEL[logTone]}
+                        </span>
+                      </div>
+                      <div className="text-xs muted truncate">
+                        {log.message ? truncateText(log.message, 60) : log.status}
+                      </div>
+                      <div className="text-[11px] muted truncate">
+                        {log.requested_by_user ? `${log.requested_by_user.name} · ${log.requested_by_user.id}` : 'system'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-xs muted">{new Date(log.created_at).toLocaleString()}</div>
+                </div>
+              );
+            })}
           </div>
         </section>
       </div>
