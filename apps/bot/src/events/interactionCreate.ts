@@ -24,19 +24,7 @@ const FILTER_PRESET_OPTIONS: Array<{ value: MusicFilterPreset; label: string; de
   { value: 'vaporwave', label: 'Vaporwave', description: '속도/피치를 낮춰 몽환적으로 만듭니다.' },
   { value: 'karaoke', label: 'Karaoke', description: '보컬 대역을 약화합니다.' }
 ];
-const pendingFilterSelection = new Map<string, { preset: MusicFilterPreset; createdAt: number }>();
-const FILTER_SELECTION_TTL_MS = 5 * 60 * 1000; // 5분 후 자동 정리
-
-// 오래된 필터 선택 항목 주기적 정리
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of pendingFilterSelection) {
-    if (now - entry.createdAt > FILTER_SELECTION_TTL_MS) {
-      pendingFilterSelection.delete(key);
-    }
-  }
-}, 60_000);
-
+const pendingFilterSelection = new Map<string, MusicFilterPreset>();
 const musicUiColor = 0x3b82f6;
 const buildMusicStatusEmbed = (title: string, description: string) =>
   new EmbedBuilder().setTitle(title).setDescription(description).setColor(musicUiColor);
@@ -197,7 +185,7 @@ export function registerInteractionCreate(client: Client) {
         }
 
         const selected = toFilterPreset(interaction.values[0]);
-        pendingFilterSelection.set(filterSelectionKey(interaction.guildId, interaction.user.id), { preset: selected, createdAt: Date.now() });
+        pendingFilterSelection.set(filterSelectionKey(interaction.guildId, interaction.user.id), selected);
 
         await interaction.update({
           embeds: [
@@ -1031,7 +1019,7 @@ export function registerInteractionCreate(client: Client) {
         }
 
         const selected = toFilterPreset(player.data.get('music_filter_preset'));
-        pendingFilterSelection.set(filterSelectionKey(interaction.guildId, interaction.user.id), { preset: selected, createdAt: Date.now() });
+        pendingFilterSelection.set(filterSelectionKey(interaction.guildId, interaction.user.id), selected);
 
         await interaction.reply({
           embeds: [buildMusicStatusEmbed('🎛️ 필터 설정', `현재 필터: **${MUSIC_FILTER_LABELS[selected]}**\n\n드롭다운에서 선택 후 적용 버튼을 눌러주세요.`)],
@@ -1167,7 +1155,7 @@ export function registerInteractionCreate(client: Client) {
 
         await interaction.deferUpdate();
         const key = filterSelectionKey(interaction.guildId, interaction.user.id);
-        const selected = pendingFilterSelection.get(key)?.preset ?? toFilterPreset(player.data.get('music_filter_preset'));
+        const selected = pendingFilterSelection.get(key) ?? toFilterPreset(player.data.get('music_filter_preset'));
 
         await logMusicControlInteraction({
           guildId: interaction.guildId,

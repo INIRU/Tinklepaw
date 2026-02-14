@@ -67,9 +67,6 @@ const AppConfigSchema = z.object({
   stock_news_force_sentiment: z.enum(['bullish', 'bearish', 'neutral']).nullable().optional(),
   stock_news_force_tier: z.enum(['general', 'rare', 'shock']).nullable().optional(),
   stock_news_force_scenario: z.string().nullable().optional(),
-  stock_market_maker_interval_ms: z.number().nullable().optional(),
-  stock_news_worker_interval_ms: z.number().nullable().optional(),
-  reward_emoji_enabled: z.boolean().default(true),
   show_traceback_to_user: z.boolean().default(true)
 });
 
@@ -84,7 +81,7 @@ export async function getAppConfig(): Promise<AppConfig> {
   const ctx = getBotContext();
   const { data, error } = await ctx.supabase
     .from('app_config')
-    .select('join_message_template, join_message_channel_id, music_command_channel_id, music_setup_embed_title, music_setup_embed_description, music_setup_embed_fields, music_setup_message_id, bot_avatar_url, bot_sync_interval_ms, gacha_embed_color, gacha_embed_title, gacha_embed_description, gacha_processing_title, gacha_processing_description, gacha_result_title, reward_points_per_interval, reward_interval_seconds, reward_daily_cap_points, reward_min_message_length, booster_chat_bonus_points, voice_reward_points_per_interval, voice_reward_interval_seconds, voice_reward_daily_cap_points, booster_voice_bonus_points, voice_interface_trigger_channel_id, voice_interface_category_id, error_log_channel_id, stock_news_enabled, stock_news_channel_id, stock_news_schedule_mode, stock_news_interval_minutes, stock_news_daily_window_start_hour, stock_news_daily_window_end_hour, stock_news_min_impact_bps, stock_news_max_impact_bps, stock_news_bullish_scenarios, stock_news_bearish_scenarios, stock_news_last_sent_at, stock_news_next_run_at, stock_news_force_run_at, stock_news_force_sentiment, stock_news_force_tier, stock_news_force_scenario, stock_market_maker_interval_ms, stock_news_worker_interval_ms, reward_emoji_enabled, show_traceback_to_user')
+    .select('join_message_template, join_message_channel_id, music_command_channel_id, music_setup_embed_title, music_setup_embed_description, music_setup_embed_fields, music_setup_message_id, bot_avatar_url, bot_sync_interval_ms, gacha_embed_color, gacha_embed_title, gacha_embed_description, gacha_processing_title, gacha_processing_description, gacha_result_title, reward_points_per_interval, reward_interval_seconds, reward_daily_cap_points, reward_min_message_length, booster_chat_bonus_points, voice_reward_points_per_interval, voice_reward_interval_seconds, voice_reward_daily_cap_points, booster_voice_bonus_points, voice_interface_trigger_channel_id, voice_interface_category_id, error_log_channel_id, stock_news_enabled, stock_news_channel_id, stock_news_schedule_mode, stock_news_interval_minutes, stock_news_daily_window_start_hour, stock_news_daily_window_end_hour, stock_news_min_impact_bps, stock_news_max_impact_bps, stock_news_bullish_scenarios, stock_news_bearish_scenarios, stock_news_last_sent_at, stock_news_next_run_at, stock_news_force_run_at, stock_news_force_sentiment, stock_news_force_tier, stock_news_force_scenario, show_traceback_to_user')
     .eq('id', 1)
     .maybeSingle();
 
@@ -143,9 +140,6 @@ export async function getAppConfig(): Promise<AppConfig> {
       stock_news_force_sentiment: null,
       stock_news_force_tier: null,
       stock_news_force_scenario: null,
-      stock_market_maker_interval_ms: null,
-      stock_news_worker_interval_ms: null,
-      reward_emoji_enabled: true,
       show_traceback_to_user: true
   };
   cached = { value, at: now };

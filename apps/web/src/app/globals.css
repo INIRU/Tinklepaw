@@ -69,7 +69,6 @@ body {
   pointer-events: none;
   position: absolute;
   inset: 0;
-  z-index: 0;
   background:
     radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--fg) 12%, transparent) 1px, transparent 0) 0 0 / 18px 18px;
   opacity: 0.12;
@@ -80,7 +79,6 @@ body {
   pointer-events: none;
   position: absolute;
   inset: 0;
-  z-index: 0;
   background: linear-gradient(120deg, transparent 0%, color-mix(in srgb, var(--accent-pink-2) 8%, transparent) 36%, transparent 72%);
   opacity: 0.28;
 }
