@@ -288,7 +288,7 @@ const resolveForcedNewsOverrides = (cfg: AppConfig): ForcedNewsOverrides => {
     sentiment,
     tier,
     scenario,
-    hasAny: Boolean(sentiment || tier || scenario)
+    hasAny: Boolean(tier || scenario)
   };
 };
 
@@ -435,17 +435,14 @@ const buildGeminiDraft = async (params: {
   minImpactBps: number;
   maxImpactBps: number;
   scenarioSeeds: ScenarioSeeds;
-  forcedSentiment?: Sentiment | null;
   forcedTier?: NewsTier | null;
   forcedScenario?: string | null;
 }): Promise<StockNewsDraft | null> => {
   const ai = new GoogleGenAI({ apiKey: params.apiKey });
-  const forcedSentiment = params.forcedSentiment ?? pickRandomSentiment();
   const forcedTierProfile = getTierProfile(params.forcedTier ?? null) ?? pickNewsTier();
   const forcedTier = forcedTierProfile.key;
   const tierBounds = getTierImpactBounds(forcedTierProfile, params.minImpactBps, params.maxImpactBps);
-  const reasonSeed = params.forcedScenario ?? pickReasonSeed(forcedSentiment, params.scenarioSeeds);
-  const forcedSentimentLabel = forcedSentiment === 'bullish' ? '호재' : forcedSentiment === 'bearish' ? '악재' : '중립';
+  const reasonSeed = params.forcedScenario ?? pickOne([...params.scenarioSeeds.bullish, ...params.scenarioSeeds.bearish, ...NEUTRAL_REASON_SEEDS]);
 
   const systemInstruction =
     `당신은 디스코드 주식 게임의 단일 종목 ${params.displayName}(${params.symbol}) 뉴스 에디터다. 반드시 JSON만 반환한다. 뉴스 이유는 현실 근거가 없어도 되고, 게임 이벤트처럼 그럴듯하게 작성한다.`;
@@ -458,12 +455,13 @@ const buildGeminiDraft = async (params: {
     `직전 뉴스 기록(최신순):\n${params.recentNewsContext}`,
     `캔들 데이터 상태: ${params.dataIsSparse ? '제한적' : '충분'}`,
     `이번 기사 티어는 반드시 \`${forcedTier}\`(${forcedTierProfile.label})로 고정해.`,
-    `이번 기사 감정은 반드시 \`${forcedSentiment}\`(${forcedSentimentLabel})로 고정하고, 이유 키워드 \`${reasonSeed}\`를 반드시 포함해.`,
+    'sentiment는 bullish/bearish/neutral 중 하나를 반드시 직접 결정해.',
+    '최근 캔들 흐름/거래량 상태/직전 뉴스 맥락을 종합해서 과도한 한쪽 편향이 쌓이지 않게 선택해.',
+    `이유 키워드 \`${reasonSeed}\`를 반드시 포함해.`,
     '최근 뉴스와 headline/핵심 이유가 과도하게 중복되지 않도록, 자연스러운 다음 전개처럼 작성.',
     'body에는 가격/등락률/bps 같은 정확한 숫자를 쓰지 말고, 방향성과 분위기만 서술형으로 작성.',
     '뉴스 이유는 실제 사실일 필요 없이, 게임 내에서 발생한 이슈처럼 자연스럽게 작성.',
     `impact_bps는 절대값 정수로 ${tierBounds.lower}~${tierBounds.upper} 범위만 사용.`,
-    'sentiment는 bullish/bearish/neutral 중 하나.',
     'headline은 42자 이하, body는 2~3문장으로 작성.'
   ].join('\n');
 
@@ -493,7 +491,7 @@ const buildGeminiDraft = async (params: {
       body?: unknown;
     };
 
-    const sentiment = forcedSentiment;
+    const sentiment = normalizeSentiment(parsed.sentiment);
     const parsedImpactBps = Math.abs(Math.floor(toNumber(parsed.impact_bps, tierBounds.lower)));
     const impactBpsAbs = clamp(parsedImpactBps, tierBounds.lower, tierBounds.upper);
     const headline = String(parsed.headline ?? '').trim() || buildGameHeadline(params.displayName, reasonSeed);
@@ -516,7 +514,7 @@ const buildGeminiDraft = async (params: {
 const getMarketSignal = (candlesRaw: unknown) => {
   if (!Array.isArray(candlesRaw) || candlesRaw.length < 2) {
     return {
-      summary: '캔들 데이터 부족(초기 구간)',
+      summary: '캔들 데이터 부족(초기 구간), 거래량 데이터 부족',
       dataIsSparse: true,
       candleCount: Array.isArray(candlesRaw) ? candlesRaw.length : 0
     };
@@ -532,8 +530,31 @@ const getMarketSignal = (candlesRaw: unknown) => {
   const maxHigh = candles.reduce((acc, row) => Math.max(acc, toNumber(row.h ?? row.high_price, acc)), open);
   const minLow = candles.reduce((acc, row) => Math.min(acc, toNumber(row.l ?? row.low_price, acc)), open || Infinity);
   const movePct = open > 0 ? ((close - open) / open) * 100 : 0;
+  const volumes = candles
+    .map((row) => toNumber(row.v ?? row.volume ?? row.volume_total ?? row.trade_volume, Number.NaN))
+    .filter((value) => Number.isFinite(value) && value >= 0);
+  const latestVolume = volumes.length > 0 ? volumes[volumes.length - 1]! : null;
+  const baselineVolumes = volumes.length > 1 ? volumes.slice(0, -1) : [];
+  const baselineVolume = baselineVolumes.length > 0
+    ? baselineVolumes.reduce((acc, value) => acc + value, 0) / baselineVolumes.length
+    : null;
+  const volumeRatio = latestVolume !== null && baselineVolume !== null && baselineVolume > 0
+    ? latestVolume / baselineVolume
+    : null;
+
+  let volumeSummary = '거래량 데이터 부족';
+  if (volumeRatio !== null) {
+    if (volumeRatio >= 1.35) {
+      volumeSummary = `거래량 급증(${volumeRatio.toFixed(2)}배)`;
+    } else if (volumeRatio <= 0.7) {
+      volumeSummary = `거래량 둔화(${volumeRatio.toFixed(2)}배)`;
+    } else {
+      volumeSummary = `거래량 보합(${volumeRatio.toFixed(2)}배)`;
+    }
+  }
+
   return {
-    summary: `최근 12캔들 기준 ${movePct >= 0 ? '+' : ''}${movePct.toFixed(2)}%, 고가 ${maxHigh.toFixed(0)}p / 저가 ${minLow.toFixed(0)}p`,
+    summary: `최근 12캔들 기준 ${movePct >= 0 ? '+' : ''}${movePct.toFixed(2)}%, 고가 ${maxHigh.toFixed(0)}p / 저가 ${minLow.toFixed(0)}p, ${volumeSummary}`,
     dataIsSparse,
     candleCount
   };
@@ -689,46 +710,42 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
   const forcedOverrides = resolveForcedNewsOverrides(cfg);
 
   const apiKey = ctx.env.STOCK_NEWS_GEMINI_API_KEY || ctx.env.GEMINI_API_KEY;
-  const geminiDraft = apiKey
-      ? await buildGeminiDraft({
-        apiKey,
-        symbol: stockTicker.symbol,
-        displayName: stockTicker.displayName,
-        currentPrice,
-        changePct,
-        recentSummary: marketSignal.summary,
-        recentNewsContext,
-        dataIsSparse: marketSignal.dataIsSparse,
-        minImpactBps,
-        maxImpactBps,
-        scenarioSeeds,
-        forcedSentiment: forcedOverrides.sentiment,
-        forcedTier: forcedOverrides.tier,
-        forcedScenario: forcedOverrides.scenario
-      })
-    : null;
+  if (!apiKey) {
+    console.warn('[StockNews] Gemini API key missing; skipping cycle (sentiment is model-owned).');
+    return;
+  }
 
-  const draft = geminiDraft ??
-    buildFallbackDraft({
-      minImpactBps,
-      maxImpactBps,
-      displayName: stockTicker.displayName,
-      scenarioSeeds,
-      forcedSentiment: forcedOverrides.sentiment,
-      forcedTier: forcedOverrides.tier,
-      forcedScenario: forcedOverrides.scenario
-    });
+  const draft = await buildGeminiDraft({
+    apiKey,
+    symbol: stockTicker.symbol,
+    displayName: stockTicker.displayName,
+    currentPrice,
+    changePct,
+    recentSummary: marketSignal.summary,
+    recentNewsContext,
+    dataIsSparse: marketSignal.dataIsSparse,
+    minImpactBps,
+    maxImpactBps,
+    scenarioSeeds,
+    forcedTier: forcedOverrides.tier,
+    forcedScenario: forcedOverrides.scenario
+  });
+
+  if (!draft) {
+    console.warn('[StockNews] Gemini draft generation failed; skipping cycle without fallback.');
+    return;
+  }
 
   const { data: applyRows, error: applyError } = await rpc<ApplyStockNewsRpcRow>('apply_stock_news_impact', {
     p_sentiment: draft.sentiment,
     p_impact_bps: draft.impactBpsAbs,
     p_headline: draft.headline,
     p_body: draft.body,
-    p_source: apiKey ? 'gemini' : 'fallback',
+    p_source: 'gemini',
     p_channel_id: cfg.stock_news_channel_id,
     p_metadata: {
       trigger: decision.forced ? 'manual' : 'schedule',
-      model: apiKey ? 'gemini-2.5-flash-lite' : 'fallback',
+      model: 'gemini-2.5-flash-lite',
       tier: draft.tier,
       data_is_sparse: marketSignal.dataIsSparse,
       candle_count: marketSignal.candleCount,
