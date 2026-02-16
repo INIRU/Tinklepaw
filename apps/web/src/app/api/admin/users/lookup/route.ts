@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { fetchGuildMember } from '@/lib/server/discord';
 import { isResponse, requireAdminApi } from '@/lib/server/guards-api';
 import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
 
@@ -13,7 +14,7 @@ export async function GET(req: Request) {
   if (!userId) return NextResponse.json({ error: 'userId required' }, { status: 400 });
 
   const supabase = createSupabaseAdminClient();
-  const [{ data: bal }, { data: eq }, { data: inv }] = await Promise.all([
+  const [{ data: bal }, { data: eq }, { data: inv }, member] = await Promise.all([
     supabase.from('point_balances').select('balance').eq('discord_user_id', userId).maybeSingle(),
     supabase
       .from('equipped')
@@ -24,13 +25,15 @@ export async function GET(req: Request) {
       .from('inventory')
       .select('item_id, qty, items:items(name, rarity, discord_role_id)')
       .eq('discord_user_id', userId)
-      .order('updated_at', { ascending: false })
+      .order('updated_at', { ascending: false }),
+    fetchGuildMember({ userId }).catch(() => null)
   ]);
 
   return NextResponse.json({
     userId,
     balance: bal?.balance ?? 0,
     equipped: eq ?? null,
-    inventory: inv ?? []
+    inventory: inv ?? [],
+    memberRoleIds: member?.roles ?? []
   });
 }

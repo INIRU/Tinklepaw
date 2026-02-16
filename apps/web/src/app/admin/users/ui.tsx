@@ -16,6 +16,12 @@ type UserSummary = {
   last_seen_at: string | null;
 };
 
+type GuildRole = {
+  id: string;
+  name: string;
+  position: number;
+};
+
 export default function UsersAdminClient() {
   const toast = useToast();
   const [users, setUsers] = useState<UserSummary[]>([]);
@@ -30,6 +36,9 @@ export default function UsersAdminClient() {
   const [detailBusy, setDetailBusy] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [items, setItems] = useState<Item[]>([]);
+  const [guildRoles, setGuildRoles] = useState<GuildRole[]>([]);
+  const [memberRoleIds, setMemberRoleIds] = useState<string[]>([]);
+  const [rolesBusy, setRolesBusy] = useState(false);
 
   const [pointsBusy, setPointsBusy] = useState(false);
   const [deltaPoints, setDeltaPoints] = useState('100');
@@ -37,10 +46,36 @@ export default function UsersAdminClient() {
   const [setTouched, setSetTouched] = useState(false);
 
   useEffect(() => {
-    fetch('/api/admin/gacha/items')
-      .then((r) => r.json())
-      .then((b: { items: Item[] }) => setItems(b.items ?? []))
-      .catch(() => toast.error('아이템을 불러오지 못했습니다.'));
+    const loadMetadata = async () => {
+      const [itemsRes, rolesRes] = await Promise.all([
+        fetch('/api/admin/gacha/items').catch(() => null),
+        fetch('/api/admin/discord/roles').catch(() => null)
+      ]);
+
+      if (!itemsRes) {
+        toast.error('아이템을 불러오지 못했습니다.');
+      } else {
+        const body = (await itemsRes.json().catch(() => null)) as { items?: Item[] } | null;
+        if (!itemsRes.ok) {
+          toast.error('아이템을 불러오지 못했습니다.');
+        } else {
+          setItems(body?.items ?? []);
+        }
+      }
+
+      if (!rolesRes) {
+        toast.error('역할 목록을 불러오지 못했습니다.');
+      } else {
+        const body = (await rolesRes.json().catch(() => null)) as { roles?: GuildRole[] } | null;
+        if (!rolesRes.ok) {
+          toast.error('역할 목록을 불러오지 못했습니다.');
+        } else {
+          setGuildRoles(body?.roles ?? []);
+        }
+      }
+    };
+
+    void loadMetadata();
   }, [toast]);
 
   const resetDetail = useCallback(() => {
@@ -50,6 +85,7 @@ export default function UsersAdminClient() {
     setSetTouched(false);
     setSetPoints('');
     setDeltaPoints('100');
+    setMemberRoleIds([]);
     setDetailError(null);
   }, []);
 
@@ -86,12 +122,14 @@ export default function UsersAdminClient() {
           balance: number;
           equipped: { item_id: string | null } | null;
           inventory: InventoryRow[];
+          memberRoleIds?: string[];
           error?: string;
         };
         if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
         setBalance(body.balance ?? 0);
         setEquippedItemId(body.equipped?.item_id ?? null);
         setInv(body.inventory ?? []);
+        setMemberRoleIds(Array.isArray(body.memberRoleIds) ? body.memberRoleIds.filter((id) => typeof id === 'string') : []);
         setSetTouched(false);
         setSetPoints(String(body.balance ?? 0));
       } catch (e) {
@@ -223,8 +261,48 @@ export default function UsersAdminClient() {
     [lookup, toast]
   );
 
+  const toggleRole = useCallback(
+    async (roleId: string) => {
+      if (!activeUserId) {
+        toast.error('유저를 선택해 주세요.');
+        return;
+      }
+      if (rolesBusy) return;
+
+      const hasRole = memberRoleIds.includes(roleId);
+
+      try {
+        setRolesBusy(true);
+        const res = await fetch('/api/admin/users/roles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: activeUserId, roleId, op: hasRole ? 'remove' : 'add' })
+        });
+        const body = (await res.json().catch(() => null)) as { error?: string; memberRoleIds?: string[] } | null;
+        if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+
+        if (Array.isArray(body?.memberRoleIds)) {
+          setMemberRoleIds(body.memberRoleIds.filter((id): id is string => typeof id === 'string'));
+        } else {
+          setMemberRoleIds((prev) => (hasRole ? prev.filter((id) => id !== roleId) : [...prev, roleId]));
+        }
+
+        toast.success(hasRole ? '역할을 해제했습니다.' : '역할을 부여했습니다.', { durationMs: 2000 });
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : '역할 변경에 실패했습니다.');
+      } finally {
+        setRolesBusy(false);
+      }
+    },
+    [activeUserId, memberRoleIds, rolesBusy, toast]
+  );
+
   const invMap = useMemo(() => new Map(inv.map((r) => [r.item_id, r.qty])), [inv]);
   const roleItems = useMemo(() => items.filter((item) => item.discord_role_id), [items]);
+  const assignedRoles = useMemo(
+    () => guildRoles.filter((role) => memberRoleIds.includes(role.id)),
+    [guildRoles, memberRoleIds]
+  );
   const filteredUsers = useMemo(() => {
     const q = searchText.trim().toLowerCase();
     return users
@@ -254,7 +332,7 @@ export default function UsersAdminClient() {
       <div className="mx-auto max-w-5xl">
         <div className="text-[11px] tracking-[0.28em] muted-2">BANGULNYANG</div>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight font-bangul">유저 관리</h1>
-        <p className="mt-1 text-sm muted">포인트/인벤/장착 상태를 조정합니다.</p>
+        <p className="mt-1 text-sm muted">포인트/인벤/장착 상태와 디스코드 역할을 조정합니다.</p>
 
         <section className="mt-6 grid gap-4">
           <div className="rounded-3xl card-glass p-6">
@@ -431,6 +509,61 @@ export default function UsersAdminClient() {
                                   </div>
                                   <p className="mt-3 text-[11px] muted-2">
                                     역할 적용은 봇 워커가 처리합니다. 봇 권한/계층 문제로 실패할 수 있습니다.
+                                  </p>
+                                </div>
+
+                                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-4 lg:col-span-2">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <h3 className="text-sm font-semibold">역할 관리</h3>
+                                    <p className="text-xs muted">보유 역할: {assignedRoles.length}</p>
+                                  </div>
+                                  <p className="mt-1 text-xs muted">유저 설정에서 디스코드 역할을 바로 추가/해제합니다.</p>
+
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {assignedRoles.length === 0 ? (
+                                      <span className="text-xs muted">관리 가능한 보유 역할이 없습니다.</span>
+                                    ) : (
+                                      assignedRoles.map((role) => (
+                                        <span
+                                          key={`assigned-${role.id}`}
+                                          className="inline-flex items-center rounded-full border border-[color:var(--border)] bg-[color:var(--chip)] px-2.5 py-1 text-[11px]"
+                                        >
+                                          {role.name}
+                                        </span>
+                                      ))
+                                    )}
+                                  </div>
+
+                                  <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                    {guildRoles.length === 0 ? (
+                                      <div className="text-xs muted">변경 가능한 역할이 없습니다.</div>
+                                    ) : (
+                                      guildRoles.map((role) => {
+                                        const active = memberRoleIds.includes(role.id);
+                                        return (
+                                          <button
+                                            key={role.id}
+                                            type="button"
+                                            className={`rounded-xl border px-3 py-2 text-left text-sm transition disabled:opacity-60 ${
+                                              active
+                                                ? 'border-[color:var(--accent-pink)]/50 bg-[color:var(--accent-pink)]/10 text-[color:var(--fg)]'
+                                                : 'border-[color:var(--border)] bg-[color:var(--chip)] text-[color:var(--fg)] hover:bg-[color:var(--card)]'
+                                            }`}
+                                            onClick={() => void toggleRole(role.id)}
+                                            disabled={rolesBusy}
+                                          >
+                                            <div className="font-semibold">{role.name}</div>
+                                            <div className="mt-0.5 text-[11px] muted-2">
+                                              {active ? '클릭하면 해제' : '클릭하면 부여'}
+                                            </div>
+                                          </button>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+
+                                  <p className="mt-3 text-[11px] muted-2">
+                                    역할 변경은 디스코드 API로 즉시 반영됩니다. 봇 권한/역할 계층 문제로 실패할 수 있습니다.
                                   </p>
                                 </div>
 

@@ -19,7 +19,7 @@ export async function GET() {
   }
   const roles = (await res.json()) as Array<{ id: string; name: string; position: number; managed: boolean }>; 
   const filtered = roles
-    .filter((r) => !r.managed)
+    .filter((r) => !r.managed && r.id !== env.NYARU_GUILD_ID)
     .sort((a, b) => b.position - a.position)
     .map((r) => ({ id: r.id, name: r.name, position: r.position }));
   return NextResponse.json({ roles: filtered });
