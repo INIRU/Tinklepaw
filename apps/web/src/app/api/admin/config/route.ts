@@ -78,9 +78,15 @@ export async function PUT(req: Request) {
     stock_news_daily_window_end_hour?: number;
     stock_news_min_impact_bps?: number;
     stock_news_max_impact_bps?: number;
-      stock_news_bullish_scenarios?: string[];
-      stock_news_bearish_scenarios?: string[];
-    };
+    stock_whale_max_buy_qty?: number;
+    stock_whale_max_sell_qty?: number;
+    stock_shrimp_max_buy_qty?: number;
+    stock_shrimp_max_sell_qty?: number;
+    stock_ant_auto_buy_qty?: number;
+    stock_ant_auto_buy_cooldown_seconds?: number;
+    stock_news_bullish_scenarios?: string[];
+    stock_news_bearish_scenarios?: string[];
+  };
 
     const normalizeScenarioList = (input: string[] | undefined) => {
       if (!Array.isArray(input)) return undefined;
@@ -160,6 +166,25 @@ export async function PUT(req: Request) {
     if (nextMaxImpact !== undefined) patch.stock_news_max_impact_bps = nextMaxImpact;
     if (nextMinImpact !== undefined && nextMaxImpact !== undefined && nextMaxImpact < nextMinImpact) {
       patch.stock_news_max_impact_bps = nextMinImpact;
+    }
+
+    if (body.stock_whale_max_buy_qty !== undefined) {
+      patch.stock_whale_max_buy_qty = Math.max(1, Math.min(5000, Math.floor(body.stock_whale_max_buy_qty)));
+    }
+    if (body.stock_whale_max_sell_qty !== undefined) {
+      patch.stock_whale_max_sell_qty = Math.max(1, Math.min(5000, Math.floor(body.stock_whale_max_sell_qty)));
+    }
+    if (body.stock_shrimp_max_buy_qty !== undefined) {
+      patch.stock_shrimp_max_buy_qty = Math.max(1, Math.min(1000, Math.floor(body.stock_shrimp_max_buy_qty)));
+    }
+    if (body.stock_shrimp_max_sell_qty !== undefined) {
+      patch.stock_shrimp_max_sell_qty = Math.max(1, Math.min(1000, Math.floor(body.stock_shrimp_max_sell_qty)));
+    }
+    if (body.stock_ant_auto_buy_qty !== undefined) {
+      patch.stock_ant_auto_buy_qty = Math.max(1, Math.min(500, Math.floor(body.stock_ant_auto_buy_qty)));
+    }
+    if (body.stock_ant_auto_buy_cooldown_seconds !== undefined) {
+      patch.stock_ant_auto_buy_cooldown_seconds = Math.max(10, Math.min(3600, Math.floor(body.stock_ant_auto_buy_cooldown_seconds)));
     }
 
     const bullishScenarios = normalizeScenarioList(body.stock_news_bullish_scenarios);

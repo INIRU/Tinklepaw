@@ -21,6 +21,7 @@ const AppConfigSchema = z.object({
   music_setup_message_id: z.string().nullable().optional(),
   bot_avatar_url: z.string().nullable().optional(),
   bot_sync_interval_ms: z.number().default(5000),
+  stock_market_maker_interval_ms: z.number().nullable().optional(),
   gacha_embed_color: z.string().default('#5865F2'),
   gacha_embed_title: z.string().default('🎰 가챠 뽑기'),
   gacha_embed_description: z.string().nullable().optional(),
@@ -81,7 +82,7 @@ export async function getAppConfig(): Promise<AppConfig> {
   const ctx = getBotContext();
   const { data, error } = await ctx.supabase
     .from('app_config')
-    .select('join_message_template, join_message_channel_id, music_command_channel_id, music_setup_embed_title, music_setup_embed_description, music_setup_embed_fields, music_setup_message_id, bot_avatar_url, bot_sync_interval_ms, gacha_embed_color, gacha_embed_title, gacha_embed_description, gacha_processing_title, gacha_processing_description, gacha_result_title, reward_points_per_interval, reward_interval_seconds, reward_daily_cap_points, reward_min_message_length, booster_chat_bonus_points, voice_reward_points_per_interval, voice_reward_interval_seconds, voice_reward_daily_cap_points, booster_voice_bonus_points, voice_interface_trigger_channel_id, voice_interface_category_id, error_log_channel_id, stock_news_enabled, stock_news_channel_id, stock_news_schedule_mode, stock_news_interval_minutes, stock_news_daily_window_start_hour, stock_news_daily_window_end_hour, stock_news_min_impact_bps, stock_news_max_impact_bps, stock_news_bullish_scenarios, stock_news_bearish_scenarios, stock_news_last_sent_at, stock_news_next_run_at, stock_news_force_run_at, stock_news_force_sentiment, stock_news_force_tier, stock_news_force_scenario, show_traceback_to_user')
+    .select('join_message_template, join_message_channel_id, music_command_channel_id, music_setup_embed_title, music_setup_embed_description, music_setup_embed_fields, music_setup_message_id, bot_avatar_url, bot_sync_interval_ms, stock_market_maker_interval_ms, gacha_embed_color, gacha_embed_title, gacha_embed_description, gacha_processing_title, gacha_processing_description, gacha_result_title, reward_points_per_interval, reward_interval_seconds, reward_daily_cap_points, reward_min_message_length, booster_chat_bonus_points, voice_reward_points_per_interval, voice_reward_interval_seconds, voice_reward_daily_cap_points, booster_voice_bonus_points, voice_interface_trigger_channel_id, voice_interface_category_id, error_log_channel_id, stock_news_enabled, stock_news_channel_id, stock_news_schedule_mode, stock_news_interval_minutes, stock_news_daily_window_start_hour, stock_news_daily_window_end_hour, stock_news_min_impact_bps, stock_news_max_impact_bps, stock_news_bullish_scenarios, stock_news_bearish_scenarios, stock_news_last_sent_at, stock_news_next_run_at, stock_news_force_run_at, stock_news_force_sentiment, stock_news_force_tier, stock_news_force_scenario, show_traceback_to_user')
     .eq('id', 1)
     .maybeSingle();
 
@@ -89,6 +90,7 @@ export async function getAppConfig(): Promise<AppConfig> {
   const parsed = AppConfigSchema.safeParse(data ?? {});
   const value = parsed.success ? parsed.data : {
     bot_sync_interval_ms: 5000,
+    stock_market_maker_interval_ms: null,
     gacha_embed_color: '#5865F2',
     gacha_embed_title: '🎰 가챠 뽑기',
     gacha_embed_description: null,

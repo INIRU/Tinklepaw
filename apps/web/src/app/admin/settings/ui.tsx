@@ -62,6 +62,12 @@ type AppConfig = {
   stock_news_max_impact_bps: number;
   stock_news_bullish_scenarios: string[];
   stock_news_bearish_scenarios: string[];
+  stock_whale_max_buy_qty: number;
+  stock_whale_max_sell_qty: number;
+  stock_shrimp_max_buy_qty: number;
+  stock_shrimp_max_sell_qty: number;
+  stock_ant_auto_buy_qty: number;
+  stock_ant_auto_buy_cooldown_seconds: number;
   stock_news_last_sent_at?: string | null;
   stock_news_next_run_at?: string | null;
   stock_news_force_run_at?: string | null;
@@ -471,6 +477,12 @@ export default function SettingsClient() {
       stock_news_max_impact_bps: Number(cfgBody.stock_news_max_impact_bps ?? 260),
       stock_news_bullish_scenarios: bullishScenarios,
       stock_news_bearish_scenarios: bearishScenarios,
+      stock_whale_max_buy_qty: Number(cfgBody.stock_whale_max_buy_qty ?? 320),
+      stock_whale_max_sell_qty: Number(cfgBody.stock_whale_max_sell_qty ?? 320),
+      stock_shrimp_max_buy_qty: Number(cfgBody.stock_shrimp_max_buy_qty ?? 28),
+      stock_shrimp_max_sell_qty: Number(cfgBody.stock_shrimp_max_sell_qty ?? 28),
+      stock_ant_auto_buy_qty: Number(cfgBody.stock_ant_auto_buy_qty ?? 8),
+      stock_ant_auto_buy_cooldown_seconds: Number(cfgBody.stock_ant_auto_buy_cooldown_seconds ?? 120),
       stock_news_last_sent_at: cfgBody.stock_news_last_sent_at ?? null,
       stock_news_next_run_at: cfgBody.stock_news_next_run_at ?? null,
       stock_news_force_run_at: cfgBody.stock_news_force_run_at ?? null,
@@ -1287,6 +1299,85 @@ export default function SettingsClient() {
           <div>
             <div className="muted-2">수동 요청 대기</div>
             <div className="text-[color:var(--fg)]">{cfg.stock_news_force_run_at ? '있음' : '없음'}</div>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-[color:var(--line)] bg-[color:var(--chip)]/70 p-4">
+          <h3 className="text-sm font-semibold">시장 메이커 설정</h3>
+          <p className="mt-1 text-xs muted">고래/새우 최대 수량과 개미 자동 매수 수량·쿨타임을 설정합니다.</p>
+
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="text-sm">
+              고래 최대 매수(주)
+              <input
+                className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+                type="number"
+                min={1}
+                max={5000}
+                value={cfg.stock_whale_max_buy_qty}
+                onChange={(e) => setCfg({ ...cfg, stock_whale_max_buy_qty: Number(e.target.value) })}
+              />
+            </label>
+
+            <label className="text-sm">
+              고래 최대 매도(주)
+              <input
+                className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+                type="number"
+                min={1}
+                max={5000}
+                value={cfg.stock_whale_max_sell_qty}
+                onChange={(e) => setCfg({ ...cfg, stock_whale_max_sell_qty: Number(e.target.value) })}
+              />
+            </label>
+
+            <label className="text-sm">
+              새우 최대 매수(주)
+              <input
+                className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+                type="number"
+                min={1}
+                max={1000}
+                value={cfg.stock_shrimp_max_buy_qty}
+                onChange={(e) => setCfg({ ...cfg, stock_shrimp_max_buy_qty: Number(e.target.value) })}
+              />
+            </label>
+
+            <label className="text-sm">
+              새우 최대 매도(주)
+              <input
+                className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+                type="number"
+                min={1}
+                max={1000}
+                value={cfg.stock_shrimp_max_sell_qty}
+                onChange={(e) => setCfg({ ...cfg, stock_shrimp_max_sell_qty: Number(e.target.value) })}
+              />
+            </label>
+
+            <label className="text-sm">
+              개미 자동 매수(주)
+              <input
+                className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+                type="number"
+                min={1}
+                max={500}
+                value={cfg.stock_ant_auto_buy_qty}
+                onChange={(e) => setCfg({ ...cfg, stock_ant_auto_buy_qty: Number(e.target.value) })}
+              />
+            </label>
+
+            <label className="text-sm">
+              개미 자동 매수 쿨타임(초)
+              <input
+                className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+                type="number"
+                min={10}
+                max={3600}
+                value={cfg.stock_ant_auto_buy_cooldown_seconds}
+                onChange={(e) => setCfg({ ...cfg, stock_ant_auto_buy_cooldown_seconds: Number(e.target.value) })}
+              />
+            </label>
           </div>
         </div>
       </section>

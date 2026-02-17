@@ -59,6 +59,12 @@ export async function getOrInitAppConfig() {
       lottery_bronze_payout_points: 700,
       lottery_jackpot_pool_points: 0,
       lottery_activity_jackpot_rate_pct: 10,
+      stock_whale_max_buy_qty: 320,
+      stock_whale_max_sell_qty: 320,
+      stock_shrimp_max_buy_qty: 28,
+      stock_shrimp_max_sell_qty: 28,
+      stock_ant_auto_buy_qty: 8,
+      stock_ant_auto_buy_cooldown_seconds: 120,
     })
     .select('*')
     .single();

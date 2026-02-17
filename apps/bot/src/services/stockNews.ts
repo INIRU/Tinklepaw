@@ -121,7 +121,7 @@ const DEFAULT_STOCK_SYMBOL = 'KURO';
 const DEFAULT_STOCK_DISPLAY_NAME = '쿠로 전자';
 const SENTIMENT_BULLISH_PROBABILITY = 0.44;
 const SENTIMENT_BEARISH_PROBABILITY = 0.44;
-const RECENT_NEWS_PROMPT_COUNT = 6;
+const RECENT_NEWS_PROMPT_COUNT = 5;
 const RECENT_NEWS_BODY_SNIPPET_MAX = 88;
 const FORCED_SCENARIO_MAX = 120;
 
@@ -558,6 +558,8 @@ const buildGeminiDraft = async (params: {
     '중요: sentiment를 기계적으로 교대하지 마. (호재->악재->호재 같은 단순 반복 금지)',
     '직전 기사와 반대 감정을 의무적으로 고르지 말고, 시장 신호가 같으면 같은 감정을 연속 선택할 수 있다.',
     '판단 근거가 약하거나 신호가 혼재하면 neutral을 우선 고려해.',
+    '최근 감정 요약에서 악재가 4회 이상 연속이면, 강한 하락 근거가 없는 경우 neutral 또는 bullish를 우선 고려해.',
+    '최근 감정 요약에서 호재가 4회 이상 연속이면, 강한 상승 근거가 없는 경우 neutral 또는 bearish를 우선 고려해.',
     `이유 키워드 \`${reasonSeed}\`를 반드시 포함해.`,
     '최근 뉴스와 headline/핵심 이유가 과도하게 중복되지 않도록, 자연스러운 다음 전개처럼 작성.',
     'body에는 가격/등락률/bps 같은 정확한 숫자를 쓰지 말고, 방향성과 분위기만 서술형으로 작성.',
