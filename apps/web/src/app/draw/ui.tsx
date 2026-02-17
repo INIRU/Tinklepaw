@@ -83,6 +83,22 @@ const toSafeNumber = (value: unknown, fallback = 0) => {
   return fallback;
 };
 
+const RARITY_PRIORITY: Record<DrawResult['rarity'], number> = {
+  R: 1,
+  S: 2,
+  SS: 3,
+  SSS: 4
+};
+
+const RARITY_DISPLAY_ORDER = ['SSS', 'SS', 'S', 'R'] as const;
+
+function getResultLabel(item: DrawResult) {
+  const reward = item.rewardPoints ?? 0;
+  if (!item.discordRoleId && reward > 0) return `+${reward}P`;
+  if (!item.discordRoleId && reward === 0) return '꽝';
+  return item.name;
+}
+
 const PityGauge = ({
   current,
   max,
@@ -186,7 +202,6 @@ export default function DrawClient() {
   // and reveal the actual upgraded SSS in the result modal.
   const sceneRarity = useMemo<DrawResult['rarity'] | null>(() => {
     if (drawResults.length === 0) return null;
-    const order: Record<DrawResult['rarity'], number> = { R: 1, S: 2, SS: 3, SSS: 4 };
 
     const hasNaturalSSS = drawResults.some(
       (r) => r.rarity === 'SSS' && !r.isVariant,
@@ -199,7 +214,7 @@ export default function DrawClient() {
     if (withoutVariantSSS.length === 0) return 'SS';
 
     return withoutVariantSSS.reduce((prev, curr) =>
-      order[curr.rarity] > order[prev.rarity] ? curr : prev,
+      RARITY_PRIORITY[curr.rarity] > RARITY_PRIORITY[prev.rarity] ? curr : prev,
     ).rarity;
   }, [drawResults]);
 
@@ -315,7 +330,7 @@ export default function DrawClient() {
   }, [poolItems]);
 
   const activeHistoryRarities = useMemo(() => {
-    return (['SSS', 'SS', 'S', 'R'] as const).filter((r) => historyRarities[r]);
+    return RARITY_DISPLAY_ORDER.filter((r) => historyRarities[r]);
   }, [historyRarities]);
 
   const historyGroups = useMemo(() => {
@@ -682,24 +697,28 @@ export default function DrawClient() {
 
   const RESULT_SLOT = {
     R: {
-      frame: 'border-gray-500/40 bg-gray-500/10',
-      text: 'text-gray-300',
-      glow: ''
+      frame: 'border-slate-400/35 bg-slate-500/8',
+      text: 'text-slate-200',
+      glow: '',
+      shimmer: 'from-slate-300/6 via-slate-100/3 to-transparent'
     },
     S: {
-      frame: 'border-blue-500/40 bg-blue-500/10',
-      text: 'text-blue-300',
-      glow: 'shadow-[0_0_18px_rgba(59,130,246,0.2)]'
+      frame: 'border-sky-400/45 bg-sky-500/10',
+      text: 'text-sky-200',
+      glow: 'shadow-[0_0_20px_rgba(56,189,248,0.25)]',
+      shimmer: 'from-sky-300/10 via-sky-100/4 to-transparent'
     },
     SS: {
-      frame: 'border-purple-500/40 bg-purple-500/10',
-      text: 'text-purple-300',
-      glow: 'shadow-[0_0_24px_rgba(168,85,247,0.25)]'
+      frame: 'border-rose-400/45 bg-rose-500/12',
+      text: 'text-rose-200',
+      glow: 'shadow-[0_0_24px_rgba(251,113,133,0.3)]',
+      shimmer: 'from-rose-300/12 via-rose-100/5 to-transparent'
     },
     SSS: {
-      frame: 'border-amber-400/50 bg-amber-400/10',
-      text: 'text-amber-300',
-      glow: 'shadow-[0_0_30px_rgba(251,191,36,0.35)]'
+      frame: 'border-amber-300/55 bg-amber-400/12',
+      text: 'text-amber-200',
+      glow: 'shadow-[0_0_34px_rgba(251,191,36,0.38)]',
+      shimmer: 'from-amber-300/15 via-amber-100/8 to-transparent'
     }
   } as const;
 
@@ -761,14 +780,14 @@ export default function DrawClient() {
     <main className='flex h-[calc(100vh-64px)] h-[calc(100dvh-64px)] min-h-[calc(100svh-64px)] overflow-hidden overflow-x-hidden'>
       {/* Left Sidebar - Pool List */}
       <aside
-        className={`w-80 border-r border-[color:var(--border)] bg-[color:var(--card)] p-4 flex-shrink-0 z-10 hidden md:block ${
+        className={`w-72 border-r border-[color:var(--border)] bg-[color:var(--card)] p-4 flex-shrink-0 z-10 hidden md:block ${
           pools.length > 0 ? 'overflow-y-auto' : 'overflow-y-hidden'
         }`}
       >
         <div className='text-[11px] tracking-[0.28em] muted-2 mb-6'>
           BANGULNYANG
         </div>
-        <h1 className='text-2xl font-bold tracking-tight mb-1 font-bangul'>
+        <h1 className='text-xl font-bold tracking-tight mb-1 font-bangul'>
           가챠
         </h1>
         <p className='text-xs muted mb-6'>원하는 풀을 선택하세요.</p>
@@ -844,41 +863,49 @@ export default function DrawClient() {
           <GachaScene
             isDrawing={isDrawing}
             rarity={sceneRarity ?? undefined}
+            poolBannerUrl={selectedPool?.banner_image_url ?? null}
+            poolName={selectedPool?.name ?? null}
             onAnimationCompleteAction={onAnimationComplete}
           />
         </div>
 
+        <div className='pointer-events-none absolute inset-0 z-[1]'>
+          <div className='absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(255,153,199,0.28),transparent_56%)]' />
+          <div className='absolute inset-x-0 top-0 h-52 bg-gradient-to-b from-black/24 via-black/8 to-transparent' />
+          <div className='absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/42 via-black/16 to-transparent' />
+        </div>
+
         {/* Overlay UI */}
         <div
-          className={`absolute inset-0 z-10 pointer-events-none flex flex-col justify-between p-4 sm:p-8 transition-opacity duration-500 ${isDrawing ? 'opacity-0' : 'opacity-100'}`}
+          className={`absolute inset-0 z-10 pointer-events-none flex flex-col justify-between p-3 sm:p-5 transition-opacity duration-500 ${isDrawing ? 'opacity-0' : 'opacity-100'}`}
         >
           {/* Top Left Info (Mobile) */}
           <div className='absolute top-[calc(env(safe-area-inset-top)+0.75rem)] left-4 pointer-events-auto flex md:hidden items-center gap-2'>
             <button
               onClick={() => setShowProbModal(true)}
-              className='flex h-9 w-9 items-center justify-center rounded-xl bg-[color:var(--card)]/80 backdrop-blur-md border border-[color:var(--border)] text-[color:var(--muted)] shadow-sm cursor-pointer'
+              className='flex h-8 w-8 items-center justify-center rounded-lg bg-[color:var(--card)]/80 backdrop-blur-md border border-[color:var(--border)] text-[color:var(--muted)] shadow-sm cursor-pointer'
               title='확률 정보'
             >
-              <Info className='w-5 h-5' />
+              <Info className='w-4 h-4' />
             </button>
             <button
               onClick={() => {
                 setHistoryPoolId((prev) => prev || selectedPoolId);
                 setShowHistoryModal(true);
               }}
-              className='flex h-9 w-9 items-center justify-center rounded-xl bg-[color:var(--card)]/80 backdrop-blur-md border border-[color:var(--border)] text-[color:var(--muted)] shadow-sm cursor-pointer'
+              className='flex h-8 w-8 items-center justify-center rounded-lg bg-[color:var(--card)]/80 backdrop-blur-md border border-[color:var(--border)] text-[color:var(--muted)] shadow-sm cursor-pointer'
               title='뽑기 내역'
             >
-              <History className='w-5 h-5' />
+              <History className='w-4 h-4' />
             </button>
           </div>
 
-          <div className='absolute top-[calc(env(safe-area-inset-top)+0.75rem)] right-4 pointer-events-auto flex items-center gap-2 bg-[color:var(--card)]/80 backdrop-blur-md px-3 py-2 rounded-xl border border-[color:var(--border)] shadow-sm'>
-            <Coins className='w-3.5 h-3.5 text-[color:var(--accent-pink)] sm:hidden' />
-            <span className='text-[10px] sm:text-xs text-[color:var(--muted)] mr-1 sm:mr-2'>
-              보유 포인트
-            </span>
-            <span className='text-xs sm:text-sm font-bold text-[color:var(--accent-pink)]'>
+          <div className='absolute top-[calc(env(safe-area-inset-top)+0.75rem)] right-4 pointer-events-auto rounded-xl border border-[color:var(--border)] bg-[color:var(--card)]/86 px-2.5 py-2 shadow-[0_8px_22px_rgba(0,0,0,0.2)] backdrop-blur-md'>
+            <div className='mb-1 flex items-center gap-1.5'>
+              <Coins className='h-3 w-3 text-[color:var(--accent-pink)]' />
+              <span className='text-[10px] font-semibold tracking-[0.18em] muted-2'>POINTS</span>
+            </div>
+            <span className='text-xs font-bold text-[color:var(--accent-pink)]'>
               {userStatus ? (
                 `${toSafeNumber(userStatus.balance).toLocaleString()} P`
               ) : (
@@ -894,17 +921,18 @@ export default function DrawClient() {
                 <m.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  className='group flex items-center gap-2 bg-[color:var(--accent-pink)]/10 backdrop-blur-md px-4 py-2 rounded-2xl border border-[color:var(--accent-pink)]/30 shadow-lg mb-2 pointer-events-auto cursor-pointer md:bg-[color:var(--card)]/80 md:border-[color:var(--border)] md:cursor-default'
+                  className='group mb-1.5 flex items-center gap-2 rounded-xl border border-[color:var(--accent-pink)]/30 bg-[color:var(--accent-pink)]/10 px-3 py-1.5 shadow-lg backdrop-blur-md pointer-events-auto cursor-pointer md:bg-[color:var(--card)]/80 md:border-[color:var(--border)] md:cursor-default'
                   onClick={() => setShowPoolListMobile(true)}
                 >
                   <span className='text-[10px] font-bold text-[color:var(--accent-pink)] md:hidden'>
                     테마
                   </span>
-                  <span className='text-xs sm:text-sm font-bold truncate max-w-[120px] sm:max-w-none'>
+                  <span className='text-[11px] sm:text-xs font-bold truncate max-w-[120px] sm:max-w-none'>
                     {selectedPool.name}
                   </span>
                   <ChevronDown className='w-3.5 h-3.5 text-[color:var(--accent-pink)] md:hidden' />
                 </m.button>
+
                 {selectedPool.pity_threshold && userStatus && (
                   <PityGauge
                     current={userStatus.pityCounter}
@@ -947,52 +975,59 @@ export default function DrawClient() {
           </div>
 
           {/* Footer / Controls */}
-          <div className='flex justify-center gap-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] sm:pb-8 pointer-events-auto'>
-            <button
-              type='button'
-              onClick={() => void onDraw(1)}
-              disabled={busy || !selectedPoolId || isDrawing}
-              className={`
-                group relative px-5 py-3.5 bg-[color:var(--card)] hover:bg-[color:var(--chip)]
-                border border-[color:var(--border)]
-                rounded-2xl font-bold text-[color:var(--fg)] shadow-lg
-                transition-all duration-300 transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed
-                cursor-pointer overflow-hidden min-w-[110px] sm:px-8 sm:py-4 sm:min-w-[140px]
-              `}
-            >
-              <span className='relative z-10 flex flex-col items-center'>
-                <span className='text-xs sm:text-sm font-bold'>1회</span>
-                <span className='text-[10px] sm:text-xs muted mt-0.5 sm:mt-1'>
-                  {selectedPool?.cost_points ?? 0}P
-                </span>
-              </span>
-            </button>
+          <div className='pointer-events-auto pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:pb-6'>
+            <div className='mx-auto w-full max-w-lg rounded-[22px] border border-[color:var(--border)] bg-[color:var(--card)]/86 p-2.5 shadow-[0_14px_34px_rgba(0,0,0,0.28)] backdrop-blur-md sm:p-3'>
+              <div className='mb-2.5 flex items-center justify-between gap-2 px-1 text-[9px] sm:text-[10px]'>
+                <span className='font-semibold text-[color:var(--fg)]'>원하는 결과가 나올 때까지 이어서 뽑기</span>
+                <span className='font-mono muted'>비용 {selectedPool?.cost_points ?? 0}P / 회</span>
+              </div>
 
-            <button
-              type='button'
-              onClick={() => void onDraw(10)}
-              disabled={busy || !selectedPoolId || isDrawing}
-              className={`
-                group relative px-5 py-3.5 bg-gradient-to-r from-[#ff5fa2] to-[#ff8bc2] 
-                rounded-2xl font-bold text-white shadow-lg shadow-pink-500/20 
-                transition-all duration-300 transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed
-                cursor-pointer overflow-hidden min-w-[110px] sm:px-8 sm:py-4 sm:min-w-[140px]
-              `}
-            >
-              <span className='relative z-10 flex flex-col items-center'>
-                {busy || isDrawing ? (
-                  <span className='text-xs sm:text-sm'>진행 중…</span>
-                ) : (
-                  <>
-                    <span className='text-xs sm:text-sm font-bold'>10회</span>
-                    <span className='text-[10px] sm:text-xs text-white/80 mt-0.5 sm:mt-1'>
-                      {(selectedPool?.cost_points ?? 0) * 10}P
+              <div className='grid grid-cols-2 gap-2.5'>
+                <button
+                  type='button'
+                  onClick={() => void onDraw(1)}
+                  disabled={busy || !selectedPoolId || isDrawing}
+                  className={`
+                    group relative overflow-hidden rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)]/70 px-4 py-2.5 text-[color:var(--fg)] shadow-lg
+                    transition-all duration-300 hover:-translate-y-0.5 hover:bg-[color:var(--chip)] active:translate-y-0
+                    disabled:opacity-50 disabled:translate-y-0 disabled:cursor-not-allowed cursor-pointer
+                  `}
+                >
+                  <span className='relative z-10 flex flex-col items-center'>
+                    <span className='text-xs font-bold'>1회 뽑기</span>
+                    <span className='mt-0.5 text-[10px] muted'>
+                      {selectedPool?.cost_points ?? 0}P
                     </span>
-                  </>
-                )}
-              </span>
-              <div className='absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300' />
-            </button>
+                  </span>
+                </button>
+
+                <button
+                  type='button'
+                  onClick={() => void onDraw(10)}
+                  disabled={busy || !selectedPoolId || isDrawing}
+                  className={`
+                    group relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#ff5fa2] via-[#ff7f9f] to-[#ffac6d]
+                    px-4 py-2.5 text-white shadow-lg shadow-rose-500/25
+                    transition-all duration-300 hover:-translate-y-0.5 hover:brightness-110 active:translate-y-0
+                    disabled:opacity-50 disabled:translate-y-0 disabled:cursor-not-allowed cursor-pointer
+                  `}
+                >
+                  <span className='relative z-10 flex flex-col items-center'>
+                    {busy || isDrawing ? (
+                      <span className='text-xs'>진행 중…</span>
+                    ) : (
+                      <>
+                        <span className='text-xs font-bold'>10회 연속</span>
+                        <span className='mt-0.5 text-[10px] text-white/85'>
+                          {(selectedPool?.cost_points ?? 0) * 10}P
+                        </span>
+                      </>
+                    )}
+                  </span>
+                  <div className='absolute inset-0 translate-y-full bg-white/20 transition-transform duration-300 group-hover:translate-y-0' />
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Desktop Info */}
@@ -1020,14 +1055,16 @@ export default function DrawClient() {
         {/* Result Modal Overlay */}
         <AnimatePresence>
           {showResultModal && drawResults.length > 0 && (
-            <div className='absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm'>
+            <div className='absolute inset-0 z-50 flex items-center justify-center bg-[radial-gradient(circle_at_50%_30%,rgba(255,156,206,0.2),rgba(0,0,0,0.78))] p-2 backdrop-blur-sm sm:p-3'>
               <m.div
                 ref={resultModalRef}
                 initial={{ opacity: 0, scale: 0.8, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9 }}
-                className='relative max-w-4xl w-full bg-[color:var(--card)] border border-[color:var(--border)] rounded-3xl p-8 shadow-2xl max-h-[90vh] overflow-y-auto'
+                className='relative max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-[24px] border border-[color:var(--border)] bg-[color:var(--card)]/95 shadow-[0_28px_64px_rgba(0,0,0,0.42)]'
               >
+                <div className='pointer-events-none absolute inset-x-0 top-0 h-36 bg-gradient-to-b from-[color:var(--accent-pink)]/14 via-[color:var(--accent-pink)]/5 to-transparent' />
+
                 <button
                   onClick={() => setShowResultModal(false)}
                   className='absolute top-4 right-4 z-20 p-2 rounded-full hover:bg-[color:var(--chip)] transition-colors cursor-pointer'
@@ -1035,20 +1072,21 @@ export default function DrawClient() {
                   <X className='w-5 h-5 text-[color:var(--muted)]' />
                 </button>
 
-                <div className='text-center pt-2 pb-6'>
-                  <h2 className='text-2xl font-bold mb-6 font-bangul'>
-                    뽑기 결과
-                  </h2>
+                <div className='relative max-h-[90vh] overflow-y-auto px-3 pb-4 pt-4 sm:px-6 sm:pt-6'>
+                  <div className='mb-4 text-center'>
+                    <p className='text-[11px] tracking-[0.28em] muted-2'>DRAW COMPLETE</p>
+                    <h2 className='mt-1 text-xl font-bold font-bangul sm:text-2xl'>뽑기 결과</h2>
+                  </div>
 
                   <div
-                    className={`grid gap-4 ${drawResults.length === 1 ? 'place-items-center' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5'}`}
+                    className={`grid gap-2.5 sm:gap-3 ${drawResults.length === 1 ? 'mx-auto max-w-xs place-items-center' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5'}`}
                   >
                     {drawResults.map((item, idx) => {
                       const rarityStyle = RESULT_SLOT[item.rarity] ?? RESULT_SLOT.R;
                       const reward = item.rewardPoints ?? 0;
                       const isPoint = !item.discordRoleId && reward > 0;
                       const isMiss = !item.discordRoleId && reward === 0;
-                      const label = isPoint ? `+${reward}P` : isMiss ? '꽝' : item.name;
+                      const label = getResultLabel(item);
                       const isVariant = Boolean(item.isVariant);
 
                       return (
@@ -1056,13 +1094,14 @@ export default function DrawClient() {
                           key={`${item.itemId}-${idx}`}
                           data-result-card
                           data-rarity={item.rarity}
-                          className='group flex flex-col items-center gap-2 w-full'
+                          className='group flex w-full flex-col items-center gap-2'
                         >
                           <div
-                            className={`relative w-full aspect-square rounded-2xl border-2 p-2 transition-all ${
+                            className={`relative w-full aspect-square rounded-xl border-2 p-2 transition-all ${
                               drawResults.length === 1 ? 'max-w-xs' : ''
-                            } ${rarityStyle.frame} ${isVariant ? 'ring-2 ring-amber-300/70 shadow-[0_0_35px_rgba(251,191,36,0.35)]' : rarityStyle.glow} shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08),0_12px_24px_rgba(0,0,0,0.25)]`}
+                            } ${rarityStyle.frame} ${isVariant ? 'ring-2 ring-amber-300/70 shadow-[0_0_35px_rgba(251,191,36,0.35)]' : rarityStyle.glow} shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08),0_12px_24px_rgba(0,0,0,0.28)]`}
                           >
+                            <div className={`pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-br ${rarityStyle.shimmer}`} />
                             <div className='absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000 pointer-events-none' />
 
                             <div className='absolute top-2 left-2 z-10'>
@@ -1082,15 +1121,15 @@ export default function DrawClient() {
 
                             <div className='relative flex h-full w-full items-center justify-center'>
                               {isPoint ? (
-                                <div className='flex flex-col items-center gap-2'>
-                                  <Coins className='h-10 w-10 text-[color:var(--accent-pink)]' />
+                                <div className='flex flex-col items-center gap-1.5'>
+                                  <Coins className='h-9 w-9 text-[color:var(--accent-pink)]' />
                                   <span className='text-xs font-bold text-[color:var(--fg)]'>+{reward}P</span>
                                 </div>
                               ) : item.roleIconUrl ? (
                                 <img
                                   src={item.roleIconUrl}
                                   alt={item.name}
-                                  className='h-14 w-14 object-cover'
+                                  className='h-12 w-12 rounded-lg border border-white/15 object-cover shadow-md'
                                   loading='lazy'
                                   referrerPolicy='no-referrer'
                                 />
@@ -1100,21 +1139,31 @@ export default function DrawClient() {
                             </div>
 
                             <div
-                              className='absolute bottom-2 left-1/2 -translate-x-1/2 px-2.5 py-1 text-[10px] font-semibold text-[color:var(--fg)] bg-[color:var(--chip)]/80 backdrop-blur-sm border border-[color:var(--border)] rounded-lg shadow-sm truncate max-w-[80%]'
+                              className='absolute bottom-1.5 left-1/2 max-w-[82%] -translate-x-1/2 truncate rounded-md border border-[color:var(--border)] bg-[color:var(--chip)]/80 px-2 py-0.5 text-[9px] font-semibold text-[color:var(--fg)] shadow-sm backdrop-blur-sm'
                               title={label}
                             >
                               {label}
                             </div>
+                          </div>
+
+                          <div className='text-[9px] font-semibold tracking-wide text-[color:var(--muted)]'>
+                            {isVariant
+                              ? '변동 업그레이드'
+                              : isPoint
+                                ? '포인트 보상'
+                                : isMiss
+                                  ? '다음 기회'
+                                  : '역할 획득'}
                           </div>
                         </div>
                       );
                     })}
                   </div>
 
-                  <div className='mt-8 flex flex-wrap gap-3 justify-center'>
+                  <div className='mt-5 flex flex-wrap justify-center gap-2.5'>
                     <button
                       onClick={() => setShowResultModal(false)}
-                      className='px-6 py-3 rounded-xl border border-[color:var(--border)] hover:bg-[color:var(--chip)] transition text-sm font-medium cursor-pointer'
+                      className='rounded-lg border border-[color:var(--border)] px-4 py-2 text-xs font-medium transition hover:bg-[color:var(--chip)] cursor-pointer'
                     >
                       닫기
                     </button>
@@ -1123,7 +1172,7 @@ export default function DrawClient() {
                         setShowResultModal(false);
                         void onDraw(drawResults.length);
                       }}
-                      className='px-6 py-3 rounded-xl bg-[color:var(--accent-pink)] text-white hover:brightness-110 transition text-sm font-bold cursor-pointer'
+                      className='rounded-lg bg-gradient-to-r from-[#ff5fa2] via-[#ff7f9f] to-[#ffac6d] px-4 py-2 text-xs font-bold text-white shadow-lg shadow-rose-500/25 transition hover:brightness-110 cursor-pointer'
                     >
                       다시 뽑기 ({drawResults.length}회)
                     </button>

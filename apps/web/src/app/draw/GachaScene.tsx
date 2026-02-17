@@ -3,7 +3,7 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { PerspectiveCamera, Sparkles, Stars } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import gsap from 'gsap';
 import * as THREE from 'three';
 
@@ -11,6 +11,8 @@ type GachaSceneProps = {
   isDrawing: boolean;
   rarity?: string | null;
   onAnimationCompleteAction?: () => void;
+  poolBannerUrl?: string | null;
+  poolName?: string | null;
 };
 
 const COLORS = {
@@ -24,6 +26,7 @@ const COLORS = {
 const BASE_TOP_COLOR = new THREE.Color('#888');
 const BASE_BOTTOM_COLOR = new THREE.Color('#999');
 const BASE_BAND_COLOR = new THREE.Color('#444');
+const BASE_LABEL_COLOR = new THREE.Color('#f8f4ff');
 const BLACK = new THREE.Color('#000');
 
 type DrawMotionState = {
@@ -62,15 +65,72 @@ const createDrawMotion = (): DrawMotionState => ({
   flash: 0,
 });
 
+function createFallbackLabelTexture(poolName: string | null | undefined) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 384;
+  const ctx = canvas.getContext('2d');
+
+  if (!ctx) {
+    const fallback = new THREE.CanvasTexture(canvas);
+    fallback.colorSpace = THREE.SRGBColorSpace;
+    fallback.wrapS = THREE.RepeatWrapping;
+    fallback.wrapT = THREE.ClampToEdgeWrapping;
+    fallback.repeat.set(1, 1);
+    return fallback;
+  }
+
+  const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+  gradient.addColorStop(0, '#2f2449');
+  gradient.addColorStop(0.5, '#61336d');
+  gradient.addColorStop(1, '#3d1f42');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.globalAlpha = 0.22;
+  for (let i = -1; i <= 6; i += 1) {
+    ctx.fillStyle = i % 2 === 0 ? '#ffffff' : '#ffd4ef';
+    ctx.fillRect(i * 180, 0, 90, canvas.height);
+  }
+  ctx.globalAlpha = 1;
+
+  const title = (poolName?.trim() || 'BANGULNYANG DRAW').slice(0, 26);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  ctx.font = '700 44px ui-sans-serif, system-ui, -apple-system';
+  ctx.shadowColor = 'rgba(0,0,0,0.36)';
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = '#fff8ff';
+  ctx.fillText(title, canvas.width / 2, canvas.height / 2 - 8);
+
+  ctx.shadowBlur = 0;
+  ctx.font = '600 24px ui-sans-serif, system-ui, -apple-system';
+  ctx.fillStyle = 'rgba(255, 232, 248, 0.92)';
+  ctx.fillText('LIMITED GACHA', canvas.width / 2, canvas.height / 2 + 54);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.repeat.set(1, 1);
+  texture.generateMipmaps = true;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  return texture;
+}
+
 function CinematicCapsule({
   isDrawing,
   rarity,
   cameraRef,
+  labelTexture,
   onComplete,
 }: {
   isDrawing: boolean;
   rarity?: string | null;
   cameraRef: { current: THREE.PerspectiveCamera | null };
+  labelTexture: THREE.Texture | null;
   onComplete?: () => void;
 }) {
   const { viewport } = useThree();
@@ -89,6 +149,7 @@ function CinematicCapsule({
   const shockRef = useRef<THREE.Mesh>(null);
   const shockEchoRef = useRef<THREE.Mesh>(null);
   const flashRef = useRef<THREE.Mesh>(null);
+  const labelWrapRef = useRef<THREE.Mesh>(null);
 
   const motion = useRef<DrawMotionState>(createDrawMotion());
   const timelineRef = useRef<gsap.core.Timeline | null>(null);
@@ -253,6 +314,7 @@ function CinematicCapsule({
     const bandMat = bandRef.current.material as THREE.MeshStandardMaterial;
     const coreMat = coreRef.current.material as THREE.MeshStandardMaterial;
     const shellMat = shellRef.current ? (shellRef.current.material as THREE.MeshStandardMaterial) : null;
+    const labelWrapMat = labelWrapRef.current ? (labelWrapRef.current.material as THREE.MeshStandardMaterial) : null;
 
     if (!isDrawing) {
       group.current.position.x = THREE.MathUtils.lerp(group.current.position.x, 0, delta * 6);
@@ -292,6 +354,15 @@ function CinematicCapsule({
       bandMat.color.lerp(BASE_BAND_COLOR, delta * 4);
       bandMat.emissive.lerp(BLACK, delta * 4);
       bandMat.emissiveIntensity = THREE.MathUtils.lerp(bandMat.emissiveIntensity, 0.06, delta * 5);
+
+      if (labelWrapRef.current && labelWrapMat) {
+        const idleWrapScale = THREE.MathUtils.lerp(labelWrapRef.current.scale.x, 1, delta * 6);
+        labelWrapRef.current.scale.setScalar(idleWrapScale);
+        labelWrapMat.color.lerp(BASE_LABEL_COLOR, delta * 4);
+        labelWrapMat.emissive.lerp(BLACK, delta * 4);
+        labelWrapMat.emissiveIntensity = THREE.MathUtils.lerp(labelWrapMat.emissiveIntensity, 0.06, delta * 6);
+        labelWrapMat.opacity = THREE.MathUtils.lerp(labelWrapMat.opacity, 0.92, delta * 6);
+      }
 
       coreRef.current.scale.setScalar(THREE.MathUtils.lerp(coreRef.current.scale.x, 0, delta * 6));
       coreMat.color.copy(BLACK);
@@ -405,6 +476,25 @@ function CinematicCapsule({
     bandMat.emissive.copy(targetThreeColor);
     bandMat.emissiveIntensity = 0.12 + anim.ring * 2.6 + heartbeatPulse * 0.6;
 
+    if (labelWrapRef.current && labelWrapMat) {
+      const wrapPulse = 1 + anim.glow * 0.05 + heartbeatPulse * 0.02;
+      const wrapCollapse = Math.max(0.001, 1 - anim.crack * 0.52 - anim.open * 1.12 - anim.burst * 0.36);
+      const wrapScale = wrapPulse * wrapCollapse;
+      const currentWrapScale = THREE.MathUtils.lerp(labelWrapRef.current.scale.x, wrapScale, delta * 10);
+      labelWrapRef.current.scale.setScalar(currentWrapScale);
+      labelWrapMat.color.copy(BASE_LABEL_COLOR).lerp(targetThreeColor, 0.06 + anim.glow * 0.2);
+      labelWrapMat.emissive.copy(targetThreeColor);
+      labelWrapMat.emissiveIntensity = Math.max(
+        0,
+        0.08 + anim.glow * 0.52 - anim.crack * 0.28 - anim.open * 0.64 - anim.burst * 0.42,
+      );
+      labelWrapMat.opacity = THREE.MathUtils.clamp(
+        0.9 + anim.glow * 0.04 - anim.crack * 0.38 - anim.open * 0.98 - anim.burst * 0.48,
+        0,
+        0.95,
+      );
+    }
+
     const coreScale =
       0.08 +
       anim.glow * 0.75 +
@@ -508,20 +598,34 @@ function CinematicCapsule({
       <group ref={group} rotation={[0, 0, Math.PI / 4]}>
         {/* Top Half (Darker Plastic) */}
         <mesh ref={topRef} position={[0, 0, 0]}>
-          <sphereGeometry args={[1.2, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <sphereGeometry args={[1.2, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2 + 0.08]} />
           <meshStandardMaterial color="#888" metalness={0.6} roughness={0.4} />
         </mesh>
 
         {/* Bottom Half (Darker Plastic) */}
         <mesh ref={bottomRef} rotation={[Math.PI, 0, 0]} position={[0, 0, 0]}>
-          <sphereGeometry args={[1.2, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <sphereGeometry args={[1.2, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2 + 0.08]} />
           <meshStandardMaterial color="#999" metalness={0.6} roughness={0.4} />
         </mesh>
 
         {/* Band (Mechanical Ring) */}
-        <mesh ref={bandRef} rotation={[Math.PI / 2, 0, 0]}>
+        <mesh ref={bandRef} rotation={[Math.PI / 2, 0, 0]} visible={false}>
           <torusGeometry args={[1.25, 0.1, 16, 100]} />
           <meshStandardMaterial color="#444" metalness={0.8} roughness={0.2} />
+        </mesh>
+
+        <mesh ref={labelWrapRef}>
+          <sphereGeometry args={[1.212, 96, 64, 0, Math.PI * 2, Math.PI * 0.31, Math.PI * 0.38]} />
+          <meshStandardMaterial
+            map={labelTexture ?? undefined}
+            color="#f8f4ff"
+            metalness={0.18}
+            roughness={0.44}
+            emissive="#000"
+            emissiveIntensity={0.06}
+            transparent
+            opacity={0.92}
+          />
         </mesh>
 
         {/* Inner Core (The Item Light) */}
@@ -591,13 +695,87 @@ export function GachaScene({
   isDrawing,
   rarity,
   onAnimationCompleteAction,
+  poolBannerUrl,
+  poolName,
 }: GachaSceneProps) {
   const isSSS = rarity === 'SSS';
   const sceneCameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [labelTexture, setLabelTexture] = useState<THREE.Texture | null>(null);
+  const labelTextureRef = useRef<THREE.Texture | null>(null);
+
+  const setSceneLabelTexture = useCallback((nextTexture: THREE.Texture | null) => {
+    const previous = labelTextureRef.current;
+    if (previous && previous !== nextTexture) {
+      previous.dispose();
+    }
+    labelTextureRef.current = nextTexture;
+    setLabelTexture(nextTexture);
+  }, []);
+
   const sparkleColor = isSSS
     ? COLORS.SSS
     : COLORS[(rarity as keyof typeof COLORS) || 'DEFAULT'];
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const bannerUrl = poolBannerUrl?.trim() ?? '';
+    const fallbackTexture = createFallbackLabelTexture(poolName);
+    fallbackTexture.needsUpdate = true;
+
+    if (!bannerUrl) {
+      setSceneLabelTexture(fallbackTexture);
+      return;
+    }
+
+    let cancelled = false;
+    const textureLoader = new THREE.TextureLoader();
+
+    const onLoadTexture = (loadedTexture: THREE.Texture) => {
+      if (cancelled) {
+        loadedTexture.dispose();
+        return;
+      }
+
+      loadedTexture.colorSpace = THREE.SRGBColorSpace;
+      loadedTexture.wrapS = THREE.RepeatWrapping;
+      loadedTexture.wrapT = THREE.ClampToEdgeWrapping;
+      loadedTexture.repeat.set(1, 1);
+      loadedTexture.minFilter = THREE.LinearMipmapLinearFilter;
+      loadedTexture.magFilter = THREE.LinearFilter;
+      loadedTexture.generateMipmaps = true;
+      loadedTexture.needsUpdate = true;
+
+      fallbackTexture.dispose();
+      setSceneLabelTexture(loadedTexture);
+    };
+
+    const onErrorTexture = () => {
+      if (cancelled) {
+        fallbackTexture.dispose();
+        return;
+      }
+      setSceneLabelTexture(fallbackTexture);
+    };
+
+    try {
+      textureLoader.load(bannerUrl, onLoadTexture, undefined, onErrorTexture);
+    } catch {
+      onErrorTexture();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [poolBannerUrl, poolName, setSceneLabelTexture]);
+
+  useEffect(() => {
+    return () => {
+      labelTextureRef.current?.dispose();
+      labelTextureRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -715,6 +893,7 @@ export function GachaScene({
           isDrawing={isDrawing} 
           rarity={rarity} 
           cameraRef={sceneCameraRef}
+          labelTexture={labelTexture}
           onComplete={onAnimationCompleteAction} 
         />
 
