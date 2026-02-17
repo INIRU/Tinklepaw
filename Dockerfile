@@ -69,6 +69,10 @@ COPY --chown=nodejs:nodejs package.json package-lock.json* ./
 COPY --chown=nodejs:nodejs packages/core/package.json ./packages/core/
 COPY --chown=nodejs:nodejs apps/bot/package.json ./apps/bot/
 
+# Install production dependencies only
+RUN npm install --omit=dev --workspace=@nyaru/bot --include-workspace-root && \
+    npm cache clean --force
+
 # Copy built files with ownership
 COPY --chown=nodejs:nodejs --from=builder /app/packages/core/dist ./packages/core/dist
 COPY --chown=nodejs:nodejs --from=builder /app/packages/core/package.json ./packages/core/
