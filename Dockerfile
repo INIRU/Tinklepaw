@@ -37,6 +37,10 @@ RUN npm run build
 WORKDIR /app/apps/bot
 RUN npm run build
 
+WORKDIR /app
+RUN npm prune --omit=dev --workspace=@nyaru/bot --include-workspace-root && \
+    npm cache clean --force
+
 # --- Runtime Stage ---
 FROM node:20-alpine AS runtime
 
@@ -68,10 +72,6 @@ RUN addgroup -g 1001 -S nodejs && \
 COPY --chown=nodejs:nodejs package.json package-lock.json* ./
 COPY --chown=nodejs:nodejs packages/core/package.json ./packages/core/
 COPY --chown=nodejs:nodejs apps/bot/package.json ./apps/bot/
-
-# Install production dependencies only
-RUN npm install --omit=dev --workspace=@nyaru/bot --include-workspace-root && \
-    npm cache clean --force
 
 # Copy built files with ownership
 COPY --chown=nodejs:nodejs --from=builder /app/packages/core/dist ./packages/core/dist
