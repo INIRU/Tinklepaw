@@ -78,9 +78,18 @@ type RecentNewsPromptRow = {
   body: string;
 };
 
+type RecentSentimentStats = {
+  bullish: number;
+  bearish: number;
+  neutral: number;
+  lastSentiment: Sentiment | null;
+  streak: number;
+};
+
 type RecentNewsContext = {
   lines: string;
   sentimentSummary: string;
+  stats: RecentSentimentStats;
 };
 
 type ForcedNewsOverrides = {
@@ -351,8 +360,113 @@ const resolveForcedNewsOverrides = (cfg: AppConfig): ForcedNewsOverrides => {
     sentiment,
     tier,
     scenario,
-    hasAny: Boolean(tier || scenario)
+    hasAny: Boolean(sentiment || tier || scenario)
   };
+};
+
+const buildRecentSentimentStats = (rows: RecentNewsPromptRow[]): RecentSentimentStats => {
+  const counts = rows.reduce(
+    (acc, row) => {
+      acc[row.sentiment] += 1;
+      return acc;
+    },
+    { bullish: 0, bearish: 0, neutral: 0 }
+  );
+
+  if (rows.length === 0) {
+    return {
+      ...counts,
+      lastSentiment: null,
+      streak: 0
+    };
+  }
+
+  const lastSentiment = rows[0]!.sentiment;
+  let streak = 0;
+  for (const row of rows) {
+    if (row.sentiment !== lastSentiment) break;
+    streak += 1;
+  }
+
+  return {
+    ...counts,
+    lastSentiment,
+    streak
+  };
+};
+
+const pickWeightedSentiment = (weights: { bullish: number; bearish: number; neutral: number }): Sentiment => {
+  const bullish = Math.max(0.01, weights.bullish);
+  const bearish = Math.max(0.01, weights.bearish);
+  const neutral = Math.max(0.01, weights.neutral);
+  const total = bullish + bearish + neutral;
+  const roll = Math.random() * total;
+  if (roll < bullish) return 'bullish';
+  if (roll < bullish + bearish) return 'bearish';
+  return 'neutral';
+};
+
+const decideCodeSentiment = (params: {
+  forcedSentiment: Sentiment | null;
+  changePct: number;
+  dataIsSparse: boolean;
+  recentStats: RecentSentimentStats;
+}): Sentiment => {
+  if (params.forcedSentiment) {
+    return params.forcedSentiment;
+  }
+
+  const { changePct, dataIsSparse, recentStats } = params;
+  const absChange = Math.abs(changePct);
+
+  if (!dataIsSparse) {
+    if (changePct >= 2.0) return 'bullish';
+    if (changePct <= -2.0) return 'bearish';
+  }
+
+  const weights = {
+    bullish: 0.33,
+    bearish: 0.33,
+    neutral: 0.34
+  };
+
+  if (changePct >= 0.8) {
+    weights.bullish += 0.28;
+    weights.bearish -= 0.16;
+    weights.neutral -= 0.12;
+  } else if (changePct <= -0.8) {
+    weights.bearish += 0.28;
+    weights.bullish -= 0.16;
+    weights.neutral -= 0.12;
+  } else if (absChange <= 0.35 || dataIsSparse) {
+    weights.neutral += 0.26;
+    weights.bullish -= 0.13;
+    weights.bearish -= 0.13;
+  }
+
+  if (recentStats.bearish >= 4 && changePct > -1.8) {
+    weights.neutral += 0.24;
+    weights.bearish -= 0.20;
+  }
+  if (recentStats.bullish >= 4 && changePct < 1.8) {
+    weights.neutral += 0.24;
+    weights.bullish -= 0.20;
+  }
+
+  let picked = pickWeightedSentiment(weights);
+
+  if (recentStats.lastSentiment && recentStats.streak >= 3 && picked === recentStats.lastSentiment && absChange < 2.4) {
+    picked = 'neutral';
+  }
+
+  if (recentStats.lastSentiment === 'bearish' && recentStats.streak >= 4 && changePct > -2.2) {
+    picked = changePct >= 0.4 ? 'bullish' : 'neutral';
+  }
+  if (recentStats.lastSentiment === 'bullish' && recentStats.streak >= 4 && changePct < 2.2) {
+    picked = changePct <= -0.4 ? 'bearish' : 'neutral';
+  }
+
+  return picked;
 };
 
 const formatRecentNewsContext = (rows: RecentNewsPromptRow[]): string => {
@@ -371,23 +485,10 @@ const formatRecentNewsContext = (rows: RecentNewsPromptRow[]): string => {
 };
 
 const summarizeRecentNewsSentiment = (rows: RecentNewsPromptRow[]) => {
+  const stats = buildRecentSentimentStats(rows);
+
   if (rows.length === 0) {
     return '최근 뉴스 감정 기록 없음';
-  }
-
-  const counts = rows.reduce(
-    (acc, row) => {
-      acc[row.sentiment] += 1;
-      return acc;
-    },
-    { bullish: 0, bearish: 0, neutral: 0 }
-  );
-
-  const lastSentiment = rows[0]!.sentiment;
-  let streak = 0;
-  for (const row of rows) {
-    if (row.sentiment !== lastSentiment) break;
-    streak += 1;
   }
 
   const recentPattern = rows
@@ -395,7 +496,8 @@ const summarizeRecentNewsSentiment = (rows: RecentNewsPromptRow[]) => {
     .map((row) => sentimentLabelForPrompt(row.sentiment))
     .join(' -> ');
 
-  return `최근 ${rows.length}건 분포: 호재 ${counts.bullish} / 악재 ${counts.bearish} / 중립 ${counts.neutral}; 직전 감정: ${sentimentLabelForPrompt(lastSentiment)} ${streak}연속; 최근 패턴: ${recentPattern}`;
+  const lastLabel = stats.lastSentiment ? sentimentLabelForPrompt(stats.lastSentiment) : '없음';
+  return `최근 ${rows.length}건 분포: 호재 ${stats.bullish} / 악재 ${stats.bearish} / 중립 ${stats.neutral}; 직전 감정: ${lastLabel} ${stats.streak}연속; 최근 패턴: ${recentPattern}`;
 };
 
 const loadRecentNewsContext = async (dynamicSupabase: DynamicSupabase): Promise<RecentNewsContext> => {
@@ -409,7 +511,14 @@ const loadRecentNewsContext = async (dynamicSupabase: DynamicSupabase): Promise<
     console.warn('[StockNews] failed to load recent news context:', error.message);
     return {
       lines: '없음',
-      sentimentSummary: '최근 뉴스 감정 기록 로드 실패'
+      sentimentSummary: '최근 뉴스 감정 기록 로드 실패',
+      stats: {
+        bullish: 0,
+        bearish: 0,
+        neutral: 0,
+        lastSentiment: null,
+        streak: 0
+      }
     };
   }
 
@@ -433,7 +542,8 @@ const loadRecentNewsContext = async (dynamicSupabase: DynamicSupabase): Promise<
 
   return {
     lines: formatRecentNewsContext(rows),
-    sentimentSummary: summarizeRecentNewsSentiment(rows)
+    sentimentSummary: summarizeRecentNewsSentiment(rows),
+    stats: buildRecentSentimentStats(rows)
   };
 };
 
@@ -533,6 +643,7 @@ const buildGeminiDraft = async (params: {
   minImpactBps: number;
   maxImpactBps: number;
   scenarioSeeds: ScenarioSeeds;
+  forcedSentiment: Sentiment;
   forcedTier?: NewsTier | null;
   forcedScenario?: string | null;
 }): Promise<StockNewsDraft | null> => {
@@ -540,7 +651,8 @@ const buildGeminiDraft = async (params: {
   const forcedTierProfile = getTierProfile(params.forcedTier ?? null) ?? pickNewsTier();
   const forcedTier = forcedTierProfile.key;
   const tierBounds = getTierImpactBounds(forcedTierProfile, params.minImpactBps, params.maxImpactBps);
-  const reasonSeed = params.forcedScenario ?? pickOne([...params.scenarioSeeds.bullish, ...params.scenarioSeeds.bearish, ...NEUTRAL_REASON_SEEDS]);
+  const reasonSeed = params.forcedScenario ?? pickReasonSeed(params.forcedSentiment, params.scenarioSeeds);
+  const forcedSentimentLabel = sentimentLabelForPrompt(params.forcedSentiment);
 
   const systemInstruction =
     `당신은 디스코드 주식 게임의 단일 종목 ${params.displayName}(${params.symbol}) 뉴스 에디터다. 반드시 JSON만 반환한다. 뉴스 이유는 현실 근거가 없어도 되고, 게임 이벤트처럼 그럴듯하게 작성한다.`;
@@ -553,13 +665,9 @@ const buildGeminiDraft = async (params: {
     `최근 감정 요약: ${params.recentSentimentSummary}`,
     `직전 뉴스 기록(최신순):\n${params.recentNewsContext}`,
     `캔들 데이터 상태: ${params.dataIsSparse ? '제한적' : '충분'}`,
+    `이번 기사 감정은 반드시 \`${params.forcedSentiment}\`(${forcedSentimentLabel})로 고정해.`,
     `이번 기사 티어는 반드시 \`${forcedTier}\`(${forcedTierProfile.label})로 고정해.`,
-    'sentiment는 bullish/bearish/neutral 중 하나를 반드시 직접 결정해.',
-    '중요: sentiment를 기계적으로 교대하지 마. (호재->악재->호재 같은 단순 반복 금지)',
-    '직전 기사와 반대 감정을 의무적으로 고르지 말고, 시장 신호가 같으면 같은 감정을 연속 선택할 수 있다.',
-    '판단 근거가 약하거나 신호가 혼재하면 neutral을 우선 고려해.',
-    '최근 감정 요약에서 악재가 4회 이상 연속이면, 강한 하락 근거가 없는 경우 neutral 또는 bullish를 우선 고려해.',
-    '최근 감정 요약에서 호재가 4회 이상 연속이면, 강한 상승 근거가 없는 경우 neutral 또는 bearish를 우선 고려해.',
+    'sentiment 값은 위에서 지정한 고정값을 그대로 사용하고 임의 변경하지 마.',
     `이유 키워드 \`${reasonSeed}\`를 반드시 포함해.`,
     '최근 뉴스와 headline/핵심 이유가 과도하게 중복되지 않도록, 자연스러운 다음 전개처럼 작성.',
     'body에는 가격/등락률/bps 같은 정확한 숫자를 쓰지 말고, 방향성과 분위기만 서술형으로 작성.',
@@ -588,7 +696,7 @@ const buildGeminiDraft = async (params: {
       body?: unknown;
     };
 
-    const sentiment = normalizeSentiment(parsed.sentiment);
+    const sentiment = params.forcedSentiment;
     const parsedImpactBps = Math.abs(Math.floor(toNumber(parsed.impact_bps, tierBounds.lower)));
     const impactBpsAbs = clamp(parsedImpactBps, tierBounds.lower, tierBounds.upper);
     const headline = String(parsed.headline ?? '').trim() || buildGameHeadline(params.displayName, reasonSeed);
@@ -805,6 +913,12 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
   const marketSignal = getMarketSignal(dashboard.out_candles ?? dashboard.candles);
   const recentNewsContext = await loadRecentNewsContext(dynamicSupabase);
   const forcedOverrides = resolveForcedNewsOverrides(cfg);
+  const selectedSentiment = decideCodeSentiment({
+    forcedSentiment: forcedOverrides.sentiment,
+    changePct,
+    dataIsSparse: marketSignal.dataIsSparse,
+    recentStats: recentNewsContext.stats
+  });
 
   const apiKeys = resolveGeminiApiKeys(ctx.env);
   if (apiKeys.length === 0) {
@@ -830,6 +944,7 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
         minImpactBps,
         maxImpactBps,
         scenarioSeeds,
+        forcedSentiment: selectedSentiment,
         forcedTier: forcedOverrides.tier,
         forcedScenario: forcedOverrides.scenario
       });
@@ -879,6 +994,7 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
       data_is_sparse: marketSignal.dataIsSparse,
       candle_count: marketSignal.candleCount,
       forced_sentiment: forcedOverrides.sentiment,
+      selected_sentiment: selectedSentiment,
       forced_tier: forcedOverrides.tier,
       forced_scenario: forcedOverrides.scenario,
       manipulated: forcedOverrides.hasAny,
