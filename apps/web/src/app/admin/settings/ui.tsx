@@ -1368,7 +1368,7 @@ export default function SettingsClient() {
             </label>
 
             <label className="text-sm">
-              개미 자동 매수 쿨타임(초)
+              자동 매수 쿨타임(초)
               <input
                 className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
                 type="number"
