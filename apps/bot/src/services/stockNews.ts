@@ -78,6 +78,11 @@ type RecentNewsPromptRow = {
   body: string;
 };
 
+type RecentNewsContext = {
+  lines: string;
+  sentimentSummary: string;
+};
+
 type ForcedNewsOverrides = {
   sentiment: Sentiment | null;
   tier: NewsTier | null;
@@ -275,6 +280,64 @@ const normalizeForcedScenario = (value: unknown): string | null => {
   return compact.slice(0, FORCED_SCENARIO_MAX);
 };
 
+const parseApiKeyList = (value: string | null | undefined) => {
+  if (!value) return [];
+  return value
+    .split(/[\n,]/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+};
+
+const resolveGeminiApiKeys = (env: {
+  STOCK_NEWS_GEMINI_API_KEY?: string;
+  STOCK_NEWS_GEMINI_API_KEY_FALLBACK?: string;
+  STOCK_NEWS_GEMINI_API_KEYS?: string;
+  GEMINI_API_KEY?: string;
+  GEMINI_API_KEY_FALLBACK?: string;
+  GEMINI_API_KEYS?: string;
+}) => {
+  const ordered = [
+    env.STOCK_NEWS_GEMINI_API_KEY,
+    env.STOCK_NEWS_GEMINI_API_KEY_FALLBACK,
+    ...parseApiKeyList(env.STOCK_NEWS_GEMINI_API_KEYS),
+    env.GEMINI_API_KEY,
+    env.GEMINI_API_KEY_FALLBACK,
+    ...parseApiKeyList(env.GEMINI_API_KEYS)
+  ]
+    .map((entry) => String(entry ?? '').trim())
+    .filter((entry) => entry.length > 0);
+
+  return [...new Set(ordered)];
+};
+
+const extractErrorText = (error: unknown) => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+};
+
+const shouldSwitchGeminiKey = (error: unknown) => {
+  const text = extractErrorText(error).toLowerCase();
+  return [
+    'resource_exhausted',
+    'quota',
+    'rate limit',
+    'too many requests',
+    '429',
+    'api key not valid',
+    'invalid api key',
+    'permission denied',
+    'unauthenticated',
+    '401',
+    '403'
+  ].some((token) => text.includes(token));
+};
+
 const getTierProfile = (tier: NewsTier | null): NewsTierProfile | null => {
   if (!tier) return null;
   return NEWS_TIER_PROFILES.find((profile) => profile.key === tier) ?? null;
@@ -307,7 +370,35 @@ const formatRecentNewsContext = (rows: RecentNewsPromptRow[]): string => {
     .join('\n');
 };
 
-const loadRecentNewsContext = async (dynamicSupabase: DynamicSupabase): Promise<string> => {
+const summarizeRecentNewsSentiment = (rows: RecentNewsPromptRow[]) => {
+  if (rows.length === 0) {
+    return '최근 뉴스 감정 기록 없음';
+  }
+
+  const counts = rows.reduce(
+    (acc, row) => {
+      acc[row.sentiment] += 1;
+      return acc;
+    },
+    { bullish: 0, bearish: 0, neutral: 0 }
+  );
+
+  const lastSentiment = rows[0]!.sentiment;
+  let streak = 0;
+  for (const row of rows) {
+    if (row.sentiment !== lastSentiment) break;
+    streak += 1;
+  }
+
+  const recentPattern = rows
+    .slice(0, 4)
+    .map((row) => sentimentLabelForPrompt(row.sentiment))
+    .join(' -> ');
+
+  return `최근 ${rows.length}건 분포: 호재 ${counts.bullish} / 악재 ${counts.bearish} / 중립 ${counts.neutral}; 직전 감정: ${sentimentLabelForPrompt(lastSentiment)} ${streak}연속; 최근 패턴: ${recentPattern}`;
+};
+
+const loadRecentNewsContext = async (dynamicSupabase: DynamicSupabase): Promise<RecentNewsContext> => {
   const { data, error } = await dynamicSupabase
     .from('stock_news_events')
     .select('created_at, sentiment, impact_bps, headline, body')
@@ -316,7 +407,10 @@ const loadRecentNewsContext = async (dynamicSupabase: DynamicSupabase): Promise<
 
   if (error) {
     console.warn('[StockNews] failed to load recent news context:', error.message);
-    return '없음';
+    return {
+      lines: '없음',
+      sentimentSummary: '최근 뉴스 감정 기록 로드 실패'
+    };
   }
 
   const rows = Array.isArray(data)
@@ -337,7 +431,10 @@ const loadRecentNewsContext = async (dynamicSupabase: DynamicSupabase): Promise<
       .filter((row): row is RecentNewsPromptRow => row !== null)
     : [];
 
-  return formatRecentNewsContext(rows);
+  return {
+    lines: formatRecentNewsContext(rows),
+    sentimentSummary: summarizeRecentNewsSentiment(rows)
+  };
 };
 
 const resolveStockTicker = (row: StockDashboardRpcRow | null | undefined) => {
@@ -431,6 +528,7 @@ const buildGeminiDraft = async (params: {
   changePct: number;
   recentSummary: string;
   recentNewsContext: string;
+  recentSentimentSummary: string;
   dataIsSparse: boolean;
   minImpactBps: number;
   maxImpactBps: number;
@@ -452,11 +550,14 @@ const buildGeminiDraft = async (params: {
     `현재 가격: ${params.currentPrice.toFixed(0)}p`,
     `현재 등락률: ${params.changePct.toFixed(2)}%`,
     `최근 흐름 요약: ${params.recentSummary}`,
+    `최근 감정 요약: ${params.recentSentimentSummary}`,
     `직전 뉴스 기록(최신순):\n${params.recentNewsContext}`,
     `캔들 데이터 상태: ${params.dataIsSparse ? '제한적' : '충분'}`,
     `이번 기사 티어는 반드시 \`${forcedTier}\`(${forcedTierProfile.label})로 고정해.`,
     'sentiment는 bullish/bearish/neutral 중 하나를 반드시 직접 결정해.',
-    '최근 캔들 흐름/거래량 상태/직전 뉴스 맥락을 종합해서 과도한 한쪽 편향이 쌓이지 않게 선택해.',
+    '중요: sentiment를 기계적으로 교대하지 마. (호재->악재->호재 같은 단순 반복 금지)',
+    '직전 기사와 반대 감정을 의무적으로 고르지 말고, 시장 신호가 같으면 같은 감정을 연속 선택할 수 있다.',
+    '판단 근거가 약하거나 신호가 혼재하면 neutral을 우선 고려해.',
     `이유 키워드 \`${reasonSeed}\`를 반드시 포함해.`,
     '최근 뉴스와 headline/핵심 이유가 과도하게 중복되지 않도록, 자연스러운 다음 전개처럼 작성.',
     'body에는 가격/등락률/bps 같은 정확한 숫자를 쓰지 말고, 방향성과 분위기만 서술형으로 작성.',
@@ -465,21 +566,15 @@ const buildGeminiDraft = async (params: {
     'headline은 42자 이하, body는 2~3문장으로 작성.'
   ].join('\n');
 
-  let response: Awaited<ReturnType<typeof ai.models.generateContent>>;
-  try {
-    response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: STOCK_NEWS_SCHEMA,
-        systemInstruction: { parts: [{ text: systemInstruction }] }
-      }
-    });
-  } catch (error) {
-    console.warn('[StockNews] Gemini request failed:', error);
-    return null;
-  }
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash-lite',
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: STOCK_NEWS_SCHEMA,
+      systemInstruction: { parts: [{ text: systemInstruction }] }
+    }
+  });
 
   if (!response.text) return null;
 
@@ -709,30 +804,62 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
   const recentNewsContext = await loadRecentNewsContext(dynamicSupabase);
   const forcedOverrides = resolveForcedNewsOverrides(cfg);
 
-  const apiKey = ctx.env.STOCK_NEWS_GEMINI_API_KEY || ctx.env.GEMINI_API_KEY;
-  if (!apiKey) {
+  const apiKeys = resolveGeminiApiKeys(ctx.env);
+  if (apiKeys.length === 0) {
     console.warn('[StockNews] Gemini API key missing; skipping cycle (sentiment is model-owned).');
     return;
   }
 
-  const draft = await buildGeminiDraft({
-    apiKey,
-    symbol: stockTicker.symbol,
-    displayName: stockTicker.displayName,
-    currentPrice,
-    changePct,
-    recentSummary: marketSignal.summary,
-    recentNewsContext,
-    dataIsSparse: marketSignal.dataIsSparse,
-    minImpactBps,
-    maxImpactBps,
-    scenarioSeeds,
-    forcedTier: forcedOverrides.tier,
-    forcedScenario: forcedOverrides.scenario
-  });
+  let draft: StockNewsDraft | null = null;
+  let usedKeyOrdinal: number | null = null;
+  for (let index = 0; index < apiKeys.length; index += 1) {
+    const apiKey = apiKeys[index]!;
+    try {
+      const candidate = await buildGeminiDraft({
+        apiKey,
+        symbol: stockTicker.symbol,
+        displayName: stockTicker.displayName,
+        currentPrice,
+        changePct,
+        recentSummary: marketSignal.summary,
+        recentNewsContext: recentNewsContext.lines,
+        recentSentimentSummary: recentNewsContext.sentimentSummary,
+        dataIsSparse: marketSignal.dataIsSparse,
+        minImpactBps,
+        maxImpactBps,
+        scenarioSeeds,
+        forcedTier: forcedOverrides.tier,
+        forcedScenario: forcedOverrides.scenario
+      });
+
+      if (candidate) {
+        draft = candidate;
+        usedKeyOrdinal = index + 1;
+        break;
+      }
+
+      const hasNextKey = index + 1 < apiKeys.length;
+      console.warn(
+        `[StockNews] Gemini draft empty on key #${index + 1}${hasNextKey ? `; trying backup key #${index + 2}.` : '.'}`
+      );
+      continue;
+    } catch (error) {
+      const hasNextKey = index + 1 < apiKeys.length;
+      if (hasNextKey && shouldSwitchGeminiKey(error)) {
+        console.warn(`[StockNews] Gemini key #${index + 1} exhausted/unavailable; switching to backup key #${index + 2}.`);
+        continue;
+      }
+
+      console.warn(`[StockNews] Gemini request failed on key #${index + 1}:`, error);
+      if (hasNextKey) {
+        console.warn(`[StockNews] trying backup key #${index + 2} after request failure.`);
+        continue;
+      }
+    }
+  }
 
   if (!draft) {
-    console.warn('[StockNews] Gemini draft generation failed; skipping cycle without fallback.');
+    console.warn('[StockNews] Gemini draft generation failed on all keys; skipping cycle without fallback.');
     return;
   }
 
@@ -753,6 +880,7 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
       forced_tier: forcedOverrides.tier,
       forced_scenario: forcedOverrides.scenario,
       manipulated: forcedOverrides.hasAny,
+      gemini_key_ordinal: usedKeyOrdinal,
       generated_at: now.toISOString()
     }
   });
