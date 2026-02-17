@@ -46,7 +46,6 @@ html[data-theme='dark'] {
 html,
 body {
   max-width: 100%;
-  overflow-x: hidden;
 }
 
 body {
@@ -54,6 +53,7 @@ body {
   color: var(--fg);
   font-family: var(--font-sans);
   text-rendering: optimizeLegibility;
+  overflow-x: clip;
 }
 
 ::selection {

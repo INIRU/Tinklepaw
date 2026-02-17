@@ -16,9 +16,9 @@ export default function PageTransition(props: {
       <m.div
         key={pathname}
         className={props.className}
-        initial={reduce ? false : { opacity: 0, y: 10, filter: 'blur(1px)' }}
-        animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, filter: 'blur(0px)' }}
-        exit={reduce ? { opacity: 1 } : { opacity: 0, y: -6, filter: 'blur(1px)' }}
+        initial={reduce ? false : { opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={reduce ? { opacity: 1 } : { opacity: 0 }}
         transition={{ duration: 0.22, ease: 'easeOut' }}
       >
         {props.children}

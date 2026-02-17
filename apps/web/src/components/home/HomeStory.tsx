@@ -166,8 +166,8 @@ export default function HomeStory(props: {
         </div>
       </section>
 
-      <section ref={mediaSectionRef} className="relative h-[108vh] sm:h-[124vh] lg:h-[138vh]">
-        <div className="sticky top-[80px]">
+      <section ref={mediaSectionRef} className="relative h-[108svh] sm:h-[124svh] lg:h-[138svh]">
+        <div className="sticky top-[calc(64px+env(safe-area-inset-top))]">
           <div
             ref={mediaFrameRef}
             className="relative mx-auto max-w-5xl overflow-hidden rounded-[22px] border border-[color:var(--border)] bg-[color:var(--card)] shadow-[0_24px_56px_rgba(7,12,24,0.2)]"

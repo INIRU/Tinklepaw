@@ -109,6 +109,37 @@ const DEFAULT_BEARISH_SCENARIOS = [
   '경쟁사 공세 심화 관측'
 ];
 
+const GACHA_TUNA_ENERGY_PRESETS = [
+  {
+    key: 'balanced',
+    label: '균형형',
+    ss: 1,
+    sss: 2,
+    description: '기본 추천값'
+  },
+  {
+    key: 'aggressive',
+    label: '가속형',
+    ss: 2,
+    sss: 4,
+    description: '강화 체감 빠름'
+  },
+  {
+    key: 'rare-focused',
+    label: '희귀 집중형',
+    ss: 1,
+    sss: 3,
+    description: 'SSS 중복 가치 강화'
+  },
+  {
+    key: 'reset',
+    label: '초기화',
+    ss: 0,
+    sss: 0,
+    description: '지급 비활성'
+  }
+] as const;
+
 function normalizeScenarioList(input: unknown, fallback: string[]) {
   if (!Array.isArray(input)) return [...fallback];
   const items = input.map((item) => String(item ?? '').trim()).filter(Boolean).slice(0, MAX_SCENARIO_LINES);
@@ -125,6 +156,106 @@ function parseScenarioLines(raw: string) {
 
 function formatScenarioLines(lines: string[]) {
   return (lines ?? []).join('\n');
+}
+
+const GENERAL_DIRTY_KEYS: ReadonlyArray<keyof AppConfig> = [
+  'server_intro',
+  'banner_image_url',
+  'icon_image_url',
+  'join_message_template',
+  'join_message_channel_id',
+  'voice_interface_trigger_channel_id',
+  'voice_interface_category_id'
+];
+
+const STOCK_DIRTY_KEYS: ReadonlyArray<keyof AppConfig> = [
+  'stock_news_enabled',
+  'stock_news_channel_id',
+  'stock_news_schedule_mode',
+  'stock_news_interval_minutes',
+  'stock_news_daily_window_start_hour',
+  'stock_news_daily_window_end_hour',
+  'stock_news_min_impact_bps',
+  'stock_news_max_impact_bps',
+  'stock_news_bullish_scenarios',
+  'stock_news_bearish_scenarios',
+  'stock_whale_max_buy_qty',
+  'stock_whale_max_sell_qty',
+  'stock_shrimp_max_buy_qty',
+  'stock_shrimp_max_sell_qty',
+  'stock_ant_auto_buy_qty',
+  'stock_ant_auto_buy_cooldown_seconds'
+];
+
+const ECONOMY_DIRTY_KEYS: ReadonlyArray<keyof AppConfig> = [
+  'reward_points_per_interval',
+  'reward_interval_seconds',
+  'reward_daily_cap_points',
+  'reward_min_message_length',
+  'booster_chat_bonus_points',
+  'voice_reward_points_per_interval',
+  'voice_reward_interval_seconds',
+  'voice_reward_daily_cap_points',
+  'booster_voice_bonus_points',
+  'daily_chest_legendary_rate_pct',
+  'daily_chest_epic_rate_pct',
+  'daily_chest_rare_rate_pct',
+  'daily_chest_common_min_points',
+  'daily_chest_common_max_points',
+  'daily_chest_rare_min_points',
+  'daily_chest_rare_max_points',
+  'daily_chest_epic_min_points',
+  'daily_chest_epic_max_points',
+  'daily_chest_legendary_min_points',
+  'daily_chest_legendary_max_points',
+  'daily_chest_item_drop_rate_pct',
+  'duplicate_ss_tuna_energy',
+  'duplicate_sss_tuna_energy',
+  'lottery_jackpot_rate_pct',
+  'lottery_gold_rate_pct',
+  'lottery_silver_rate_pct',
+  'lottery_bronze_rate_pct',
+  'lottery_ticket_cooldown_seconds',
+  'lottery_ticket_price',
+  'lottery_jackpot_base_points',
+  'lottery_gold_payout_points',
+  'lottery_silver_payout_points',
+  'lottery_bronze_payout_points',
+  'lottery_jackpot_pool_points',
+  'lottery_activity_jackpot_rate_pct'
+];
+
+function cloneConfigSnapshot(snapshot: AppConfig): AppConfig {
+  return {
+    ...snapshot,
+    stock_news_bullish_scenarios: [...snapshot.stock_news_bullish_scenarios],
+    stock_news_bearish_scenarios: [...snapshot.stock_news_bearish_scenarios]
+  };
+}
+
+function isSameStringList(left: string[], right: string[]) {
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i += 1) {
+    if (left[i] !== right[i]) return false;
+  }
+  return true;
+}
+
+function isSameConfigValue(left: AppConfig[keyof AppConfig], right: AppConfig[keyof AppConfig]) {
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right)) return false;
+    return isSameStringList(left, right);
+  }
+  return left === right;
+}
+
+function hasConfigChangesForKeys(
+  current: AppConfig | null,
+  saved: AppConfig | null,
+  keys: ReadonlyArray<keyof AppConfig>
+) {
+  if (!current || !saved) return false;
+  return keys.some((key) => !isSameConfigValue(current[key], saved[key]));
 }
 
 function useElementSize<T extends HTMLElement>() {
@@ -380,6 +511,7 @@ export default function SettingsClient() {
   const toast = useToast();
   const router = useRouter();
   const [cfg, setCfg] = useState<AppConfig | null>(null);
+  const [savedCfg, setSavedCfg] = useState<AppConfig | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [channels, setChannels] = useState<DiscordChannel[]>([]);
   const [rewardChannels, setRewardChannels] = useState<string[]>([]); // draft
@@ -461,7 +593,7 @@ export default function SettingsClient() {
     const bullishScenarios = normalizeScenarioList(cfgBody.stock_news_bullish_scenarios, DEFAULT_BULLISH_SCENARIOS);
     const bearishScenarios = normalizeScenarioList(cfgBody.stock_news_bearish_scenarios, DEFAULT_BEARISH_SCENARIOS);
 
-    setCfg({
+    const normalizedCfg = cloneConfigSnapshot({
       ...(cfgBody as AppConfig),
       join_message_template: cfgBody.join_message_template ?? null,
       join_message_channel_id: cfgBody.join_message_channel_id ?? null,
@@ -491,6 +623,8 @@ export default function SettingsClient() {
       stock_news_force_scenario: cfgBody.stock_news_force_scenario ?? null,
       lottery_activity_jackpot_rate_pct: Number(cfgBody.lottery_activity_jackpot_rate_pct ?? 10),
     });
+    setCfg(cloneConfigSnapshot(normalizedCfg));
+    setSavedCfg(cloneConfigSnapshot(normalizedCfg));
     setBullishScenarioDraft(formatScenarioLines(bullishScenarios));
     setBearishScenarioDraft(formatScenarioLines(bearishScenarios));
     setLoadError(null);
@@ -532,8 +666,8 @@ export default function SettingsClient() {
     });
   }, [loadAll, toast]);
 
-  const saveConfig = useCallback(async () => {
-    if (!cfg) return;
+  const saveConfig = useCallback(async (): Promise<boolean> => {
+    if (!cfg) return false;
     setSaving(true);
     try {
       const bullishScenarios = parseScenarioLines(bullishScenarioDraft);
@@ -559,16 +693,20 @@ export default function SettingsClient() {
       const normalizedBullish = normalizeScenarioList(savedCfg.stock_news_bullish_scenarios, DEFAULT_BULLISH_SCENARIOS);
       const normalizedBearish = normalizeScenarioList(savedCfg.stock_news_bearish_scenarios, DEFAULT_BEARISH_SCENARIOS);
 
-      setCfg({
+      const normalizedSavedCfg = cloneConfigSnapshot({
         ...savedCfg,
         stock_news_bullish_scenarios: normalizedBullish,
         stock_news_bearish_scenarios: normalizedBearish
       });
+      setCfg(cloneConfigSnapshot(normalizedSavedCfg));
+      setSavedCfg(cloneConfigSnapshot(normalizedSavedCfg));
       setBullishScenarioDraft(formatScenarioLines(normalizedBullish));
       setBearishScenarioDraft(formatScenarioLines(normalizedBearish));
       toast.success('저장했습니다.');
+      return true;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '저장에 실패했습니다.');
+      return false;
     } finally {
       setSaving(false);
     }
@@ -669,7 +807,8 @@ export default function SettingsClient() {
     toast.info('변경 사항을 되돌렸습니다.', { durationMs: 2000 });
   }, [rewardChannelsSaved, toast]);
 
-  const saveRewardChannels = useCallback(async () => {
+  const saveRewardChannels = useCallback(async (): Promise<boolean> => {
+    if (!rewardDirty) return true;
     setRewardSaving(true);
     try {
       const res = await fetch('/api/admin/reward-channels', {
@@ -683,12 +822,137 @@ export default function SettingsClient() {
       setRewardChannels(saved);
       setRewardChannelsSaved(saved);
       toast.success('보상 채널 화이트리스트를 저장했습니다.');
+      return true;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '보상 채널 저장에 실패했습니다.');
+      return false;
     } finally {
       setRewardSaving(false);
     }
-  }, [rewardChannels, toast]);
+  }, [rewardChannels, rewardDirty, toast]);
+
+  const parsedBullishScenarioDraft = useMemo(
+    () => parseScenarioLines(bullishScenarioDraft),
+    [bullishScenarioDraft]
+  );
+  const parsedBearishScenarioDraft = useMemo(
+    () => parseScenarioLines(bearishScenarioDraft),
+    [bearishScenarioDraft]
+  );
+
+  const scenarioDraftDirty = useMemo(() => {
+    if (!cfg) return false;
+    const baseBullish = normalizeScenarioList(cfg.stock_news_bullish_scenarios, DEFAULT_BULLISH_SCENARIOS);
+    const baseBearish = normalizeScenarioList(cfg.stock_news_bearish_scenarios, DEFAULT_BEARISH_SCENARIOS);
+    return !isSameStringList(baseBullish, parsedBullishScenarioDraft) || !isSameStringList(baseBearish, parsedBearishScenarioDraft);
+  }, [cfg, parsedBearishScenarioDraft, parsedBullishScenarioDraft]);
+
+  const generalConfigDirty = useMemo(
+    () => hasConfigChangesForKeys(cfg, savedCfg, GENERAL_DIRTY_KEYS),
+    [cfg, savedCfg]
+  );
+  const stockConfigDirty = useMemo(
+    () => hasConfigChangesForKeys(cfg, savedCfg, STOCK_DIRTY_KEYS) || scenarioDraftDirty,
+    [cfg, savedCfg, scenarioDraftDirty]
+  );
+  const economyConfigDirty = useMemo(
+    () => hasConfigChangesForKeys(cfg, savedCfg, ECONOMY_DIRTY_KEYS),
+    [cfg, savedCfg]
+  );
+  const configDirty = generalConfigDirty || stockConfigDirty || economyConfigDirty;
+
+  const dirtySections = useMemo(() => {
+    const sections: string[] = [];
+    if (generalConfigDirty) sections.push('기본 설정');
+    if (stockConfigDirty) sections.push('주식 설정');
+    if (economyConfigDirty) sections.push('보상/경제 설정');
+    if (rewardDirty) sections.push('보상 채널');
+    return sections;
+  }, [economyConfigDirty, generalConfigDirty, rewardDirty, stockConfigDirty]);
+
+  const hasUnsavedChanges = dirtySections.length > 0;
+
+  const saveAllChanges = useCallback(async () => {
+    if (saving || rewardSaving) return;
+    if (!hasUnsavedChanges) return;
+
+    let ok = true;
+    if (configDirty) ok = (await saveConfig()) && ok;
+    if (rewardDirty) ok = (await saveRewardChannels()) && ok;
+
+    if (ok) {
+      toast.success('변경사항을 모두 저장했습니다.');
+    }
+  }, [configDirty, hasUnsavedChanges, rewardDirty, rewardSaving, saveConfig, saveRewardChannels, saving, toast]);
+
+  const resetAllChanges = useCallback(() => {
+    if (!savedCfg) return;
+    const restored = cloneConfigSnapshot(savedCfg);
+    setCfg(restored);
+    setBullishScenarioDraft(formatScenarioLines(restored.stock_news_bullish_scenarios));
+    setBearishScenarioDraft(formatScenarioLines(restored.stock_news_bearish_scenarios));
+    setRewardChannels([...rewardChannelsSaved]);
+    toast.info('저장되지 않은 변경사항을 되돌렸습니다.', { durationMs: 2200 });
+  }, [rewardChannelsSaved, savedCfg, toast]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    };
+  }, [hasUnsavedChanges]);
+
+  const tunaEnergySummary = useMemo(() => {
+    const discountCost = 3;
+    const ss = Math.max(0, cfg?.duplicate_ss_tuna_energy ?? 0);
+    const sss = Math.max(0, cfg?.duplicate_sss_tuna_energy ?? 0);
+
+    return {
+      discountCost,
+      ssOnlyRuns: ss > 0 ? Math.ceil(discountCost / ss) : null,
+      sssOnlyRuns: sss > 0 ? Math.ceil(discountCost / sss) : null,
+      mixedHint:
+        ss === 0 && sss === 0
+          ? '현재는 강화 기운이 지급되지 않습니다.'
+          : sss > ss
+            ? 'SSS 중복 가치가 더 커서 상위 중복 보상이 빠르게 체감됩니다.'
+            : sss === ss
+              ? 'SS/SSS 중복 보상이 동일합니다. 등급 차이를 더 주려면 SSS를 높여보세요.'
+              : 'SS 보상 대비 SSS 보상이 낮습니다. 보통 SSS를 더 높게 설정하는 편이 자연스럽습니다.'
+    };
+  }, [cfg?.duplicate_ss_tuna_energy, cfg?.duplicate_sss_tuna_energy]);
+
+  const applyTunaEnergyPreset = useCallback(
+    (preset: (typeof GACHA_TUNA_ENERGY_PRESETS)[number]) => {
+      setCfg((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          duplicate_ss_tuna_energy: preset.ss,
+          duplicate_sss_tuna_energy: preset.sss
+        };
+      });
+      toast.info(`${preset.label} 프리셋을 적용했습니다.`, { durationMs: 1800 });
+    },
+    [toast]
+  );
+
+  const syncSssToDouble = useCallback(() => {
+    setCfg((prev) => {
+      if (!prev) return prev;
+      const nextSss = Math.max(0, prev.duplicate_ss_tuna_energy * 2);
+      return {
+        ...prev,
+        duplicate_sss_tuna_energy: nextSss
+      };
+    });
+    toast.info('SSS 값을 SS의 2배로 맞췄습니다.', { durationMs: 1800 });
+  }, [toast]);
 
   const startCrop = useCallback((key: AssetKey, file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -1707,30 +1971,86 @@ export default function SettingsClient() {
       </section>
 
       <section className={`${activeTab === 'economy' ? '' : 'hidden '}mt-6 max-w-2xl rounded-3xl card-glass p-6`}>
-        <h2 className="text-lg font-semibold">참치캔의 기운 설정</h2>
-        <p className="mt-2 text-xs muted">가챠 중복에서 SS/SSS 등급이 나올 때 지급할 강화 기운 수량입니다. 기운 3개를 소모하면 강화 비용이 50% 할인됩니다.</p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">가챠 기운 설정</h2>
+            <p className="mt-2 text-xs muted">중복 SS/SSS에서 지급되는 강화 기운 수량입니다. 기운 {tunaEnergySummary.discountCost}개마다 강화 비용이 50% 할인됩니다.</p>
+          </div>
+          <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-xs">
+            할인 1회 필요 기운: <span className="font-semibold">{tunaEnergySummary.discountCost}개</span>
+          </div>
+        </div>
 
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="mt-4 grid gap-3 rounded-2xl border border-[color:var(--line)] bg-[color:var(--chip)]/70 p-4 sm:grid-cols-2">
           <label className="text-sm">
             SS 중복 기운 지급량
             <input
-              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2 text-sm text-[color:var(--fg)]"
               type="number"
               min={0}
               value={cfg.duplicate_ss_tuna_energy}
               onChange={(e) => setCfg({ ...cfg, duplicate_ss_tuna_energy: Number(e.target.value) })}
             />
+            <p className="mt-1 text-[11px] muted-2">중복 SS 1회당 지급되는 기운</p>
           </label>
           <label className="text-sm">
             SSS 중복 기운 지급량
             <input
-              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2 text-sm text-[color:var(--fg)]"
               type="number"
               min={0}
               value={cfg.duplicate_sss_tuna_energy}
               onChange={(e) => setCfg({ ...cfg, duplicate_sss_tuna_energy: Number(e.target.value) })}
             />
+            <p className="mt-1 text-[11px] muted-2">중복 SSS 1회당 지급되는 기운</p>
           </label>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          {GACHA_TUNA_ENERGY_PRESETS.map((preset) => {
+            const active = cfg.duplicate_ss_tuna_energy === preset.ss && cfg.duplicate_sss_tuna_energy === preset.sss;
+            return (
+              <button
+                key={preset.key}
+                type="button"
+                className={`rounded-xl px-3 py-2 text-xs transition ${
+                  active
+                    ? 'border border-[color:var(--accent-pink)]/60 bg-[color:var(--accent-pink)]/15 text-[color:var(--fg)]'
+                    : 'btn-soft'
+                }`}
+                onClick={() => applyTunaEnergyPreset(preset)}
+              >
+                <span className="font-semibold">{preset.label}</span>
+                <span className="ml-1 muted-2">SS {preset.ss} / SSS {preset.sss}</span>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            className="rounded-xl btn-soft px-3 py-2 text-xs"
+            onClick={syncSssToDouble}
+          >
+            SSS = SS x2
+          </button>
+        </div>
+
+        <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+          <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2">
+            <div className="muted-2">SS만으로 할인 1회</div>
+            <div className="mt-1 font-semibold text-[color:var(--fg)]">
+              {tunaEnergySummary.ssOnlyRuns ? `${tunaEnergySummary.ssOnlyRuns}회 중복` : '설정 안 됨'}
+            </div>
+          </div>
+          <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2">
+            <div className="muted-2">SSS만으로 할인 1회</div>
+            <div className="mt-1 font-semibold text-[color:var(--fg)]">
+              {tunaEnergySummary.sssOnlyRuns ? `${tunaEnergySummary.sssOnlyRuns}회 중복` : '설정 안 됨'}
+            </div>
+          </div>
+          <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2">
+            <div className="muted-2">운영 힌트</div>
+            <div className="mt-1 text-[11px] text-[color:var(--fg)]">{tunaEnergySummary.mixedHint}</div>
+          </div>
         </div>
       </section>
 
@@ -1961,16 +2281,46 @@ export default function SettingsClient() {
         </div>
       </section>
 
-      <div className="sticky bottom-6 z-10 mt-10 flex justify-end">
-        <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--card)]/80 backdrop-blur px-3 py-3 shadow-[0_18px_46px_rgba(0,0,0,0.12)]">
-          <button
-            type="button"
-            className="rounded-2xl btn-bangul px-5 py-3 text-sm font-semibold disabled:opacity-60"
-            disabled={saving}
-            onClick={() => void saveConfig()}
-          >
-            {saving ? '저장 중…' : '저장'}
-          </button>
+      <div className="sticky bottom-6 z-10 mt-10">
+        <div className="ml-auto flex w-full max-w-3xl flex-wrap items-center justify-between gap-3 rounded-3xl border border-[color:var(--border)] bg-[color:var(--card)]/88 px-4 py-3 backdrop-blur shadow-[0_18px_46px_rgba(0,0,0,0.12)]">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-[color:var(--fg)]">
+              {hasUnsavedChanges ? '저장되지 않은 변경사항이 있습니다.' : '모든 변경사항이 저장되었습니다.'}
+            </div>
+            <div className="mt-1 flex flex-wrap gap-1.5 text-[11px]">
+              {hasUnsavedChanges ? (
+                dirtySections.map((section) => (
+                  <span
+                    key={section}
+                    className="rounded-full border border-[color:var(--border)] bg-[color:var(--chip)] px-2 py-0.5 text-[color:var(--fg)]"
+                  >
+                    {section}
+                  </span>
+                ))
+              ) : (
+                <span className="muted">현재 상태가 최신입니다.</span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="rounded-xl btn-soft px-3 py-2 text-xs disabled:opacity-60"
+              disabled={!hasUnsavedChanges || saving || rewardSaving}
+              onClick={resetAllChanges}
+            >
+              전체 되돌리기
+            </button>
+            <button
+              type="button"
+              className="rounded-2xl btn-bangul px-5 py-3 text-sm font-semibold disabled:opacity-60"
+              disabled={!hasUnsavedChanges || saving || rewardSaving}
+              onClick={() => void saveAllChanges()}
+            >
+              {saving || rewardSaving ? '저장 중…' : '변경 저장'}
+            </button>
+          </div>
         </div>
       </div>
       </div>

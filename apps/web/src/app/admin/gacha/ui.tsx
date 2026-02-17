@@ -130,6 +130,7 @@ export default function GachaAdminClient() {
   const [searchText, setSearchText] = useState('');
   const [filterRarity, setFilterRarity] = useState<string>('');
   const [filterInPool, setFilterInPool] = useState(false);
+  const [selectedItemId, setSelectedItemId] = useState<string>('');
 
   const [bannerCrop, setBannerCrop] = useState<{
     poolId: string;
@@ -476,6 +477,69 @@ export default function GachaAdminClient() {
       return true;
     });
   }, [items, searchText, filterRarity, filterInPool, poolItems]);
+
+  const selectedItem = useMemo(
+    () => items.find((it) => it.item_id === selectedItemId) ?? null,
+    [items, selectedItemId]
+  );
+
+  const itemStats = useMemo(() => {
+    const total = items.length;
+    const active = items.filter((it) => it.is_active).length;
+    const inPool = items.filter((it) => poolItems.has(it.item_id)).length;
+    return { total, active, inPool };
+  }, [items, poolItems]);
+
+  useEffect(() => {
+    if (filteredItems.length === 0) {
+      setSelectedItemId('');
+      return;
+    }
+    if (!selectedItemId || !filteredItems.some((it) => it.item_id === selectedItemId)) {
+      setSelectedItemId(filteredItems[0]!.item_id);
+    }
+  }, [filteredItems, selectedItemId]);
+
+  const updateItemDraft = useCallback((itemId: string, patch: Partial<Item>) => {
+    setItems((prev) => prev.map((it) => (it.item_id === itemId ? { ...it, ...patch } : it)));
+  }, []);
+
+  const applyPoolToFiltered = useCallback(
+    async (add: boolean) => {
+      if (!selectedPoolId) return;
+      const targetIds = filteredItems.map((it) => it.item_id);
+      if (targetIds.length === 0) {
+        toast.info('대상 아이템이 없습니다.', { durationMs: 1600 });
+        return;
+      }
+
+      setPoolItems((prev) => {
+        const next = new Set(prev);
+        for (const id of targetIds) {
+          if (add) next.add(id);
+          else next.delete(id);
+        }
+        return next;
+      });
+
+      try {
+        await Promise.all(
+          targetIds.map((itemId) =>
+            fetch('/api/admin/gacha/pool-items', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ poolId: selectedPoolId, itemId, action: add ? 'add' : 'remove' })
+            })
+          )
+        );
+        toast.success(add ? `필터 결과 ${targetIds.length}개를 풀에 추가했습니다.` : `필터 결과 ${targetIds.length}개를 풀에서 제외했습니다.`);
+      } catch (error) {
+        console.error('[AdminGacha] Failed to apply filtered pool update:', error);
+        toast.error('일괄 반영 중 일부 요청이 실패했습니다.');
+      }
+    },
+    [filteredItems, selectedPoolId, toast]
+  );
 
   return (
     <main className="flex h-[calc(100dvh-64px)] overflow-hidden">
@@ -980,10 +1044,10 @@ export default function GachaAdminClient() {
             ) : null}
 
             <section className="mt-6 rounded-3xl card-glass p-6">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h3 className="text-lg font-semibold">아이템 관리</h3>
-                  <p className="mt-1 text-xs muted">디스코드 역할과 연동된 가챠 아이템을 관리합니다.</p>
+                  <p className="mt-1 text-xs muted">목록에서 아이템을 고른 뒤 오른쪽 상세 패널에서 빠르게 수정/저장하세요.</p>
                 </div>
                 <button
                   type="button"
@@ -995,10 +1059,25 @@ export default function GachaAdminClient() {
                 </button>
               </div>
 
-              <div className="mt-4 mb-6 flex flex-wrap items-center gap-3">
+              <div className="mt-4 grid gap-2 text-xs sm:grid-cols-3">
+                <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2">
+                  <div className="muted-2">전체 아이템</div>
+                  <div className="mt-1 text-sm font-semibold">{itemStats.total.toLocaleString()}개</div>
+                </div>
+                <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2">
+                  <div className="muted-2">활성 아이템</div>
+                  <div className="mt-1 text-sm font-semibold">{itemStats.active.toLocaleString()}개</div>
+                </div>
+                <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2">
+                  <div className="muted-2">현재 풀 포함</div>
+                  <div className="mt-1 text-sm font-semibold">{itemStats.inPool.toLocaleString()}개</div>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-3">
                 <input
-                  className="flex-1 min-w-[150px] rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
-                  placeholder="이름 검색…"
+                  className="flex-1 min-w-[180px] rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+                  placeholder="아이템 이름 검색..."
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
                 />
@@ -1015,73 +1094,118 @@ export default function GachaAdminClient() {
                       </option>
                     ))}
                   </select>
-                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none text-[color:var(--muted-2)]" />
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 pointer-events-none text-[color:var(--muted-2)]" />
                 </div>
                 {selectedPoolId && (
-                  <div className="flex items-center pl-2 border-l border-[color:var(--border)]">
-                    <Checkbox
-                      checked={filterInPool}
-                      onChange={setFilterInPool}
-                      label="이 풀만 보기"
-                    />
+                  <div className="flex items-center gap-3 rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2">
+                    <Checkbox checked={filterInPool} onChange={setFilterInPool} label="이 풀만 보기" />
+                    <button
+                      type="button"
+                      className="rounded-lg btn-soft px-2.5 py-1 text-[11px] font-semibold"
+                      onClick={() => void applyPoolToFiltered(true)}
+                    >
+                      필터 전체 추가
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg btn-soft px-2.5 py-1 text-[11px] font-semibold"
+                      onClick={() => void applyPoolToFiltered(false)}
+                    >
+                      필터 전체 제외
+                    </button>
                   </div>
                 )}
               </div>
 
-              <div className="grid gap-4">
-                {filteredItems.map((it) => {
-                  const rarityColors = {
-                    R: 'bg-gray-500/10 border-gray-500/20 text-gray-600 dark:text-gray-300',
-                    S: 'bg-blue-500/10 border-blue-500/20 text-blue-600 dark:text-blue-300',
-                    SS: 'bg-purple-500/10 border-purple-500/20 text-purple-600 dark:text-purple-300',
-                    SSS: 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-300'
-                  };
-                  return (
-                    <div key={it.item_id} className="group rounded-2xl border border-[color:var(--border)] bg-gradient-to-br from-[color:var(--card)] to-[color:var(--chip)] p-5 hover:border-[color:var(--fg)]/20 transition-all">
-                      <div className="flex items-start justify-between gap-4 mb-4">
-                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <div className={`px-3 py-1 rounded-xl border font-semibold text-xs ${rarityColors[it.rarity]}`}>
-                            {it.rarity}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <input
-                              className="w-full bg-transparent border-none outline-none text-base font-semibold text-[color:var(--fg)] placeholder:text-[color:var(--muted-2)] focus:text-[color:var(--fg)]"
-                              value={it.name}
-                              placeholder="아이템 이름"
-                              onChange={(e) => setItems((prev) => prev.map((x) => (x.item_id === it.item_id ? { ...x, name: e.target.value } : x)))}
-                            />
-                          </div>
+              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/60">
+                  <div className="flex items-center justify-between border-b border-[color:var(--border)] px-3 py-2 text-xs">
+                    <span className="muted">검색 결과</span>
+                    <span className="font-semibold">{filteredItems.length}개</span>
+                  </div>
+                  <div className="max-h-[560px] overflow-y-auto p-2">
+                    {filteredItems.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-[color:var(--border)] px-3 py-6 text-center text-xs muted">조건에 맞는 아이템이 없습니다.</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {filteredItems.map((it) => {
+                          const selected = selectedItemId === it.item_id;
+                          const inCurrentPool = poolItems.has(it.item_id);
+                          return (
+                            <button
+                              key={it.item_id}
+                              type="button"
+                              className={`w-full rounded-xl border px-3 py-2 text-left transition ${
+                                selected
+                                  ? 'border-[color:var(--accent-pink)]/60 bg-[color:var(--accent-pink)]/12'
+                                  : 'border-[color:var(--border)] bg-[color:var(--card)] hover:border-[color:var(--fg)]/20'
+                              }`}
+                              onClick={() => setSelectedItemId(it.item_id)}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="truncate text-sm font-semibold">{it.name}</div>
+                                <span className="rounded-lg border border-[color:var(--border)] px-2 py-0.5 text-[10px] font-semibold">{it.rarity}</span>
+                              </div>
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] muted-2">
+                                <span>{it.is_active ? '활성' : '비활성'}</span>
+                                {selectedPoolId && <span>• {inCurrentPool ? '현재 풀 포함' : '현재 풀 제외'}</span>}
+                                <span>• ID {it.item_id.slice(0, 8)}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-4">
+                  {!selectedItem ? (
+                    <div className="rounded-xl border border-dashed border-[color:var(--border)] px-4 py-10 text-center text-sm muted">
+                      왼쪽 목록에서 수정할 아이템을 선택하세요.
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="text-sm font-semibold">선택 아이템</div>
+                          <div className="text-xs muted-2">ID: {selectedItem.item_id}</div>
                         </div>
-                        <div className="flex flex-col items-end gap-2">
-                          <Checkbox
-                            checked={it.is_active}
-                            onChange={(checked) =>
-                              setItems((prev) => prev.map((x) => (x.item_id === it.item_id ? { ...x, is_active: checked } : x)))
-                            }
-                            label="활성"
-                          />
-                          {selectedPoolId && (
-                            <Checkbox
-                              checked={poolItems.has(it.item_id)}
-                              onChange={(checked) => void togglePoolItem(it.item_id, checked)}
-                              label="이 풀에 포함"
-                            />
-                          )}
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            className="rounded-xl border border-red-200/30 bg-red-200/10 px-3 py-2 text-xs font-semibold text-red-200 hover:bg-red-200/20"
+                            onClick={() => void deleteItem(selectedItem.item_id)}
+                          >
+                            삭제
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-xl btn-bangul px-3 py-2 text-xs font-semibold"
+                            onClick={() => void saveItem(selectedItem)}
+                          >
+                            저장
+                          </button>
                         </div>
                       </div>
 
-                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        <div>
-                          <label className="block text-xs font-medium muted mb-1.5">희귀도</label>
-                          <div className="relative">
+                      <label className="text-sm">
+                        아이템 이름
+                        <input
+                          className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+                          value={selectedItem.name}
+                          onChange={(e) => updateItemDraft(selectedItem.item_id, { name: e.target.value })}
+                        />
+                      </label>
+
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <label className="text-sm">
+                          희귀도
+                          <div className="relative mt-1">
                             <select
-                              className="w-full appearance-none rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 pr-10 text-sm text-[color:var(--fg)] focus:border-[color:var(--fg)]/40 transition"
-                              value={it.rarity}
-                              onChange={(e) =>
-                                setItems((prev) =>
-                                  prev.map((x) => (x.item_id === it.item_id ? { ...x, rarity: e.target.value as Item['rarity'] } : x))
-                                )
-                              }
+                              className="w-full appearance-none rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 pr-9 text-sm text-[color:var(--fg)]"
+                              value={selectedItem.rarity}
+                              onChange={(e) => updateItemDraft(selectedItem.item_id, { rarity: e.target.value as Item['rarity'] })}
                             >
                               {RARITIES.map((r) => (
                                 <option key={r} value={r}>
@@ -1089,97 +1213,76 @@ export default function GachaAdminClient() {
                                 </option>
                               ))}
                             </select>
-                            <ChevronDown
-                              className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--muted-2)]"
-                              aria-hidden="true"
-                              strokeWidth={2}
-                            />
+                            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--muted-2)]" />
                           </div>
-                        </div>
-
-                        <div className="sm:col-span-2 lg:col-span-1">
-                            <CustomSelect
-                              label="디스코드 역할"
-                              value={it.discord_role_id ?? ''}
-                              onChange={(value) =>
-                                setItems((prev) =>
-                                  prev.map((x) =>
-                                    x.item_id === it.item_id
-                                      ? {
-                                          ...x,
-                                          discord_role_id: value || null,
-                                          reward_points: value ? 0 : x.reward_points
-                                        }
-                                      : x
-                                  )
-                                )
-                              }
-                            options={[
-                              { value: '', label: '(없음)' },
-                              ...roles.map((r) => ({ value: r.id, label: r.name }))
-                            ]}
-                            placeholder="역할 선택"
+                        </label>
+                        <div className="text-sm">
+                          <div className="mb-2">상태</div>
+                          <Checkbox
+                            checked={selectedItem.is_active}
+                            onChange={(checked) => updateItemDraft(selectedItem.item_id, { is_active: checked })}
+                            label="활성"
                           />
+                          {selectedPoolId && (
+                            <div className="mt-2">
+                              <Checkbox
+                                checked={poolItems.has(selectedItem.item_id)}
+                                onChange={(checked) => void togglePoolItem(selectedItem.item_id, checked)}
+                                label="현재 풀 포함"
+                              />
+                            </div>
+                          )}
                         </div>
+                      </div>
 
-                        <div>
-                          <label className="block text-xs font-medium muted mb-1.5">중복 환급</label>
-                          <input
-                            className="w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)] focus:border-[color:var(--fg)]/40 transition"
-                            type="number"
-                            min={0}
-                            value={it.duplicate_refund_points}
-                            onChange={(e) =>
-                              setItems((prev) =>
-                                prev.map((x) =>
-                                  x.item_id === it.item_id ? { ...x, duplicate_refund_points: Number(e.target.value) } : x
-                                )
-                              )
-                            }
-                            disabled={!it.discord_role_id}
-                          />
-                        </div>
+                      <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/70 p-4">
+                        <CustomSelect
+                          label="디스코드 역할"
+                          value={selectedItem.discord_role_id ?? ''}
+                          onChange={(value) =>
+                            updateItemDraft(selectedItem.item_id, {
+                              discord_role_id: value || null,
+                              reward_points: value ? 0 : selectedItem.reward_points
+                            })
+                          }
+                          options={[
+                            { value: '', label: '(없음)' },
+                            ...roles.map((r) => ({ value: r.id, label: r.name }))
+                          ]}
+                          placeholder="역할 선택"
+                        />
 
-                        {!it.discord_role_id && (
-                          <div>
-                            <label className="block text-xs font-medium muted mb-1.5">포인트 보상</label>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                          <label className="text-sm">
+                            중복 환급 포인트
                             <input
-                              className="w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)] focus:border-[color:var(--fg)]/40 transition"
+                              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2 text-sm text-[color:var(--fg)] disabled:opacity-55"
                               type="number"
                               min={0}
-                              value={it.reward_points}
-                              onChange={(e) =>
-                                setItems((prev) =>
-                                  prev.map((x) =>
-                                    x.item_id === it.item_id ? { ...x, reward_points: Number(e.target.value) } : x
-                                  )
-                                )
-                              }
+                              value={selectedItem.duplicate_refund_points}
+                              disabled={!selectedItem.discord_role_id}
+                              onChange={(e) => updateItemDraft(selectedItem.item_id, { duplicate_refund_points: Number(e.target.value) })}
                             />
-                          </div>
-                        )}
-                      </div>
+                            <p className="mt-1 text-[11px] muted-2">역할형 아이템에서만 사용됩니다.</p>
+                          </label>
 
-                      <div className="mt-4 flex items-center justify-between gap-3">
-                        <button
-                          type="button"
-                          className="flex items-center gap-2 rounded-xl border border-red-200/30 bg-red-200/10 px-3 py-2 text-xs font-semibold text-red-200 hover:bg-red-200/20 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                          onClick={() => void deleteItem(it.item_id)}
-                        >
-                          <Trash2 className="h-3 w-3" strokeWidth={2} />
-                          <span>삭제</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded-xl btn-bangul px-4 py-2 text-sm font-semibold opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                          onClick={() => void saveItem(it)}
-                        >
-                          저장
-                        </button>
+                          <label className="text-sm">
+                            포인트 보상
+                            <input
+                              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2 text-sm text-[color:var(--fg)] disabled:opacity-55"
+                              type="number"
+                              min={0}
+                              value={selectedItem.reward_points}
+                              disabled={Boolean(selectedItem.discord_role_id)}
+                              onChange={(e) => updateItemDraft(selectedItem.item_id, { reward_points: Number(e.target.value) })}
+                            />
+                            <p className="mt-1 text-[11px] muted-2">역할이 없을 때만 지급됩니다.</p>
+                          </label>
+                        </div>
                       </div>
                     </div>
-                  );
-                })}
+                  )}
+                </div>
               </div>
             </section>
           </div>
