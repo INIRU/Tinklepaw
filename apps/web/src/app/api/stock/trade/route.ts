@@ -12,6 +12,7 @@ type DashboardRow = {
   out_change_pct: number | string | null;
   out_fee_bps: number | string | null;
   out_balance: number | string | null;
+  out_point_balance: number | string | null;
   out_holding_qty: number | string | null;
   out_holding_avg_price: number | string | null;
   out_holding_value: number | string | null;
@@ -68,6 +69,7 @@ function normalizeDashboard(raw: DashboardRow | null | undefined) {
     changePct: toSafeNumber(raw?.out_change_pct, 0),
     feeBps: toSafeNumber(raw?.out_fee_bps, 150),
     balance: toSafeNumber(raw?.out_balance, 0),
+    pointBalance: toSafeNumber(raw?.out_point_balance, 0),
     holdingQty: toSafeNumber(raw?.out_holding_qty, 0),
     holdingAvgPrice: toSafeNumber(raw?.out_holding_avg_price, 0),
     holdingValue: toSafeNumber(raw?.out_holding_value, 0),
@@ -99,6 +101,8 @@ function mapTradeError(code: string | null): string {
       return '수량은 1 이상이어야 합니다.';
     case 'QTY_TOO_LARGE':
       return '한 번에 처리 가능한 수량을 초과했습니다.';
+    case 'INSUFFICIENT_NYANG':
+      return '냥이 부족합니다. 먼저 환전해 주세요.';
     case 'INSUFFICIENT_POINTS':
       return '포인트가 부족합니다.';
     case 'INSUFFICIENT_HOLDINGS':

@@ -58,8 +58,10 @@ type AppConfig = {
   stock_news_interval_minutes: number;
   stock_news_daily_window_start_hour: number;
   stock_news_daily_window_end_hour: number;
-  stock_news_min_impact_bps: number;
-  stock_news_max_impact_bps: number;
+  stock_news_bullish_min_impact_bps: number;
+  stock_news_bullish_max_impact_bps: number;
+  stock_news_bearish_min_impact_bps: number;
+  stock_news_bearish_max_impact_bps: number;
   stock_news_bullish_scenarios: string[];
   stock_news_bearish_scenarios: string[];
   stock_whale_max_buy_qty: number;
@@ -175,8 +177,10 @@ const STOCK_DIRTY_KEYS: ReadonlyArray<keyof AppConfig> = [
   'stock_news_interval_minutes',
   'stock_news_daily_window_start_hour',
   'stock_news_daily_window_end_hour',
-  'stock_news_min_impact_bps',
-  'stock_news_max_impact_bps',
+  'stock_news_bullish_min_impact_bps',
+  'stock_news_bullish_max_impact_bps',
+  'stock_news_bearish_min_impact_bps',
+  'stock_news_bearish_max_impact_bps',
   'stock_news_bullish_scenarios',
   'stock_news_bearish_scenarios',
   'stock_whale_max_buy_qty',
@@ -592,6 +596,8 @@ export default function SettingsClient() {
 
     const bullishScenarios = normalizeScenarioList(cfgBody.stock_news_bullish_scenarios, DEFAULT_BULLISH_SCENARIOS);
     const bearishScenarios = normalizeScenarioList(cfgBody.stock_news_bearish_scenarios, DEFAULT_BEARISH_SCENARIOS);
+    const legacyMinImpactBps = Number((cfgBody as { stock_news_min_impact_bps?: number }).stock_news_min_impact_bps ?? 40);
+    const legacyMaxImpactBps = Number((cfgBody as { stock_news_max_impact_bps?: number }).stock_news_max_impact_bps ?? 260);
 
     const normalizedCfg = cloneConfigSnapshot({
       ...(cfgBody as AppConfig),
@@ -605,8 +611,10 @@ export default function SettingsClient() {
       stock_news_interval_minutes: Number(cfgBody.stock_news_interval_minutes ?? 60),
       stock_news_daily_window_start_hour: Number(cfgBody.stock_news_daily_window_start_hour ?? 9),
       stock_news_daily_window_end_hour: Number(cfgBody.stock_news_daily_window_end_hour ?? 23),
-      stock_news_min_impact_bps: Number(cfgBody.stock_news_min_impact_bps ?? 40),
-      stock_news_max_impact_bps: Number(cfgBody.stock_news_max_impact_bps ?? 260),
+      stock_news_bullish_min_impact_bps: Number(cfgBody.stock_news_bullish_min_impact_bps ?? legacyMinImpactBps),
+      stock_news_bullish_max_impact_bps: Number(cfgBody.stock_news_bullish_max_impact_bps ?? legacyMaxImpactBps),
+      stock_news_bearish_min_impact_bps: Number(cfgBody.stock_news_bearish_min_impact_bps ?? legacyMinImpactBps),
+      stock_news_bearish_max_impact_bps: Number(cfgBody.stock_news_bearish_max_impact_bps ?? legacyMaxImpactBps),
       stock_news_bullish_scenarios: bullishScenarios,
       stock_news_bearish_scenarios: bearishScenarios,
       stock_whale_max_buy_qty: Number(cfgBody.stock_whale_max_buy_qty ?? 320),
@@ -1475,26 +1483,50 @@ export default function SettingsClient() {
           </label>
 
           <label className="text-sm">
-            최소 영향(bps)
+            상승 최소 영향(bps)
             <input
               className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
               type="number"
               min={0}
               max={5000}
-              value={cfg.stock_news_min_impact_bps}
-              onChange={(e) => setCfg({ ...cfg, stock_news_min_impact_bps: Number(e.target.value) })}
+              value={cfg.stock_news_bullish_min_impact_bps}
+              onChange={(e) => setCfg({ ...cfg, stock_news_bullish_min_impact_bps: Number(e.target.value) })}
             />
           </label>
 
           <label className="text-sm">
-            최대 영향(bps)
+            상승 최대 영향(bps)
             <input
               className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
               type="number"
               min={0}
               max={5000}
-              value={cfg.stock_news_max_impact_bps}
-              onChange={(e) => setCfg({ ...cfg, stock_news_max_impact_bps: Number(e.target.value) })}
+              value={cfg.stock_news_bullish_max_impact_bps}
+              onChange={(e) => setCfg({ ...cfg, stock_news_bullish_max_impact_bps: Number(e.target.value) })}
+            />
+          </label>
+
+          <label className="text-sm">
+            하락 최소 영향(bps)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              min={0}
+              max={5000}
+              value={cfg.stock_news_bearish_min_impact_bps}
+              onChange={(e) => setCfg({ ...cfg, stock_news_bearish_min_impact_bps: Number(e.target.value) })}
+            />
+          </label>
+
+          <label className="text-sm">
+            하락 최대 영향(bps)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              min={0}
+              max={5000}
+              value={cfg.stock_news_bearish_max_impact_bps}
+              onChange={(e) => setCfg({ ...cfg, stock_news_bearish_max_impact_bps: Number(e.target.value) })}
             />
           </label>
 

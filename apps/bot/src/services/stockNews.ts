@@ -906,8 +906,26 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
   if (!dashboard) throw new Error('[StockNews] dashboard payload missing');
   const stockTicker = resolveStockTicker(dashboard);
 
-  const minImpactBps = clamp(Math.floor(toNumber(cfg.stock_news_min_impact_bps, 40)), MIN_IMPACT_BPS, MAX_IMPACT_BPS);
-  const maxImpactBps = clamp(Math.floor(toNumber(cfg.stock_news_max_impact_bps, 260)), minImpactBps, MAX_IMPACT_BPS);
+  const bullishMinImpactBps = clamp(
+    Math.floor(toNumber(cfg.stock_news_bullish_min_impact_bps, 40)),
+    MIN_IMPACT_BPS,
+    MAX_IMPACT_BPS,
+  );
+  const bullishMaxImpactBps = clamp(
+    Math.floor(toNumber(cfg.stock_news_bullish_max_impact_bps, 260)),
+    bullishMinImpactBps,
+    MAX_IMPACT_BPS,
+  );
+  const bearishMinImpactBps = clamp(
+    Math.floor(toNumber(cfg.stock_news_bearish_min_impact_bps, 40)),
+    MIN_IMPACT_BPS,
+    MAX_IMPACT_BPS,
+  );
+  const bearishMaxImpactBps = clamp(
+    Math.floor(toNumber(cfg.stock_news_bearish_max_impact_bps, 260)),
+    bearishMinImpactBps,
+    MAX_IMPACT_BPS,
+  );
   const currentPrice = Math.max(50, toNumber(dashboard.out_price ?? dashboard.price, 0));
   const changePct = toNumber(dashboard.out_change_pct ?? dashboard.change_pct, 0);
   const marketSignal = getMarketSignal(dashboard.out_candles ?? dashboard.candles);
@@ -919,6 +937,9 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
     dataIsSparse: marketSignal.dataIsSparse,
     recentStats: recentNewsContext.stats
   });
+  const selectedImpactBounds = selectedSentiment === 'bearish'
+    ? { minImpactBps: bearishMinImpactBps, maxImpactBps: bearishMaxImpactBps }
+    : { minImpactBps: bullishMinImpactBps, maxImpactBps: bullishMaxImpactBps };
 
   const apiKeys = resolveGeminiApiKeys(ctx.env);
   if (apiKeys.length === 0) {
@@ -941,8 +962,8 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
         recentNewsContext: recentNewsContext.lines,
         recentSentimentSummary: recentNewsContext.sentimentSummary,
         dataIsSparse: marketSignal.dataIsSparse,
-        minImpactBps,
-        maxImpactBps,
+        minImpactBps: selectedImpactBounds.minImpactBps,
+        maxImpactBps: selectedImpactBounds.maxImpactBps,
         scenarioSeeds,
         forcedSentiment: selectedSentiment,
         forcedTier: forcedOverrides.tier,
@@ -997,6 +1018,9 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
       selected_sentiment: selectedSentiment,
       forced_tier: forcedOverrides.tier,
       forced_scenario: forcedOverrides.scenario,
+      impact_bounds_direction: selectedSentiment === 'bearish' ? 'bearish' : 'bullish_or_neutral',
+      impact_bounds_min_bps: selectedImpactBounds.minImpactBps,
+      impact_bounds_max_bps: selectedImpactBounds.maxImpactBps,
       manipulated: forcedOverrides.hasAny,
       gemini_key_ordinal: usedKeyOrdinal,
       generated_at: now.toISOString()

@@ -65,6 +65,10 @@ export async function getOrInitAppConfig() {
       stock_shrimp_max_sell_qty: 28,
       stock_ant_auto_buy_qty: 8,
       stock_ant_auto_buy_cooldown_seconds: 120,
+      stock_news_bullish_min_impact_bps: 40,
+      stock_news_bullish_max_impact_bps: 260,
+      stock_news_bearish_min_impact_bps: 40,
+      stock_news_bearish_max_impact_bps: 260,
     })
     .select('*')
     .single();

@@ -33,6 +33,7 @@ type StockDashboardRow = {
   out_change_pct: number;
   out_fee_bps: number;
   out_balance: number;
+  out_point_balance: number;
   out_holding_qty: number;
   out_holding_avg_price: number;
   out_holding_value: number;
@@ -53,6 +54,15 @@ type StockTradeRow = {
   out_holding_qty: number;
   out_holding_avg_price: number;
   out_unrealized_pnl: number;
+};
+
+type StockExchangeRow = {
+  out_success: boolean;
+  out_error_code: string | null;
+  out_points_spent: number;
+  out_nyang_received: number;
+  out_new_point_balance: number;
+  out_new_nyang_balance: number;
 };
 
 const PANEL_TIMEOUT_MS = 10 * 60 * 1000;
@@ -110,6 +120,12 @@ function actionRow(disabled = false) {
       .setStyle(ButtonStyle.Secondary)
       .setEmoji('🔄')
       .setDisabled(disabled),
+    new ButtonBuilder()
+      .setCustomId('stock:exchange')
+      .setLabel('환전')
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji('💱')
+      .setDisabled(disabled),
   );
 }
 
@@ -119,14 +135,29 @@ function mapTradeError(code: string | null): string {
       return '수량은 1 이상 숫자로 입력해 주세요.';
     case 'QTY_TOO_LARGE':
       return '한 번에 처리할 수 있는 수량을 초과했어요.';
+    case 'INSUFFICIENT_NYANG':
+      return '냥이 부족해서 매수할 수 없어요. 먼저 환전해 주세요.';
     case 'INSUFFICIENT_POINTS':
-      return '포인트가 부족해서 매수할 수 없어요.';
+      return '포인트가 부족해서 환전할 수 없어요.';
     case 'INSUFFICIENT_HOLDINGS':
       return '보유 수량이 부족해서 매도할 수 없어요.';
     case 'INVALID_SIDE':
       return '거래 타입이 올바르지 않아요.';
     default:
       return '거래 처리에 실패했어요. 잠시 후 다시 시도해 주세요.';
+  }
+}
+
+function mapExchangeError(code: string | null): string {
+  switch (code) {
+    case 'INVALID_POINTS':
+      return '환전 포인트는 1 이상의 숫자로 입력해 주세요.';
+    case 'POINTS_TOO_LARGE':
+      return '한 번에 환전 가능한 포인트를 초과했어요.';
+    case 'INSUFFICIENT_POINTS':
+      return '포인트가 부족해서 환전할 수 없어요.';
+    default:
+      return '환전 처리에 실패했어요. 잠시 후 다시 시도해 주세요.';
   }
 }
 
@@ -152,6 +183,7 @@ async function fetchDashboard(userId: string) {
     changePct: toNumber(row.out_change_pct),
     feeBps: toNumber(row.out_fee_bps),
     balance: toNumber(row.out_balance),
+    pointBalance: toNumber(row.out_point_balance),
     holdingQty: toNumber(row.out_holding_qty),
     holdingAvgPrice: toNumber(row.out_holding_avg_price),
     holdingValue: toNumber(row.out_holding_value),
@@ -169,16 +201,28 @@ function tradeResultEmbed(row: StockTradeRow) {
     .setTitle(`${isBuy ? '✅' : '💰'} 주식 ${sideLabel} 완료`)
     .setColor(isBuy ? 0x22c55e : 0xf97316)
     .addFields(
-      { name: '체결 단가', value: `${toNumber(row.out_price).toLocaleString()}P`, inline: true },
+      { name: '체결 단가', value: `${toNumber(row.out_price).toLocaleString()}냥`, inline: true },
       { name: '수량', value: `${toNumber(row.out_qty).toLocaleString()}주`, inline: true },
-      { name: totalLabel, value: `${toNumber(row.out_settlement).toLocaleString()}P`, inline: true },
-      { name: '거래 금액', value: `${toNumber(row.out_gross).toLocaleString()}P`, inline: true },
-      { name: '수수료', value: `${toNumber(row.out_fee).toLocaleString()}P`, inline: true },
+      { name: totalLabel, value: `${toNumber(row.out_settlement).toLocaleString()}냥`, inline: true },
+      { name: '거래 금액', value: `${toNumber(row.out_gross).toLocaleString()}냥`, inline: true },
+      { name: '수수료', value: `${toNumber(row.out_fee).toLocaleString()}냥`, inline: true },
       { name: '보유 수량', value: `${toNumber(row.out_holding_qty).toLocaleString()}주`, inline: true },
-      { name: '평균 단가', value: `${toNumber(row.out_holding_avg_price).toLocaleString()}P`, inline: true },
-      { name: '남은 포인트', value: `${toNumber(row.out_new_balance).toLocaleString()}P`, inline: true },
+      { name: '평균 단가', value: `${toNumber(row.out_holding_avg_price).toLocaleString()}냥`, inline: true },
+      { name: '남은 냥', value: `${toNumber(row.out_new_balance).toLocaleString()}냥`, inline: true },
     )
     .setFooter({ text: '패널은 자동으로 새로고침됩니다.' })
+    .setTimestamp();
+}
+
+function exchangeResultEmbed(row: StockExchangeRow) {
+  return new EmbedBuilder()
+    .setTitle('💱 환전 완료')
+    .setColor(0x38bdf8)
+    .setDescription(`${toNumber(row.out_points_spent).toLocaleString()}P -> ${toNumber(row.out_nyang_received).toLocaleString()}냥`)
+    .addFields(
+      { name: '남은 포인트', value: `${toNumber(row.out_new_point_balance).toLocaleString()}P`, inline: true },
+      { name: '보유 냥', value: `${toNumber(row.out_new_nyang_balance).toLocaleString()}냥`, inline: true },
+    )
     .setTimestamp();
 }
 
@@ -217,16 +261,17 @@ export const stockCommand: SlashCommand = {
         .setColor(board.changePct >= 0 ? 0x60a5fa : 0xf87171)
         .setTitle(`📊 ${board.name}`)
         .setDescription(
-          `현재가 **${board.price.toLocaleString()}P**  (${signedPct(board.changePct)})\n` +
-          `보유 평가손익: **${signed(board.unrealizedPnl)}P**`,
+          `현재가 **${board.price.toLocaleString()}냥**  (${signedPct(board.changePct)})\n` +
+          `보유 평가손익: **${signed(board.unrealizedPnl)}냥**`,
         )
         .addFields(
           { name: '보유 수량', value: `${board.holdingQty.toLocaleString()}주`, inline: true },
-          { name: '평균 단가', value: `${board.holdingAvgPrice.toLocaleString()}P`, inline: true },
-          { name: '평가 금액', value: `${board.holdingValue.toLocaleString()}P`, inline: true },
-          { name: '내 포인트', value: `${board.balance.toLocaleString()}P`, inline: true },
+          { name: '평균 단가', value: `${board.holdingAvgPrice.toLocaleString()}냥`, inline: true },
+          { name: '평가 금액', value: `${board.holdingValue.toLocaleString()}냥`, inline: true },
+          { name: '보유 냥', value: `${board.balance.toLocaleString()}냥`, inline: true },
+          { name: '보유 포인트', value: `${board.pointBalance.toLocaleString()}P`, inline: true },
           { name: '거래 수수료', value: `${(board.feeBps / 100).toFixed(2)}%`, inline: true },
-          { name: '거래 방식', value: '버튼 클릭 -> 수량 입력', inline: true },
+          { name: '거래 방식', value: '버튼 클릭 -> 수량 입력 (환전: 포인트 -> 냥)', inline: true },
         )
         .setImage('attachment://stock-chart.png')
         .setFooter({ text: '5분 봉 기준 · 버튼으로 즉시 거래 가능' })
@@ -271,6 +316,75 @@ export const stockCommand: SlashCommand = {
             files: [],
           });
         }
+        return;
+      }
+
+      if (buttonInteraction.customId === 'stock:exchange') {
+        const modalCustomId = `stock:exchange:modal:${buttonInteraction.id}`;
+        const modal = new ModalBuilder().setCustomId(modalCustomId).setTitle('포인트 -> 냥 환전');
+
+        const pointsInput = new TextInputBuilder()
+          .setCustomId('points')
+          .setLabel('포인트 수량')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('예: 1000')
+          .setRequired(true)
+          .setMaxLength(9);
+
+        modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(pointsInput));
+        await buttonInteraction.showModal(modal);
+
+        let modalSubmit: ModalSubmitInteraction;
+        try {
+          modalSubmit = await buttonInteraction.awaitModalSubmit({
+            time: MODAL_TIMEOUT_MS,
+            filter: (m) => m.customId === modalCustomId && m.user.id === userId,
+          });
+        } catch {
+          return;
+        }
+
+        const rawPoints = modalSubmit.fields.getTextInputValue('points').trim();
+        const points = Number.parseInt(rawPoints, 10);
+        if (!Number.isFinite(points) || points <= 0) {
+          await modalSubmit.reply({ content: '환전 포인트는 1 이상의 숫자로 입력해 주세요.' });
+          return;
+        }
+
+        await modalSubmit.deferReply();
+
+        const rpc = ctx.supabase.rpc.bind(ctx.supabase) as unknown as (
+          fn: string,
+          params?: Record<string, unknown>,
+        ) => Promise<{ data: unknown; error: { message: string } | null }>;
+
+        const { data, error } = await rpc('exchange_points_to_nyang', {
+          p_discord_user_id: userId,
+          p_points: points,
+        });
+
+        if (error) {
+          await modalSubmit.editReply({
+            embeds: [
+              new EmbedBuilder().setTitle('❌ 환전 실패').setDescription(error.message || '환전을 처리하지 못했습니다.').setColor(0xef4444),
+            ],
+          });
+          return;
+        }
+
+        const exchange = (Array.isArray(data) ? data[0] : data) as StockExchangeRow | null;
+        if (!exchange || !exchange.out_success) {
+          await modalSubmit.editReply({
+            embeds: [
+              new EmbedBuilder().setTitle('❌ 환전 실패').setDescription(mapExchangeError(exchange?.out_error_code ?? null)).setColor(0xef4444),
+            ],
+          });
+          await renderPanel(false).catch(() => {});
+          return;
+        }
+
+        await modalSubmit.editReply({ embeds: [exchangeResultEmbed(exchange)] });
+        await renderPanel(false).catch(() => {});
         return;
       }
 

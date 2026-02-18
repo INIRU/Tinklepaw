@@ -80,8 +80,10 @@ export async function triggerGachaUI(
     stock_news_interval_minutes: 60,
     stock_news_daily_window_start_hour: 9,
     stock_news_daily_window_end_hour: 23,
-    stock_news_min_impact_bps: 40,
-    stock_news_max_impact_bps: 260,
+    stock_news_bullish_min_impact_bps: 40,
+    stock_news_bullish_max_impact_bps: 260,
+    stock_news_bearish_min_impact_bps: 40,
+    stock_news_bearish_max_impact_bps: 260,
     stock_news_bullish_scenarios: [
       '차세대 제품 쇼케이스 기대감 확산',
       '대형 파트너십 체결 루머 확산',

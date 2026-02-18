@@ -76,6 +76,10 @@ export async function PUT(req: Request) {
     stock_news_interval_minutes?: number;
     stock_news_daily_window_start_hour?: number;
     stock_news_daily_window_end_hour?: number;
+    stock_news_bullish_min_impact_bps?: number;
+    stock_news_bullish_max_impact_bps?: number;
+    stock_news_bearish_min_impact_bps?: number;
+    stock_news_bearish_max_impact_bps?: number;
     stock_news_min_impact_bps?: number;
     stock_news_max_impact_bps?: number;
     stock_whale_max_buy_qty?: number;
@@ -154,18 +158,42 @@ export async function PUT(req: Request) {
     if (body.stock_news_daily_window_end_hour !== undefined) {
       patch.stock_news_daily_window_end_hour = Math.max(0, Math.min(23, Math.floor(body.stock_news_daily_window_end_hour)));
     }
-    const nextMinImpact =
+    const legacyMinImpact =
       body.stock_news_min_impact_bps !== undefined
         ? Math.max(0, Math.min(5000, Math.floor(body.stock_news_min_impact_bps)))
         : undefined;
-    const nextMaxImpact =
+    const legacyMaxImpact =
       body.stock_news_max_impact_bps !== undefined
         ? Math.max(0, Math.min(5000, Math.floor(body.stock_news_max_impact_bps)))
         : undefined;
-    if (nextMinImpact !== undefined) patch.stock_news_min_impact_bps = nextMinImpact;
-    if (nextMaxImpact !== undefined) patch.stock_news_max_impact_bps = nextMaxImpact;
-    if (nextMinImpact !== undefined && nextMaxImpact !== undefined && nextMaxImpact < nextMinImpact) {
-      patch.stock_news_max_impact_bps = nextMinImpact;
+
+    const bullishMinImpact =
+      body.stock_news_bullish_min_impact_bps !== undefined
+        ? Math.max(0, Math.min(5000, Math.floor(body.stock_news_bullish_min_impact_bps)))
+        : legacyMinImpact;
+    const bullishMaxImpact =
+      body.stock_news_bullish_max_impact_bps !== undefined
+        ? Math.max(0, Math.min(5000, Math.floor(body.stock_news_bullish_max_impact_bps)))
+        : legacyMaxImpact;
+    const bearishMinImpact =
+      body.stock_news_bearish_min_impact_bps !== undefined
+        ? Math.max(0, Math.min(5000, Math.floor(body.stock_news_bearish_min_impact_bps)))
+        : legacyMinImpact;
+    const bearishMaxImpact =
+      body.stock_news_bearish_max_impact_bps !== undefined
+        ? Math.max(0, Math.min(5000, Math.floor(body.stock_news_bearish_max_impact_bps)))
+        : legacyMaxImpact;
+
+    if (bullishMinImpact !== undefined) patch.stock_news_bullish_min_impact_bps = bullishMinImpact;
+    if (bullishMaxImpact !== undefined) patch.stock_news_bullish_max_impact_bps = bullishMaxImpact;
+    if (bullishMinImpact !== undefined && bullishMaxImpact !== undefined && bullishMaxImpact < bullishMinImpact) {
+      patch.stock_news_bullish_max_impact_bps = bullishMinImpact;
+    }
+
+    if (bearishMinImpact !== undefined) patch.stock_news_bearish_min_impact_bps = bearishMinImpact;
+    if (bearishMaxImpact !== undefined) patch.stock_news_bearish_max_impact_bps = bearishMaxImpact;
+    if (bearishMinImpact !== undefined && bearishMaxImpact !== undefined && bearishMaxImpact < bearishMinImpact) {
+      patch.stock_news_bearish_max_impact_bps = bearishMinImpact;
     }
 
     if (body.stock_whale_max_buy_qty !== undefined) {

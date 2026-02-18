@@ -1,9 +1,18 @@
 import { NextResponse } from 'next/server';
 
-import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
 import { isResponse, requireGuildMemberApi } from '@/lib/server/guards-api';
+import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
 
 export const runtime = 'nodejs';
+
+type ExchangeRow = {
+  out_success: boolean | null;
+  out_error_code: string | null;
+  out_points_spent: number | string | null;
+  out_nyang_received: number | string | null;
+  out_new_point_balance: number | string | null;
+  out_new_nyang_balance: number | string | null;
+};
 
 type DashboardRow = {
   out_symbol: string | null;
@@ -23,6 +32,19 @@ type DashboardRow = {
 function toSafeNumber(value: unknown, fallback = 0): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function mapExchangeError(code: string | null): string {
+  switch (code) {
+    case 'INVALID_POINTS':
+      return '환전 포인트는 1 이상이어야 합니다.';
+    case 'POINTS_TOO_LARGE':
+      return '한 번에 환전할 수 있는 포인트를 초과했습니다.';
+    case 'INSUFFICIENT_POINTS':
+      return '포인트가 부족합니다.';
+    default:
+      return '환전에 실패했습니다.';
+  }
 }
 
 function normalizeDashboard(raw: DashboardRow | null | undefined) {
@@ -63,9 +85,22 @@ function normalizeDashboard(raw: DashboardRow | null | undefined) {
   };
 }
 
-export async function GET() {
+export async function POST(req: Request) {
   const gate = await requireGuildMemberApi();
   if (isResponse(gate)) return gate;
+
+  let payload: unknown;
+  try {
+    payload = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'INVALID_JSON' }, { status: 400 });
+  }
+
+  const body = (payload ?? {}) as Record<string, unknown>;
+  const points = Math.trunc(Number(body.points));
+  if (!Number.isFinite(points) || points <= 0) {
+    return NextResponse.json({ error: 'INVALID_POINTS' }, { status: 400 });
+  }
 
   const userId = gate.session.user.id;
   const supabase = createSupabaseAdminClient();
@@ -74,18 +109,45 @@ export async function GET() {
     params?: Record<string, unknown>,
   ) => Promise<{ data: unknown; error: { message: string } | null }>;
 
-  const { data, error } = await rpc('get_stock_dashboard', {
+  const { data, error } = await rpc('exchange_points_to_nyang', {
     p_discord_user_id: userId,
+    p_points: points,
   });
 
   if (error) {
-    return NextResponse.json({ error: error.message, code: 'STOCK_DASHBOARD_FAILED' }, { status: 400 });
+    return NextResponse.json({ error: error.message, code: 'EXCHANGE_FAILED' }, { status: 400 });
   }
 
-  const row = (Array.isArray(data) ? data[0] : data) as unknown as DashboardRow | null;
-  if (!row) {
-    return NextResponse.json({ error: 'STOCK_DASHBOARD_EMPTY' }, { status: 500 });
+  const row = (Array.isArray(data) ? data[0] : data) as ExchangeRow | null;
+  const exchange = {
+    success: Boolean(row?.out_success),
+    errorCode: row?.out_error_code ?? null,
+    pointsSpent: toSafeNumber(row?.out_points_spent, 0),
+    nyangReceived: toSafeNumber(row?.out_nyang_received, 0),
+    pointBalance: toSafeNumber(row?.out_new_point_balance, 0),
+    nyangBalance: toSafeNumber(row?.out_new_nyang_balance, 0),
+  };
+
+  if (!exchange.success) {
+    return NextResponse.json(
+      { error: mapExchangeError(exchange.errorCode), code: exchange.errorCode, exchange },
+      { status: 400 },
+    );
   }
 
-  return NextResponse.json(normalizeDashboard(row));
+  const { data: dashboardData, error: dashboardError } = await rpc('get_stock_dashboard', {
+    p_discord_user_id: userId,
+  });
+
+  if (dashboardError) {
+    return NextResponse.json({ success: true, exchange, dashboard: null });
+  }
+
+  const dashboardRow = (Array.isArray(dashboardData) ? dashboardData[0] : dashboardData) as DashboardRow | null;
+
+  return NextResponse.json({
+    success: true,
+    exchange,
+    dashboard: normalizeDashboard(dashboardRow),
+  });
 }
