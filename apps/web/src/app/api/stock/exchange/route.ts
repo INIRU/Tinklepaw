@@ -5,13 +5,23 @@ import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
 
 export const runtime = 'nodejs';
 
-type ExchangeRow = {
+type ExchangePointsRow = {
   out_success: boolean | null;
   out_error_code: string | null;
   out_points_spent: number | string | null;
   out_nyang_received: number | string | null;
   out_new_point_balance: number | string | null;
   out_new_nyang_balance: number | string | null;
+};
+
+type ExchangeNyangRow = {
+  out_success: boolean | null;
+  out_error_code: string | null;
+  out_nyang_spent: number | string | null;
+  out_points_received: number | string | null;
+  out_new_point_balance: number | string | null;
+  out_new_nyang_balance: number | string | null;
+  out_rate_nyang_per_point: number | string | null;
 };
 
 type DashboardRow = {
@@ -38,10 +48,18 @@ function mapExchangeError(code: string | null): string {
   switch (code) {
     case 'INVALID_POINTS':
       return '환전 포인트는 1 이상이어야 합니다.';
+    case 'INVALID_NYANG':
+      return '환전 냥은 1 이상이어야 합니다.';
     case 'POINTS_TOO_LARGE':
       return '한 번에 환전할 수 있는 포인트를 초과했습니다.';
+    case 'NYANG_TOO_LARGE':
+      return '한 번에 환전할 수 있는 냥을 초과했습니다.';
+    case 'AMOUNT_TOO_SMALL':
+      return '100냥 이상부터 포인트로 환전할 수 있습니다.';
     case 'INSUFFICIENT_POINTS':
       return '포인트가 부족합니다.';
+    case 'INSUFFICIENT_NYANG':
+      return '냥이 부족합니다.';
     default:
       return '환전에 실패했습니다.';
   }
@@ -97,9 +115,13 @@ export async function POST(req: Request) {
   }
 
   const body = (payload ?? {}) as Record<string, unknown>;
-  const points = Math.trunc(Number(body.points));
-  if (!Number.isFinite(points) || points <= 0) {
-    return NextResponse.json({ error: 'INVALID_POINTS' }, { status: 400 });
+  const direction = body.direction === 'nyang_to_points' ? 'nyang_to_points' : 'points_to_nyang';
+  const amount = Math.trunc(
+    Number(direction === 'points_to_nyang' ? (body.points ?? body.amount) : (body.nyang ?? body.amount)),
+  );
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return NextResponse.json({ error: direction === 'points_to_nyang' ? 'INVALID_POINTS' : 'INVALID_NYANG' }, { status: 400 });
   }
 
   const userId = gate.session.user.id;
@@ -109,24 +131,52 @@ export async function POST(req: Request) {
     params?: Record<string, unknown>,
   ) => Promise<{ data: unknown; error: { message: string } | null }>;
 
-  const { data, error } = await rpc('exchange_points_to_nyang', {
-    p_discord_user_id: userId,
-    p_points: points,
-  });
+  const { data, error } = direction === 'points_to_nyang'
+    ? await rpc('exchange_points_to_nyang', {
+        p_discord_user_id: userId,
+        p_points: amount,
+      })
+    : await rpc('exchange_nyang_to_points', {
+        p_discord_user_id: userId,
+        p_nyang: amount,
+      });
 
   if (error) {
     return NextResponse.json({ error: error.message, code: 'EXCHANGE_FAILED' }, { status: 400 });
   }
 
-  const row = (Array.isArray(data) ? data[0] : data) as ExchangeRow | null;
-  const exchange = {
-    success: Boolean(row?.out_success),
-    errorCode: row?.out_error_code ?? null,
-    pointsSpent: toSafeNumber(row?.out_points_spent, 0),
-    nyangReceived: toSafeNumber(row?.out_nyang_received, 0),
-    pointBalance: toSafeNumber(row?.out_new_point_balance, 0),
-    nyangBalance: toSafeNumber(row?.out_new_nyang_balance, 0),
-  };
+  const raw = Array.isArray(data) ? data[0] : data;
+  const exchange = direction === 'points_to_nyang'
+    ? (() => {
+        const row = raw as ExchangePointsRow | null;
+        return {
+          direction,
+          success: Boolean(row?.out_success),
+          errorCode: row?.out_error_code ?? null,
+          pointsSpent: toSafeNumber(row?.out_points_spent, 0),
+          pointsReceived: 0,
+          nyangSpent: 0,
+          nyangReceived: toSafeNumber(row?.out_nyang_received, 0),
+          rateNyangPerPoint: 1,
+          pointBalance: toSafeNumber(row?.out_new_point_balance, 0),
+          nyangBalance: toSafeNumber(row?.out_new_nyang_balance, 0),
+        };
+      })()
+    : (() => {
+        const row = raw as ExchangeNyangRow | null;
+        return {
+          direction,
+          success: Boolean(row?.out_success),
+          errorCode: row?.out_error_code ?? null,
+          pointsSpent: 0,
+          pointsReceived: toSafeNumber(row?.out_points_received, 0),
+          nyangSpent: toSafeNumber(row?.out_nyang_spent, 0),
+          nyangReceived: 0,
+          rateNyangPerPoint: Math.max(1, toSafeNumber(row?.out_rate_nyang_per_point, 100)),
+          pointBalance: toSafeNumber(row?.out_new_point_balance, 0),
+          nyangBalance: toSafeNumber(row?.out_new_nyang_balance, 0),
+        };
+      })();
 
   if (!exchange.success) {
     return NextResponse.json(

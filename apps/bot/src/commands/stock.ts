@@ -56,13 +56,23 @@ type StockTradeRow = {
   out_unrealized_pnl: number;
 };
 
-type StockExchangeRow = {
+type StockExchangeToNyangRow = {
   out_success: boolean;
   out_error_code: string | null;
   out_points_spent: number;
   out_nyang_received: number;
   out_new_point_balance: number;
   out_new_nyang_balance: number;
+};
+
+type StockExchangeToPointRow = {
+  out_success: boolean;
+  out_error_code: string | null;
+  out_nyang_spent: number;
+  out_points_received: number;
+  out_new_point_balance: number;
+  out_new_nyang_balance: number;
+  out_rate_nyang_per_point: number;
 };
 
 const PANEL_TIMEOUT_MS = 10 * 60 * 1000;
@@ -122,9 +132,15 @@ function actionRow(disabled = false) {
       .setDisabled(disabled),
     new ButtonBuilder()
       .setCustomId('stock:exchange')
-      .setLabel('환전')
+      .setLabel('P->냥')
       .setStyle(ButtonStyle.Primary)
       .setEmoji('💱')
+      .setDisabled(disabled),
+    new ButtonBuilder()
+      .setCustomId('stock:exchange-back')
+      .setLabel('냥->P')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji('🏦')
       .setDisabled(disabled),
   );
 }
@@ -139,6 +155,14 @@ function mapTradeError(code: string | null): string {
       return '냥이 부족해서 매수할 수 없어요. 먼저 환전해 주세요.';
     case 'INSUFFICIENT_POINTS':
       return '포인트가 부족해서 환전할 수 없어요.';
+    case 'INVALID_POINTS':
+      return '환전 포인트는 1 이상의 숫자로 입력해 주세요.';
+    case 'INVALID_NYANG':
+      return '환전 냥은 1 이상의 숫자로 입력해 주세요.';
+    case 'INSUFFICIENT_NYANG':
+      return '냥이 부족해서 환전할 수 없어요.';
+    case 'AMOUNT_TOO_SMALL':
+      return '100냥 이상부터 포인트로 환전할 수 있어요.';
     case 'INSUFFICIENT_HOLDINGS':
       return '보유 수량이 부족해서 매도할 수 없어요.';
     case 'INVALID_SIDE':
@@ -152,10 +176,18 @@ function mapExchangeError(code: string | null): string {
   switch (code) {
     case 'INVALID_POINTS':
       return '환전 포인트는 1 이상의 숫자로 입력해 주세요.';
+    case 'INVALID_NYANG':
+      return '환전 냥은 1 이상의 숫자로 입력해 주세요.';
     case 'POINTS_TOO_LARGE':
       return '한 번에 환전 가능한 포인트를 초과했어요.';
+    case 'NYANG_TOO_LARGE':
+      return '한 번에 환전 가능한 냥을 초과했어요.';
     case 'INSUFFICIENT_POINTS':
       return '포인트가 부족해서 환전할 수 없어요.';
+    case 'INSUFFICIENT_NYANG':
+      return '냥이 부족해서 환전할 수 없어요.';
+    case 'AMOUNT_TOO_SMALL':
+      return '100냥 이상부터 포인트로 환전할 수 있어요.';
     default:
       return '환전 처리에 실패했어요. 잠시 후 다시 시도해 주세요.';
   }
@@ -214,7 +246,7 @@ function tradeResultEmbed(row: StockTradeRow) {
     .setTimestamp();
 }
 
-function exchangeResultEmbed(row: StockExchangeRow) {
+function exchangeToNyangResultEmbed(row: StockExchangeToNyangRow) {
   return new EmbedBuilder()
     .setTitle('💱 환전 완료')
     .setColor(0x38bdf8)
@@ -222,6 +254,19 @@ function exchangeResultEmbed(row: StockExchangeRow) {
     .addFields(
       { name: '남은 포인트', value: `${toNumber(row.out_new_point_balance).toLocaleString()}P`, inline: true },
       { name: '보유 냥', value: `${toNumber(row.out_new_nyang_balance).toLocaleString()}냥`, inline: true },
+    )
+    .setTimestamp();
+}
+
+function exchangeToPointResultEmbed(row: StockExchangeToPointRow) {
+  const rate = Math.max(1, toNumber(row.out_rate_nyang_per_point) || 100);
+  return new EmbedBuilder()
+    .setTitle('🏦 환전 완료')
+    .setColor(0xf59e0b)
+    .setDescription(`${toNumber(row.out_nyang_spent).toLocaleString()}냥 -> ${toNumber(row.out_points_received).toLocaleString()}P (환율 ${rate}냥 = 1P)`)
+    .addFields(
+      { name: '남은 냥', value: `${toNumber(row.out_new_nyang_balance).toLocaleString()}냥`, inline: true },
+      { name: '보유 포인트', value: `${toNumber(row.out_new_point_balance).toLocaleString()}P`, inline: true },
     )
     .setTimestamp();
 }
@@ -271,7 +316,7 @@ export const stockCommand: SlashCommand = {
           { name: '보유 냥', value: `${board.balance.toLocaleString()}냥`, inline: true },
           { name: '보유 포인트', value: `${board.pointBalance.toLocaleString()}P`, inline: true },
           { name: '거래 수수료', value: `${(board.feeBps / 100).toFixed(2)}%`, inline: true },
-          { name: '거래 방식', value: '버튼 클릭 -> 수량 입력 (환전: 포인트 -> 냥)', inline: true },
+          { name: '거래 방식', value: '버튼 클릭 -> 수량 입력 (환전: P->냥 1:1 / 냥->P 100:1)', inline: true },
         )
         .setImage('attachment://stock-chart.png')
         .setFooter({ text: '5분 봉 기준 · 버튼으로 즉시 거래 가능' })
@@ -319,19 +364,22 @@ export const stockCommand: SlashCommand = {
         return;
       }
 
-      if (buttonInteraction.customId === 'stock:exchange') {
-        const modalCustomId = `stock:exchange:modal:${buttonInteraction.id}`;
-        const modal = new ModalBuilder().setCustomId(modalCustomId).setTitle('포인트 -> 냥 환전');
+      if (buttonInteraction.customId === 'stock:exchange' || buttonInteraction.customId === 'stock:exchange-back') {
+        const isToNyang = buttonInteraction.customId === 'stock:exchange';
+        const modalCustomId = `stock:${isToNyang ? 'exchange' : 'exchange-back'}:modal:${buttonInteraction.id}`;
+        const modal = new ModalBuilder()
+          .setCustomId(modalCustomId)
+          .setTitle(isToNyang ? '포인트 -> 냥 환전' : '냥 -> 포인트 환전 (100:1)');
 
-        const pointsInput = new TextInputBuilder()
-          .setCustomId('points')
-          .setLabel('포인트 수량')
+        const amountInput = new TextInputBuilder()
+          .setCustomId('amount')
+          .setLabel(isToNyang ? '포인트 수량' : '냥 수량')
           .setStyle(TextInputStyle.Short)
-          .setPlaceholder('예: 1000')
+          .setPlaceholder(isToNyang ? '예: 1000' : '예: 100')
           .setRequired(true)
           .setMaxLength(9);
 
-        modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(pointsInput));
+        modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(amountInput));
         await buttonInteraction.showModal(modal);
 
         let modalSubmit: ModalSubmitInteraction;
@@ -344,10 +392,14 @@ export const stockCommand: SlashCommand = {
           return;
         }
 
-        const rawPoints = modalSubmit.fields.getTextInputValue('points').trim();
-        const points = Number.parseInt(rawPoints, 10);
-        if (!Number.isFinite(points) || points <= 0) {
-          await modalSubmit.reply({ content: '환전 포인트는 1 이상의 숫자로 입력해 주세요.' });
+        const rawAmount = modalSubmit.fields.getTextInputValue('amount').trim();
+        const amount = Number.parseInt(rawAmount, 10);
+        if (!Number.isFinite(amount) || amount <= 0) {
+          await modalSubmit.reply({
+            content: isToNyang
+              ? '환전 포인트는 1 이상의 숫자로 입력해 주세요.'
+              : '환전 냥은 1 이상의 숫자로 입력해 주세요.',
+          });
           return;
         }
 
@@ -358,10 +410,15 @@ export const stockCommand: SlashCommand = {
           params?: Record<string, unknown>,
         ) => Promise<{ data: unknown; error: { message: string } | null }>;
 
-        const { data, error } = await rpc('exchange_points_to_nyang', {
-          p_discord_user_id: userId,
-          p_points: points,
-        });
+        const { data, error } = isToNyang
+          ? await rpc('exchange_points_to_nyang', {
+              p_discord_user_id: userId,
+              p_points: amount,
+            })
+          : await rpc('exchange_nyang_to_points', {
+              p_discord_user_id: userId,
+              p_nyang: amount,
+            });
 
         if (error) {
           await modalSubmit.editReply({
@@ -372,7 +429,7 @@ export const stockCommand: SlashCommand = {
           return;
         }
 
-        const exchange = (Array.isArray(data) ? data[0] : data) as StockExchangeRow | null;
+        const exchange = (Array.isArray(data) ? data[0] : data) as (StockExchangeToNyangRow | StockExchangeToPointRow | null);
         if (!exchange || !exchange.out_success) {
           await modalSubmit.editReply({
             embeds: [
@@ -383,7 +440,13 @@ export const stockCommand: SlashCommand = {
           return;
         }
 
-        await modalSubmit.editReply({ embeds: [exchangeResultEmbed(exchange)] });
+        await modalSubmit.editReply({
+          embeds: [
+            isToNyang
+              ? exchangeToNyangResultEmbed(exchange as StockExchangeToNyangRow)
+              : exchangeToPointResultEmbed(exchange as StockExchangeToPointRow),
+          ],
+        });
         await renderPanel(false).catch(() => {});
         return;
       }

@@ -1,49 +1,61 @@
 create temporary table stock_wallet_rebalance_old on commit drop as
-with old_ledger as (
-  select
-    discord_user_id,
-    least(
-      coalesce(
-        sum(
-          case
-            when kind = 'stock_migration_refund'
-              and meta->>'source' = 'stock_wallet_split_migration'
-            then amount
-            else 0
-          end
-        ),
-        0
-      )::bigint,
-      2147483647
-    )::integer as refunded_points,
-    least(
-      coalesce(
-        sum(
-          case
-            when kind = 'stock_migration_to_nyang'
-              and meta->>'source' = 'stock_wallet_split_migration'
-              and amount < 0
-            then -amount
-            else 0
-          end
-        ),
-        0
-      )::bigint,
-      2147483647
-    )::integer as converted_points
-  from nyang.point_events
-  group by discord_user_id
-)
-select old_ledger.*
-from old_ledger
-where (old_ledger.refunded_points > 0 or old_ledger.converted_points > 0)
-  and not exists (
-    select 1
-    from nyang.point_events pe
-    where pe.discord_user_id = old_ledger.discord_user_id
-      and pe.kind = 'stock_migration_rebalance_old_revert'
-      and pe.meta->>'source' = 'stock_wallet_rebalance_v2_fix'
-  );
+select
+  discord_user_id,
+  least(
+    coalesce(
+      sum(
+        case
+          when kind = 'stock_migration_refund'
+            and meta->>'source' = 'stock_wallet_split_migration'
+          then amount
+          else 0
+        end
+      ),
+      0
+    )::bigint,
+    2147483647
+  )::integer as refunded_points,
+  least(
+    coalesce(
+      sum(
+        case
+          when kind = 'stock_migration_to_nyang'
+            and meta->>'source' = 'stock_wallet_split_migration'
+            and amount < 0
+          then -amount
+          else 0
+        end
+      ),
+      0
+    )::bigint,
+    2147483647
+  )::integer as converted_points
+from nyang.point_events
+group by discord_user_id
+having
+  coalesce(
+    sum(
+      case
+        when kind = 'stock_migration_refund'
+          and meta->>'source' = 'stock_wallet_split_migration'
+        then amount
+        else 0
+      end
+    ),
+    0
+  ) > 0
+  or coalesce(
+    sum(
+      case
+        when kind = 'stock_migration_to_nyang'
+          and meta->>'source' = 'stock_wallet_split_migration'
+          and amount < 0
+        then -amount
+        else 0
+      end
+    ),
+    0
+  ) > 0;
 
 create temporary table stock_wallet_rebalance_targets on commit drop as
 select
@@ -82,18 +94,6 @@ set
   updated_at = now()
 from stock_wallet_rebalance_old old
 where snb.discord_user_id = old.discord_user_id;
-
-insert into nyang.point_events(discord_user_id, kind, amount, meta)
-select
-  old.discord_user_id,
-  'stock_migration_rebalance_old_revert',
-  0,
-  jsonb_build_object(
-    'source', 'stock_wallet_rebalance_v2_fix',
-    'reverted_refund_points', old.refunded_points,
-    'reverted_converted_points', old.converted_points
-  )
-from stock_wallet_rebalance_old old;
 
 create temporary table stock_wallet_rebalance_apply on commit drop as
 select
