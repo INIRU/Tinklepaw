@@ -47,6 +47,7 @@ type ApplyStockNewsRpcRow = {
 
 type Sentiment = 'bullish' | 'bearish' | 'neutral';
 type NewsTier = 'general' | 'rare' | 'shock';
+type NewsReliability = 'rumor' | 'mixed' | 'confirmed';
 
 type NewsTierProfile = {
   key: NewsTier;
@@ -76,6 +77,32 @@ type RecentNewsPromptRow = {
   impactBps: number;
   headline: string;
   body: string;
+  metadata: Record<string, unknown>;
+};
+
+type StoryChainState = {
+  chainId: string;
+  step: number;
+  total: number;
+  theme: string | null;
+};
+
+type NewsFlavorPlan = {
+  sentiment: Sentiment;
+  reversalCard: boolean;
+  reversalFrom: Sentiment | null;
+  reversalReason: string | null;
+  chain: StoryChainState | null;
+  chainContinuing: boolean;
+  chainPhase: 'start' | 'middle' | 'final' | null;
+  chainTag: string | null;
+};
+
+type NewsReliabilityProfile = {
+  key: NewsReliability;
+  label: string;
+  emoji: string;
+  multiplier: number;
 };
 
 type RecentSentimentStats = {
@@ -90,6 +117,7 @@ type RecentNewsContext = {
   lines: string;
   sentimentSummary: string;
   stats: RecentSentimentStats;
+  rows: RecentNewsPromptRow[];
 };
 
 type ForcedNewsOverrides = {
@@ -133,6 +161,12 @@ const SENTIMENT_BEARISH_PROBABILITY = 0.44;
 const RECENT_NEWS_PROMPT_COUNT = 5;
 const RECENT_NEWS_BODY_SNIPPET_MAX = 88;
 const FORCED_SCENARIO_MAX = 120;
+const STORY_START_CHANCE = 0.62;
+const STORY_CONTINUE_CHANCE = 0.78;
+const STORY_CONTINUE_WINDOW_MS = 6 * 60 * 60 * 1000;
+const STORY_MIN_STEPS = 2;
+const STORY_MAX_STEPS = 4;
+const REVERSAL_CARD_CHANCE = 0.14;
 
 const NEWS_TIER_PROFILES: readonly NewsTierProfile[] = [
   { key: 'general', label: '일반', emoji: '📰', weight: 0.68, minRatio: 0.0, maxRatio: 0.44 },
@@ -145,6 +179,12 @@ const NEWS_TIER_META: Record<NewsTier, { label: string; emoji: string }> = {
   rare: { label: '희귀', emoji: '✨' },
   shock: { label: '충격', emoji: '🚨' }
 };
+
+const NEWS_RELIABILITY_PROFILES: readonly NewsReliabilityProfile[] = [
+  { key: 'rumor', label: '루머', emoji: '🕸️', multiplier: 0.58 },
+  { key: 'mixed', label: '혼재', emoji: '🧩', multiplier: 0.82 },
+  { key: 'confirmed', label: '확정', emoji: '✅', multiplier: 1.0 },
+];
 
 const DEFAULT_BULLISH_REASON_SEEDS = [
   '차세대 제품 쇼케이스 기대감 확산',
@@ -469,17 +509,201 @@ const decideCodeSentiment = (params: {
   return picked;
 };
 
+const toObjectRecord = (value: unknown): Record<string, unknown> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+};
+
+const parseStoryChainState = (metadata: Record<string, unknown>): StoryChainState | null => {
+  const chainId = String(metadata.story_chain_id ?? '').trim();
+  const step = Math.floor(toNumber(metadata.story_step, 0));
+  const total = Math.floor(toNumber(metadata.story_total, 0));
+  const themeRaw = String(metadata.story_theme ?? '').trim();
+  if (!chainId || step <= 0 || total <= 0) return null;
+  return {
+    chainId,
+    step,
+    total,
+    theme: themeRaw || null
+  };
+};
+
+const pickReliabilityProfile = (tier: NewsTier): NewsReliabilityProfile => {
+  const weights: Record<NewsReliability, number> =
+    tier === 'shock'
+      ? { rumor: 0.42, mixed: 0.38, confirmed: 0.20 }
+      : tier === 'rare'
+        ? { rumor: 0.32, mixed: 0.43, confirmed: 0.25 }
+        : { rumor: 0.48, mixed: 0.34, confirmed: 0.18 };
+
+  const roll = Math.random();
+  const rumorCut = weights.rumor;
+  const mixedCut = weights.rumor + weights.mixed;
+  const picked: NewsReliability = roll < rumorCut ? 'rumor' : roll < mixedCut ? 'mixed' : 'confirmed';
+  return NEWS_RELIABILITY_PROFILES.find((profile) => profile.key === picked) ?? NEWS_RELIABILITY_PROFILES[1]!;
+};
+
+const getOppositeSentiment = (sentiment: Sentiment): Sentiment => {
+  if (sentiment === 'bullish') return 'bearish';
+  if (sentiment === 'bearish') return 'bullish';
+  return 'neutral';
+};
+
+const createStoryChainId = () => `arc_${Date.now().toString(36)}_${Math.floor(Math.random() * 1_000_000).toString(36)}`;
+
+const resolveChainPhase = (chain: StoryChainState | null): NewsFlavorPlan['chainPhase'] => {
+  if (!chain) return null;
+  if (chain.step <= 1) return 'start';
+  if (chain.step >= chain.total) return 'final';
+  return 'middle';
+};
+
+const chainPhaseLabel = (phase: NewsFlavorPlan['chainPhase']) => {
+  if (phase === 'start') return '연속 시작';
+  if (phase === 'middle') return '연속 전개';
+  if (phase === 'final') return '연속 결말';
+  return null;
+};
+
+const buildChainTag = (chain: StoryChainState | null, phase: NewsFlavorPlan['chainPhase']) => {
+  if (!chain || !phase) return null;
+  const label = chainPhaseLabel(phase);
+  if (!label) return null;
+  return `${label} ${chain.step}/${chain.total}`;
+};
+
+const planNewsFlavor = (params: {
+  recentRows: RecentNewsPromptRow[];
+  baseSentiment: Sentiment;
+  forcedSentiment: Sentiment | null;
+  scenarioSeeds: ScenarioSeeds;
+}): NewsFlavorPlan => {
+  const latestRow = params.recentRows[0] ?? null;
+  const latestMeta = toObjectRecord(latestRow?.metadata);
+  const latestChain = parseStoryChainState(latestMeta);
+  const latestAt = parseMaybeDate(latestRow?.createdAt);
+
+  const canContinueChain = Boolean(
+    latestChain
+    && latestAt
+    && latestChain.step < latestChain.total
+    && (Date.now() - latestAt.getTime()) <= STORY_CONTINUE_WINDOW_MS
+  );
+
+  let chain: StoryChainState | null = null;
+  let chainContinuing = false;
+
+  const baseSentiment = params.forcedSentiment ?? params.baseSentiment;
+
+  if (canContinueChain && Math.random() < STORY_CONTINUE_CHANCE) {
+    chain = {
+      chainId: latestChain!.chainId,
+      step: latestChain!.step + 1,
+      total: latestChain!.total,
+      theme: latestChain!.theme,
+    };
+    chainContinuing = true;
+  } else if (Math.random() < STORY_START_CHANCE) {
+    const total = STORY_MIN_STEPS + Math.floor(Math.random() * (STORY_MAX_STEPS - STORY_MIN_STEPS + 1));
+    chain = {
+      chainId: createStoryChainId(),
+      step: 1,
+      total,
+      theme: pickReasonSeed(baseSentiment, params.scenarioSeeds),
+    };
+  }
+
+  const latestDirectional = params.recentRows.find((row) => row.sentiment !== 'neutral')?.sentiment ?? null;
+  const chainPhasePre = resolveChainPhase(chain);
+  const reversalChance = chainPhasePre === 'final' ? REVERSAL_CARD_CHANCE + 0.08 : REVERSAL_CARD_CHANCE;
+
+  let sentiment = baseSentiment;
+  let reversalCard = false;
+  let reversalFrom: Sentiment | null = null;
+  let reversalReason: string | null = null;
+
+  if (!params.forcedSentiment && latestDirectional && Math.random() < reversalChance) {
+    sentiment = getOppositeSentiment(latestDirectional);
+    reversalCard = true;
+    reversalFrom = latestDirectional;
+    reversalReason = latestDirectional === 'bullish'
+      ? '과열 심리 경계가 커지며 차익 실현이 급증'
+      : '공포 완화와 저가 매수 유입이 동시 발생';
+  } else if (chainContinuing && latestRow?.sentiment && latestRow.sentiment !== 'neutral' && !params.forcedSentiment) {
+    sentiment = latestRow.sentiment;
+  }
+
+  if (!chain && reversalCard) {
+    chain = {
+      chainId: createStoryChainId(),
+      step: 1,
+      total: 2,
+      theme: pickReasonSeed(sentiment, params.scenarioSeeds)
+    };
+  }
+
+  if (chain && !chain.theme) {
+    chain.theme = pickReasonSeed(sentiment, params.scenarioSeeds);
+  }
+
+  const chainPhase = resolveChainPhase(chain);
+  const chainTag = buildChainTag(chain, chainPhase);
+
+  return {
+    sentiment,
+    reversalCard,
+    reversalFrom,
+    reversalReason,
+    chain,
+    chainContinuing,
+    chainPhase,
+    chainTag,
+  };
+};
+
+const applyFlavorToDraft = (draft: StockNewsDraft, flavor: NewsFlavorPlan): StockNewsDraft => {
+  const tagParts: string[] = [];
+  if (flavor.chainTag) tagParts.push(flavor.chainTag);
+  if (flavor.reversalCard) tagParts.push('반전 카드');
+
+  const headlineTag = tagParts.length > 0 ? `[${tagParts.join(' · ')}]` : null;
+  const headline = headlineTag ? truncateText(`${headlineTag} ${draft.headline}`, 120) : draft.headline;
+
+  const bodyHints: string[] = [];
+  if (flavor.chain) {
+    const phaseText = chainPhaseLabel(flavor.chainPhase);
+    bodyHints.push(`${phaseText ?? '연속 스토리'} 단계(${flavor.chain.step}/${flavor.chain.total})로 후속 이슈가 이어집니다.`);
+  }
+  if (flavor.reversalCard && flavor.reversalReason) {
+    bodyHints.push(`반전 카드 발동: ${flavor.reversalReason}.`);
+  }
+
+  const body = bodyHints.length > 0
+    ? truncateText(`${draft.body} ${bodyHints.join(' ')}`.trim(), 800)
+    : draft.body;
+
+  return {
+    ...draft,
+    headline,
+    body,
+  };
+};
+
 const formatRecentNewsContext = (rows: RecentNewsPromptRow[]): string => {
   if (rows.length === 0) return '없음';
   return rows
     .map((row, index) => {
+      const metadata = toObjectRecord(row.metadata);
+      const chain = parseStoryChainState(metadata);
+      const chainSuffix = chain ? ` | story ${Math.min(chain.step, chain.total)}/${chain.total}` : '';
+      const reversalSuffix = Boolean(metadata.reversal_card_triggered) ? ' | 반전' : '';
       const created = parseMaybeDate(row.createdAt);
       const when = created
         ? created.toISOString().replace('T', ' ').slice(0, 16)
         : row.createdAt;
       const impact = row.impactBps >= 0 ? `+${row.impactBps}` : String(row.impactBps);
       const bodySnippet = truncateText(row.body.replace(/\s+/g, ' ').trim(), RECENT_NEWS_BODY_SNIPPET_MAX);
-      return `${index + 1}) ${when} | ${sentimentLabelForPrompt(row.sentiment)} | ${impact}bps | ${row.headline}\n- ${bodySnippet}`;
+      return `${index + 1}) ${when} | ${sentimentLabelForPrompt(row.sentiment)} | ${impact}bps${chainSuffix}${reversalSuffix} | ${row.headline}\n- ${bodySnippet}`;
     })
     .join('\n');
 };
@@ -503,7 +727,7 @@ const summarizeRecentNewsSentiment = (rows: RecentNewsPromptRow[]) => {
 const loadRecentNewsContext = async (dynamicSupabase: DynamicSupabase): Promise<RecentNewsContext> => {
   const { data, error } = await dynamicSupabase
     .from('stock_news_events')
-    .select('created_at, sentiment, impact_bps, headline, body')
+    .select('created_at, sentiment, impact_bps, headline, body, metadata')
     .order('created_at', { ascending: false })
     .limit(RECENT_NEWS_PROMPT_COUNT);
 
@@ -518,7 +742,8 @@ const loadRecentNewsContext = async (dynamicSupabase: DynamicSupabase): Promise<
         neutral: 0,
         lastSentiment: null,
         streak: 0
-      }
+      },
+      rows: []
     };
   }
 
@@ -535,6 +760,7 @@ const loadRecentNewsContext = async (dynamicSupabase: DynamicSupabase): Promise<
           impactBps: Math.trunc(toNumber(row.impact_bps, 0)),
           headline,
           body,
+          metadata: toObjectRecord(row.metadata),
         };
       })
       .filter((row): row is RecentNewsPromptRow => row !== null)
@@ -543,7 +769,8 @@ const loadRecentNewsContext = async (dynamicSupabase: DynamicSupabase): Promise<
   return {
     lines: formatRecentNewsContext(rows),
     sentimentSummary: summarizeRecentNewsSentiment(rows),
-    stats: buildRecentSentimentStats(rows)
+    stats: buildRecentSentimentStats(rows),
+    rows,
   };
 };
 
@@ -804,6 +1031,9 @@ const sendNewsMessage = async (client: Client, params: {
   marketPrice: number;
   marketChangePct: number;
   forced: boolean;
+  flavor: NewsFlavorPlan;
+  reliability: NewsReliabilityProfile;
+  adjustedImpactBps: number;
 }) => {
   const channel = await client.channels.fetch(params.channelId).catch(() => null);
   if (!isSendableChannel(channel)) {
@@ -823,6 +1053,13 @@ const sendNewsMessage = async (client: Client, params: {
   const signalNote = priceDelta === 0
     ? '직접 가격 조정 없이 자동매매 편향만 반영'
     : `즉시 가격 반영 ${priceDelta >= 0 ? '+' : ''}${priceDelta.toLocaleString()}p`;
+  const storyLabel = params.flavor.chain
+    ? `${params.flavor.chainTag ?? '연속 스토리'} · 테마 ${params.flavor.chain.theme ?? '시장 이슈'}`
+    : '단발 뉴스 이벤트';
+  const reversalLabel = params.flavor.reversalCard
+    ? `발동 (${params.flavor.reversalFrom === 'bullish' ? '호재 -> 악재' : '악재 -> 호재'})`
+    : '없음';
+  const adjustedImpactPct = (params.adjustedImpactBps / 100).toFixed(2);
 
   const embed = new EmbedBuilder()
     .setColor(color)
@@ -833,6 +1070,7 @@ const sendNewsMessage = async (client: Client, params: {
         '',
         `- ${sentimentEmoji} **분류:** **${sentimentLabel}**`,
         `- ${tierMeta.emoji} **티어:** **${tierMeta.label}**`,
+        `- ${params.reliability.emoji} **신뢰도:** **${params.reliability.label}**`,
         `- ${moveEmoji} **영향:** \`${directionLabel} ${impactLabel}\``,
         `- 🏷️ **종목:** **${params.displayName} (${params.symbol})**`,
         '',
@@ -843,7 +1081,12 @@ const sendNewsMessage = async (client: Client, params: {
     .addFields(
       {
         name: '🧠 자동매매 신호',
-        value: `편향 \`${directionLabel}\`\n강도 \`${impactLabel}\`\n${signalNote}`,
+        value: `편향 \`${directionLabel}\`\n강도 \`${impactLabel}\` (조정치 ${adjustedImpactPct}%)\n${signalNote}`,
+        inline: false
+      },
+      {
+        name: '📚 스토리',
+        value: `${storyLabel}\n반전 카드: ${reversalLabel}`,
         inline: false
       },
       {
@@ -858,7 +1101,7 @@ const sendNewsMessage = async (client: Client, params: {
       },
       {
         name: '📐 해석',
-        value: '강도는 자동매매의 매수/매도 편향 비율입니다.',
+        value: `신뢰도(${params.reliability.label})에 따라 편향 강도가 보정됩니다.`,
         inline: true
       }
     )
@@ -936,15 +1179,23 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
   const marketSignal = getMarketSignal(dashboard.out_candles ?? dashboard.candles);
   const recentNewsContext = await loadRecentNewsContext(dynamicSupabase);
   const forcedOverrides = resolveForcedNewsOverrides(cfg);
-  const selectedSentiment = decideCodeSentiment({
+  const baseSentiment = decideCodeSentiment({
     forcedSentiment: forcedOverrides.sentiment,
     changePct,
     dataIsSparse: marketSignal.dataIsSparse,
     recentStats: recentNewsContext.stats
   });
+  const flavorPlan = planNewsFlavor({
+    recentRows: recentNewsContext.rows,
+    baseSentiment,
+    forcedSentiment: forcedOverrides.sentiment,
+    scenarioSeeds,
+  });
+  const selectedSentiment = flavorPlan.sentiment;
   const selectedImpactBounds = selectedSentiment === 'bearish'
     ? { minImpactBps: bearishMinImpactBps, maxImpactBps: bearishMaxImpactBps }
     : { minImpactBps: bullishMinImpactBps, maxImpactBps: bullishMaxImpactBps };
+  const storyScenarioHint = forcedOverrides.scenario ?? flavorPlan.chain?.theme ?? null;
 
   const apiKeys = resolveGeminiApiKeys(ctx.env);
   if (apiKeys.length === 0) {
@@ -972,7 +1223,7 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
         scenarioSeeds,
         forcedSentiment: selectedSentiment,
         forcedTier: forcedOverrides.tier,
-        forcedScenario: forcedOverrides.scenario
+        forcedScenario: storyScenarioHint
       });
 
       if (candidate) {
@@ -1006,23 +1257,50 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
     return;
   }
 
+  const reliability = pickReliabilityProfile(draft.tier);
+  const flavoredDraft = applyFlavorToDraft(draft, flavorPlan);
+  let adjustedImpactBps = Math.round(flavoredDraft.impactBpsAbs * reliability.multiplier);
+  if (flavorPlan.reversalCard) {
+    adjustedImpactBps = Math.round(adjustedImpactBps * 1.12);
+  }
+  if (flavorPlan.chain && flavorPlan.chain.step >= flavorPlan.chain.total) {
+    adjustedImpactBps = Math.round(adjustedImpactBps * 1.08);
+  }
+  adjustedImpactBps = clamp(adjustedImpactBps, selectedImpactBounds.minImpactBps, selectedImpactBounds.maxImpactBps);
+
   const { data: applyRows, error: applyError } = await rpc<ApplyStockNewsRpcRow>('apply_stock_news_impact', {
-    p_sentiment: draft.sentiment,
-    p_impact_bps: draft.impactBpsAbs,
-    p_headline: draft.headline,
-    p_body: draft.body,
+    p_sentiment: flavoredDraft.sentiment,
+    p_impact_bps: adjustedImpactBps,
+    p_headline: flavoredDraft.headline,
+    p_body: flavoredDraft.body,
     p_source: 'gemini',
     p_channel_id: cfg.stock_news_channel_id,
     p_metadata: {
       trigger: decision.forced ? 'manual' : 'schedule',
       model: 'gemini-2.5-flash-lite',
-      tier: draft.tier,
+      tier: flavoredDraft.tier,
+      reliability_key: reliability.key,
+      reliability_label: reliability.label,
+      reliability_multiplier: reliability.multiplier,
+      raw_impact_bps: flavoredDraft.impactBpsAbs,
+      adjusted_impact_bps: adjustedImpactBps,
       data_is_sparse: marketSignal.dataIsSparse,
       candle_count: marketSignal.candleCount,
       forced_sentiment: forcedOverrides.sentiment,
+      base_sentiment: baseSentiment,
       selected_sentiment: selectedSentiment,
       forced_tier: forcedOverrides.tier,
-      forced_scenario: forcedOverrides.scenario,
+      forced_scenario: storyScenarioHint,
+      story_chain_id: flavorPlan.chain?.chainId ?? null,
+      story_step: flavorPlan.chain?.step ?? null,
+      story_total: flavorPlan.chain?.total ?? null,
+      story_theme: flavorPlan.chain?.theme ?? null,
+      story_continuing: flavorPlan.chainContinuing,
+      story_phase: flavorPlan.chainPhase,
+      story_tag: flavorPlan.chainTag,
+      reversal_card_triggered: flavorPlan.reversalCard,
+      reversal_from_sentiment: flavorPlan.reversalFrom,
+      reversal_reason: flavorPlan.reversalReason,
       impact_bounds_direction: selectedSentiment === 'bearish' ? 'bearish' : 'bullish_or_neutral',
       impact_bounds_min_bps: selectedImpactBounds.minImpactBps,
       impact_bounds_max_bps: selectedImpactBounds.maxImpactBps,
@@ -1057,11 +1335,14 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
     channelId: cfg.stock_news_channel_id,
     symbol: postTicker.symbol,
     displayName: postTicker.displayName,
-    draft,
+    draft: flavoredDraft,
     applied,
     marketPrice,
     marketChangePct,
-    forced: decision.forced
+    forced: decision.forced,
+    flavor: flavorPlan,
+    reliability,
+    adjustedImpactBps,
   });
 
   const nextRunAt = getNextRunAfterSend(cfg, now);
