@@ -69,6 +69,11 @@ export async function getOrInitAppConfig() {
       stock_news_bullish_max_impact_bps: 260,
       stock_news_bearish_min_impact_bps: 40,
       stock_news_bearish_max_impact_bps: 260,
+      maintenance_mode_enabled: false,
+      maintenance_mode_reason: null,
+      maintenance_mode_until: null,
+      maintenance_web_target_paths: [],
+      maintenance_bot_target_commands: [],
     })
     .select('*')
     .single();

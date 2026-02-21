@@ -33,6 +33,11 @@ export async function PUT(req: Request) {
     icon_image_url?: string | null;
     join_message_template?: string | null;
     join_message_channel_id?: string | null;
+    maintenance_mode_enabled?: boolean;
+    maintenance_mode_reason?: string | null;
+    maintenance_mode_until?: string | null;
+    maintenance_web_target_paths?: string[];
+    maintenance_bot_target_commands?: string[];
     reward_points_per_interval?: number;
     reward_interval_seconds?: number;
     reward_daily_cap_points?: number | null;
@@ -97,6 +102,28 @@ export async function PUT(req: Request) {
       return input.map((item) => String(item ?? '').trim()).filter(Boolean).slice(0, 64);
     };
 
+    const normalizePathTargets = (input: string[] | undefined) => {
+      if (!Array.isArray(input)) return undefined;
+      const normalized = input
+        .map((item) => String(item ?? '').trim())
+        .filter(Boolean)
+        .map((item) => (item.startsWith('/') ? item : `/${item}`))
+        .map((item) => (item === '/' ? item : item.replace(/\/+$/, '')))
+        .slice(0, 128);
+      return Array.from(new Set(normalized));
+    };
+
+    const normalizeCommandTargets = (input: string[] | undefined) => {
+      if (!Array.isArray(input)) return undefined;
+      const normalized = input
+        .map((item) => String(item ?? '').trim().toLowerCase())
+        .map((item) => item.replace(/^\/+/, ''))
+        .map((item) => item.replace(/[^a-z0-9_-]/g, ''))
+        .filter(Boolean)
+        .slice(0, 128);
+      return Array.from(new Set(normalized));
+    };
+
     const patch: Record<string, unknown> = {};
 
     if (body.server_intro !== undefined) {
@@ -107,6 +134,29 @@ export async function PUT(req: Request) {
     if (body.icon_image_url !== undefined) patch.icon_image_url = body.icon_image_url ?? null;
     if (body.join_message_template !== undefined) patch.join_message_template = body.join_message_template ?? null;
     if (body.join_message_channel_id !== undefined) patch.join_message_channel_id = body.join_message_channel_id ?? null;
+    if (body.maintenance_mode_enabled !== undefined) {
+      patch.maintenance_mode_enabled = Boolean(body.maintenance_mode_enabled);
+    }
+    if (body.maintenance_mode_reason !== undefined) {
+      const raw = typeof body.maintenance_mode_reason === 'string' ? body.maintenance_mode_reason.trim() : '';
+      patch.maintenance_mode_reason = raw.length > 0 ? raw.slice(0, 500) : null;
+    }
+    if (body.maintenance_mode_until !== undefined) {
+      if (!body.maintenance_mode_until) {
+        patch.maintenance_mode_until = null;
+      } else {
+        const atMs = Date.parse(body.maintenance_mode_until);
+        patch.maintenance_mode_until = Number.isFinite(atMs) ? new Date(atMs).toISOString() : null;
+      }
+    }
+    const maintenanceWebTargets = normalizePathTargets(body.maintenance_web_target_paths);
+    if (maintenanceWebTargets !== undefined) {
+      patch.maintenance_web_target_paths = maintenanceWebTargets;
+    }
+    const maintenanceBotTargets = normalizeCommandTargets(body.maintenance_bot_target_commands);
+    if (maintenanceBotTargets !== undefined) {
+      patch.maintenance_bot_target_commands = maintenanceBotTargets;
+    }
     if (body.reward_points_per_interval !== undefined) patch.reward_points_per_interval = body.reward_points_per_interval;
     if (body.reward_interval_seconds !== undefined) patch.reward_interval_seconds = body.reward_interval_seconds;
     if (body.reward_daily_cap_points !== undefined) patch.reward_daily_cap_points = body.reward_daily_cap_points ?? null;

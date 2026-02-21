@@ -87,6 +87,58 @@ const hasVoiceInterfacePermission = (interaction: Interaction) => {
   return Boolean(member?.permissions?.has(PermissionFlagsBits.ManageChannels));
 };
 
+const isMaintenanceBypassMember = (interaction: Interaction) => {
+  const member = interaction.member as GuildMember | null;
+  if (!member) return false;
+  if (interaction.guild?.ownerId && interaction.guild.ownerId === interaction.user.id) return true;
+  return Boolean(
+    member.permissions?.has(PermissionFlagsBits.Administrator) ||
+      member.permissions?.has(PermissionFlagsBits.ManageGuild)
+  );
+};
+
+const buildMaintenanceDescription = (reason: string | null | undefined, untilIso: string | null | undefined) => {
+  const lines = ['현재 서비스 점검 중이라 명령어/버튼 사용이 잠시 제한됩니다.'];
+
+  if (reason && reason.trim().length > 0) {
+    lines.push(`\n**사유**\n${reason.trim()}`);
+  }
+
+  const untilMs = untilIso ? Date.parse(untilIso) : Number.NaN;
+  if (Number.isFinite(untilMs)) {
+    const unix = Math.floor(untilMs / 1000);
+    lines.push(`\n**예상 종료**\n<t:${unix}:F> (<t:${unix}:R>)`);
+  }
+
+  return lines.join('\n');
+};
+
+const normalizeMaintenanceCommandTargets = (input: unknown) => {
+  if (!Array.isArray(input)) return [] as string[];
+  const normalized = input
+    .map((item) => String(item ?? '').trim().toLowerCase())
+    .map((item) => item.replace(/^\/+/, ''))
+    .map((item) => item.replace(/[^a-z0-9_-]/g, ''))
+    .filter(Boolean)
+    .slice(0, 128);
+  return Array.from(new Set(normalized));
+};
+
+const getMaintenanceCommandToken = (interaction: Interaction): string | null => {
+  if (interaction.isChatInputCommand()) {
+    return interaction.commandName.toLowerCase();
+  }
+
+  const withCustomId = interaction as Interaction & { customId?: unknown };
+  if (typeof withCustomId.customId === 'string' && withCustomId.customId.length > 0) {
+    const raw = withCustomId.customId.toLowerCase();
+    const primary = raw.split(':')[0]?.split('_')[0]?.trim();
+    return primary || null;
+  }
+
+  return null;
+};
+
 const canManageVoiceInterfaceChannel = async (interaction: Interaction, channelId: string) => {
   if (hasVoiceInterfacePermission(interaction)) return true;
 
@@ -123,6 +175,28 @@ const logMusicControlInteraction = async (params: {
 
 export function registerInteractionCreate(client: Client) {
   client.on('interactionCreate', async (interaction: Interaction) => {
+    try {
+      const cfg = await getAppConfig();
+      if (cfg.maintenance_mode_enabled && !isMaintenanceBypassMember(interaction)) {
+        const targets = normalizeMaintenanceCommandTargets(cfg.maintenance_bot_target_commands);
+        const commandToken = getMaintenanceCommandToken(interaction);
+        const inScope = targets.length === 0 || (commandToken ? targets.includes(commandToken) : false);
+
+        if (inScope) {
+          if (interaction.isRepliable()) {
+            const embed = new EmbedBuilder()
+              .setTitle('🛠️ 점검 중입니다')
+              .setDescription(buildMaintenanceDescription(cfg.maintenance_mode_reason, cfg.maintenance_mode_until))
+              .setColor(0xf59e0b);
+            await interaction.reply({ embeds: [embed], ephemeral: true });
+          }
+          return;
+        }
+      }
+    } catch (e) {
+      console.error('[interactionCreate] failed to evaluate maintenance mode:', e);
+    }
+
     if (interaction.isChatInputCommand()) {
       const cmd = commandMap.get(interaction.commandName);
       if (!cmd) return;

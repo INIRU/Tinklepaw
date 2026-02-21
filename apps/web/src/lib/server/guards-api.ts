@@ -1,12 +1,14 @@
 import 'server-only';
 
 import { NextResponse } from 'next/server';
+import { headers } from 'next/headers';
 
 import { auth } from '../../../auth';
 import type { Session } from 'next-auth';
 
 import type { DiscordGuildMember } from './discord';
 import { fetchGuildMember, isAdmin } from './discord';
+import { getOrInitAppConfig } from './app-config-admin';
 
 type SessionWithUserId = Session & { user: NonNullable<Session['user']> & { id: string } };
 
@@ -17,6 +19,30 @@ export type AdminContext = {
 
 export function isResponse(v: unknown): v is Response {
   return v instanceof Response;
+}
+
+function normalizeMaintenancePathTargets(input: unknown) {
+  if (!Array.isArray(input)) return [] as string[];
+  const normalized = input
+    .map((item) => String(item ?? '').trim())
+    .filter(Boolean)
+    .map((item) => (item.startsWith('/') ? item : `/${item}`))
+    .map((item) => (item === '/' ? item : item.replace(/\/+$/, '')))
+    .slice(0, 128);
+  return Array.from(new Set(normalized));
+}
+
+function matchesMaintenancePath(pathname: string, target: string) {
+  if (!target) return false;
+  if (target === '/') return pathname === '/';
+
+  if (target.endsWith('*')) {
+    const prefix = target.slice(0, -1);
+    if (!prefix) return false;
+    return pathname.startsWith(prefix);
+  }
+
+  return pathname === target || pathname.startsWith(`${target}/`);
 }
 
 export async function requireAdminApi(): Promise<AdminContext | NextResponse> {
@@ -64,7 +90,44 @@ export async function requireGuildMemberApi(): Promise<AdminContext | NextRespon
   try {
     const member = await fetchGuildMember({ userId });
     if (!member) return NextResponse.json({ error: 'NOT_IN_GUILD' }, { status: 403 });
-    return { session, member };
+
+    try {
+      const cfg = await getOrInitAppConfig();
+      const cfgRow = cfg as unknown as Record<string, unknown>;
+      const maintenanceEnabled = Boolean(cfgRow.maintenance_mode_enabled ?? false);
+      if (maintenanceEnabled) {
+        const maintenanceTargets = normalizeMaintenancePathTargets(cfgRow.maintenance_web_target_paths);
+        const reqHeaders = await headers();
+        const pathname = reqHeaders.get('x-pathname');
+        const inScope = maintenanceTargets.length === 0
+          ? true
+          : (pathname ? maintenanceTargets.some((target) => matchesMaintenancePath(pathname, target)) : false);
+
+        if (!inScope) {
+          return { session: session as SessionWithUserId, member };
+        }
+
+        const maintenanceReason =
+          typeof cfgRow.maintenance_mode_reason === 'string' ? cfgRow.maintenance_mode_reason : null;
+        const maintenanceUntil =
+          typeof cfgRow.maintenance_mode_until === 'string' ? cfgRow.maintenance_mode_until : null;
+        const bypass = Boolean(session.isAdmin) || (await isAdmin({ userId, member }));
+        if (!bypass) {
+          return NextResponse.json(
+            {
+              error: 'MAINTENANCE_MODE',
+              reason: maintenanceReason,
+              until: maintenanceUntil,
+            },
+            { status: 503 },
+          );
+        }
+      }
+    } catch (e) {
+      console.error('[requireGuildMemberApi] maintenance check failed:', e);
+    }
+
+    return { session: session as SessionWithUserId, member };
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'UNKNOWN';
     console.error('[requireGuildMemberApi] Discord API error:', msg);

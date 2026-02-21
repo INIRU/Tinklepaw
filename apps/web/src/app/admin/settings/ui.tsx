@@ -17,6 +17,11 @@ type AppConfig = {
   join_message_channel_id: string | null;
   voice_interface_trigger_channel_id: string | null;
   voice_interface_category_id: string | null;
+  maintenance_mode_enabled: boolean;
+  maintenance_mode_reason: string | null;
+  maintenance_mode_until: string | null;
+  maintenance_web_target_paths: string[];
+  maintenance_bot_target_commands: string[];
   reward_points_per_interval: number;
   reward_interval_seconds: number;
   reward_daily_cap_points: number | null;
@@ -81,7 +86,7 @@ type AppConfig = {
 type StockNewsForceSentimentOption = 'auto' | 'bullish' | 'bearish' | 'neutral';
 type StockNewsForceTierOption = 'auto' | 'general' | 'rare' | 'shock';
 
-type SettingsTab = 'general' | 'stock' | 'economy';
+type SettingsTab = 'general' | 'maintenance' | 'stock' | 'economy';
 
 type DiscordChannel = { id: string; name: string; type: number; parent_id?: string | null };
 
@@ -160,6 +165,56 @@ function formatScenarioLines(lines: string[]) {
   return (lines ?? []).join('\n');
 }
 
+function toDateTimeLocalInput(value: string | null | undefined) {
+  if (!value) return '';
+  const at = new Date(value);
+  if (!Number.isFinite(at.getTime())) return '';
+
+  const yyyy = at.getFullYear();
+  const mm = String(at.getMonth() + 1).padStart(2, '0');
+  const dd = String(at.getDate()).padStart(2, '0');
+  const hh = String(at.getHours()).padStart(2, '0');
+  const mi = String(at.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+}
+
+function fromDateTimeLocalInput(value: string) {
+  if (!value.trim()) return null;
+  const at = new Date(value);
+  if (!Number.isFinite(at.getTime())) return null;
+  return at.toISOString();
+}
+
+function parseLineList(raw: string, limit = 128) {
+  return raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function formatLineList(lines: string[]) {
+  return (lines ?? []).join('\n');
+}
+
+function normalizeMaintenancePathList(items: string[]) {
+  const normalized = items
+    .map((item) => (item.startsWith('/') ? item : `/${item}`))
+    .map((item) => (item === '/' ? item : item.replace(/\/+$/, '')))
+    .slice(0, 128);
+  return Array.from(new Set(normalized));
+}
+
+function normalizeMaintenanceCommandList(items: string[]) {
+  const normalized = items
+    .map((item) => item.toLowerCase())
+    .map((item) => item.replace(/^\/+/, ''))
+    .map((item) => item.replace(/[^a-z0-9_-]/g, ''))
+    .filter(Boolean)
+    .slice(0, 128);
+  return Array.from(new Set(normalized));
+}
+
 const GENERAL_DIRTY_KEYS: ReadonlyArray<keyof AppConfig> = [
   'server_intro',
   'banner_image_url',
@@ -167,7 +222,12 @@ const GENERAL_DIRTY_KEYS: ReadonlyArray<keyof AppConfig> = [
   'join_message_template',
   'join_message_channel_id',
   'voice_interface_trigger_channel_id',
-  'voice_interface_category_id'
+  'voice_interface_category_id',
+  'maintenance_mode_enabled',
+  'maintenance_mode_reason',
+  'maintenance_mode_until',
+  'maintenance_web_target_paths',
+  'maintenance_bot_target_commands'
 ];
 
 const STOCK_DIRTY_KEYS: ReadonlyArray<keyof AppConfig> = [
@@ -233,7 +293,9 @@ function cloneConfigSnapshot(snapshot: AppConfig): AppConfig {
   return {
     ...snapshot,
     stock_news_bullish_scenarios: [...snapshot.stock_news_bullish_scenarios],
-    stock_news_bearish_scenarios: [...snapshot.stock_news_bearish_scenarios]
+    stock_news_bearish_scenarios: [...snapshot.stock_news_bearish_scenarios],
+    maintenance_web_target_paths: [...snapshot.maintenance_web_target_paths],
+    maintenance_bot_target_commands: [...snapshot.maintenance_bot_target_commands]
   };
 }
 
@@ -598,6 +660,33 @@ export default function SettingsClient() {
     const bearishScenarios = normalizeScenarioList(cfgBody.stock_news_bearish_scenarios, DEFAULT_BEARISH_SCENARIOS);
     const legacyMinImpactBps = Number((cfgBody as { stock_news_min_impact_bps?: number }).stock_news_min_impact_bps ?? 40);
     const legacyMaxImpactBps = Number((cfgBody as { stock_news_max_impact_bps?: number }).stock_news_max_impact_bps ?? 260);
+    const maintenanceReason =
+      typeof (cfgBody as { maintenance_mode_reason?: string | null }).maintenance_mode_reason === 'string'
+        ? (cfgBody as { maintenance_mode_reason?: string | null }).maintenance_mode_reason!.trim()
+        : '';
+    const rawMaintenanceUntil =
+      typeof (cfgBody as { maintenance_mode_until?: string | null }).maintenance_mode_until === 'string'
+        ? (cfgBody as { maintenance_mode_until?: string | null }).maintenance_mode_until
+        : null;
+    const maintenanceWebTargetsRawValue =
+      (cfgBody as { maintenance_web_target_paths?: unknown[] }).maintenance_web_target_paths;
+    const maintenanceBotTargetsRawValue =
+      (cfgBody as { maintenance_bot_target_commands?: unknown[] }).maintenance_bot_target_commands;
+    const maintenanceWebTargetsRaw: unknown[] = Array.isArray(maintenanceWebTargetsRawValue)
+      ? maintenanceWebTargetsRawValue
+      : [];
+    const maintenanceBotTargetsRaw: unknown[] = Array.isArray(maintenanceBotTargetsRawValue)
+      ? maintenanceBotTargetsRawValue
+      : [];
+    const maintenanceWebTargets = normalizeMaintenancePathList(
+      maintenanceWebTargetsRaw.map((item) => String(item ?? '').trim()).filter(Boolean)
+    );
+    const maintenanceBotTargets = normalizeMaintenanceCommandList(
+      maintenanceBotTargetsRaw.map((item) => String(item ?? '').trim()).filter(Boolean)
+    );
+    const parsedMaintenanceUntil = rawMaintenanceUntil && Number.isFinite(Date.parse(rawMaintenanceUntil))
+      ? new Date(rawMaintenanceUntil).toISOString()
+      : null;
 
     const normalizedCfg = cloneConfigSnapshot({
       ...(cfgBody as AppConfig),
@@ -605,6 +694,11 @@ export default function SettingsClient() {
       join_message_channel_id: cfgBody.join_message_channel_id ?? null,
       voice_interface_trigger_channel_id: cfgBody.voice_interface_trigger_channel_id ?? null,
       voice_interface_category_id: cfgBody.voice_interface_category_id ?? null,
+      maintenance_mode_enabled: Boolean((cfgBody as { maintenance_mode_enabled?: boolean }).maintenance_mode_enabled ?? false),
+      maintenance_mode_reason: maintenanceReason.length > 0 ? maintenanceReason : null,
+      maintenance_mode_until: parsedMaintenanceUntil,
+      maintenance_web_target_paths: maintenanceWebTargets,
+      maintenance_bot_target_commands: maintenanceBotTargets,
       stock_news_enabled: Boolean(cfgBody.stock_news_enabled ?? false),
       stock_news_channel_id: cfgBody.stock_news_channel_id ?? null,
       stock_news_schedule_mode: cfgBody.stock_news_schedule_mode === 'daily_random' ? 'daily_random' : 'interval',
@@ -1144,6 +1238,17 @@ export default function SettingsClient() {
           <button
             type="button"
             className={`rounded-xl px-3 py-2 transition ${
+              activeTab === 'maintenance'
+                ? 'bg-[color:var(--card)] text-[color:var(--fg)] shadow-[0_8px_20px_rgba(0,0,0,0.12)]'
+                : 'text-[color:var(--muted)] hover:text-[color:var(--fg)]'
+            }`}
+            onClick={() => setActiveTab('maintenance')}
+          >
+            점검
+          </button>
+          <button
+            type="button"
+            className={`rounded-xl px-3 py-2 transition ${
               activeTab === 'stock'
                 ? 'bg-[color:var(--card)] text-[color:var(--fg)] shadow-[0_8px_20px_rgba(0,0,0,0.12)]'
                 : 'text-[color:var(--muted)] hover:text-[color:var(--fg)]'
@@ -1333,6 +1438,91 @@ export default function SettingsClient() {
           ) : (
             <div className="mt-2 text-sm muted">—</div>
           )}
+        </div>
+      </section>
+
+      <section className={`${activeTab === 'maintenance' ? '' : 'hidden '}mt-6 max-w-2xl rounded-3xl card-glass p-6`}>
+        <h2 className="text-lg font-semibold">점검 모드</h2>
+        <p className="mt-2 text-xs muted">관리자 외 사용자에게 지정한 웹 경로/봇 명령어만 선택적으로 점검 잠금을 걸 수 있습니다.</p>
+
+        <label className="mt-4 flex items-center gap-2 text-sm font-medium">
+          <input
+            type="checkbox"
+            className="h-4 w-4"
+            checked={cfg.maintenance_mode_enabled}
+            onChange={(e) => setCfg({ ...cfg, maintenance_mode_enabled: e.target.checked })}
+          />
+          점검 모드 활성화
+        </label>
+
+        <label className="mt-4 block text-sm muted">점검 사유</label>
+        <textarea
+          className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)] placeholder:text-[color:var(--muted-2)]"
+          rows={4}
+          value={cfg.maintenance_mode_reason ?? ''}
+          onChange={(e) => setCfg({ ...cfg, maintenance_mode_reason: e.target.value || null })}
+          placeholder="예: 경제 데이터 정합성 점검 및 거래 안정화 작업"
+        />
+
+        <label className="mt-4 block text-sm muted">예상 종료 시각</label>
+        <input
+          type="datetime-local"
+          className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+          value={toDateTimeLocalInput(cfg.maintenance_mode_until)}
+          onChange={(e) => setCfg({ ...cfg, maintenance_mode_until: fromDateTimeLocalInput(e.target.value) })}
+        />
+
+        <label className="mt-4 block text-sm muted">웹 점검 대상 경로 (한 줄에 하나)</label>
+        <textarea
+          className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm font-mono text-[color:var(--fg)] placeholder:text-[color:var(--muted-2)]"
+          rows={4}
+          value={formatLineList(cfg.maintenance_web_target_paths)}
+          onChange={(e) =>
+            setCfg({
+              ...cfg,
+              maintenance_web_target_paths: normalizeMaintenancePathList(parseLineList(e.target.value))
+            })
+          }
+          placeholder={['/stock', '/draw', '/music/*'].join('\n')}
+        />
+        <p className="mt-1 text-xs muted">비워두면 웹 전체 잠금입니다. `*`를 붙이면 하위 경로까지 매칭합니다.</p>
+
+        <label className="mt-4 block text-sm muted">봇 점검 대상 명령어 (한 줄에 하나)</label>
+        <textarea
+          className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm font-mono text-[color:var(--fg)] placeholder:text-[color:var(--muted-2)]"
+          rows={4}
+          value={formatLineList(cfg.maintenance_bot_target_commands)}
+          onChange={(e) =>
+            setCfg({
+              ...cfg,
+              maintenance_bot_target_commands: normalizeMaintenanceCommandList(parseLineList(e.target.value))
+            })
+          }
+          placeholder={['stock', 'draw'].join('\n')}
+        />
+        <p className="mt-1 text-xs muted">비워두면 봇 인터랙션 전체 잠금입니다.</p>
+
+        <div className="mt-4 rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/70 p-3 text-xs text-[color:var(--fg)]">
+          <div className="font-semibold">미리보기</div>
+          <div className="mt-1">
+            사유: {cfg.maintenance_mode_reason?.trim() ? cfg.maintenance_mode_reason.trim() : '(미입력)'}
+          </div>
+          <div className="mt-1">
+            종료: {cfg.maintenance_mode_until
+              ? new Date(cfg.maintenance_mode_until).toLocaleString('ko-KR', { hour12: false })
+              : '미정'}
+          </div>
+          <div className="mt-1">웹 대상: {cfg.maintenance_web_target_paths.length > 0 ? cfg.maintenance_web_target_paths.join(', ') : '전체'}</div>
+          <div className="mt-1">봇 대상: {cfg.maintenance_bot_target_commands.length > 0 ? cfg.maintenance_bot_target_commands.join(', ') : '전체'}</div>
+          {cfg.maintenance_mode_until && Number.isFinite(Date.parse(cfg.maintenance_mode_until)) ? (
+            <div className="mt-1 muted">
+              봇 표시용: {'<t:'}
+              {Math.floor(Date.parse(cfg.maintenance_mode_until) / 1000)}
+              {':F>'} {'(<t:'}
+              {Math.floor(Date.parse(cfg.maintenance_mode_until) / 1000)}
+              {':R>)'}
+            </div>
+          ) : null}
         </div>
       </section>
 
