@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 
 import { auth } from '../../../auth';
 import { fetchGuildMember, isAdmin } from './discord';
+import { isAdminModeEnabled } from './admin-mode';
 
 export async function requireUserSession() {
   const session = await auth();
@@ -28,5 +29,6 @@ export async function requireGuildMember() {
 export async function requireAdmin() {
   const { session, member } = await requireGuildMember();
   if (!(await isAdmin({ userId: session.user.id, member }))) redirect('/not-admin');
+  if (!(await isAdminModeEnabled())) redirect('/not-admin');
   return { session, member };
 }

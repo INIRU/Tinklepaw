@@ -818,6 +818,9 @@ const sendNewsMessage = async (client: Client, params: {
   const tierMeta = NEWS_TIER_META[params.draft.tier];
   const moveEmoji = signed > 0 ? '📈' : signed < 0 ? '📉' : '➖';
   const priceDelta = params.applied.out_price_after - params.applied.out_price_before;
+  const signalNote = priceDelta === 0
+    ? '직접 가격 조정 없이 자동매매 편향만 반영'
+    : `즉시 가격 반영 ${priceDelta >= 0 ? '+' : ''}${priceDelta.toLocaleString()}p`;
 
   const embed = new EmbedBuilder()
     .setColor(color)
@@ -837,8 +840,8 @@ const sendNewsMessage = async (client: Client, params: {
     )
     .addFields(
       {
-        name: '💹 가격 반영',
-        value: `\`${params.applied.out_price_before.toLocaleString()}p\` -> \`${params.applied.out_price_after.toLocaleString()}p\`\n(${priceDelta >= 0 ? '+' : ''}${priceDelta.toLocaleString()}p)`,
+        name: '🧠 자동매매 신호',
+        value: `편향 강도 \`${impactLabel}\`\n${signalNote}`,
         inline: false
       },
       {

@@ -9,6 +9,7 @@ import type { Session } from 'next-auth';
 import type { DiscordGuildMember } from './discord';
 import { fetchGuildMember, isAdmin } from './discord';
 import { getOrInitAppConfig } from './app-config-admin';
+import { isAdminModeEnabled } from './admin-mode';
 
 type SessionWithUserId = Session & { user: NonNullable<Session['user']> & { id: string } };
 
@@ -33,22 +34,34 @@ function normalizeMaintenancePathTargets(input: unknown) {
 }
 
 function matchesMaintenancePath(pathname: string, target: string) {
-  if (!target) return false;
-  if (target === '/') return pathname === '/';
+  const evaluate = (current: string) => {
+    if (target === '/') return current === '/';
 
-  if (target.endsWith('*')) {
-    const prefix = target.slice(0, -1);
-    if (!prefix) return false;
-    return pathname.startsWith(prefix);
+    if (target.endsWith('*')) {
+      const prefix = target.slice(0, -1);
+      if (!prefix) return false;
+      return current.startsWith(prefix);
+    }
+
+    return current === target || current.startsWith(`${target}/`);
+  };
+
+  if (!target) return false;
+  if (evaluate(pathname)) return true;
+
+  if (pathname.startsWith('/api/') && !target.startsWith('/api/')) {
+    const mapped = pathname.replace(/^\/api/, '') || '/';
+    if (evaluate(mapped)) return true;
   }
 
-  return pathname === target || pathname.startsWith(`${target}/`);
+  return false;
 }
 
 export async function requireAdminApi(): Promise<AdminContext | NextResponse> {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
+  const adminModeEnabled = await isAdminModeEnabled();
 
   // Check cached admin status from session first (refreshed every 5 min in JWT callback)
   if (session.isAdmin === true) {
@@ -62,6 +75,7 @@ export async function requireAdminApi(): Promise<AdminContext | NextResponse> {
       return NextResponse.json({ error: 'SERVICE_UNAVAILABLE', detail: 'Please try again later' }, { status: 503 });
     }
     if (!member) return NextResponse.json({ error: 'NOT_IN_GUILD' }, { status: 403 });
+    if (!adminModeEnabled) return NextResponse.json({ error: 'ADMIN_MODE_OFF' }, { status: 403 });
     return { session: session as SessionWithUserId, member };
   }
 
@@ -78,6 +92,7 @@ export async function requireAdminApi(): Promise<AdminContext | NextResponse> {
 
   const ok = await isAdmin({ userId, member });
   if (!ok) return NextResponse.json({ error: 'NOT_ADMIN' }, { status: 403 });
+  if (!adminModeEnabled) return NextResponse.json({ error: 'ADMIN_MODE_OFF' }, { status: 403 });
 
   return { session: session as SessionWithUserId, member };
 }
@@ -86,6 +101,7 @@ export async function requireGuildMemberApi(): Promise<AdminContext | NextRespon
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
+  const adminModeEnabled = await isAdminModeEnabled();
 
   try {
     const member = await fetchGuildMember({ userId });
@@ -111,7 +127,7 @@ export async function requireGuildMemberApi(): Promise<AdminContext | NextRespon
           typeof cfgRow.maintenance_mode_reason === 'string' ? cfgRow.maintenance_mode_reason : null;
         const maintenanceUntil =
           typeof cfgRow.maintenance_mode_until === 'string' ? cfgRow.maintenance_mode_until : null;
-        const bypass = Boolean(session.isAdmin) || (await isAdmin({ userId, member }));
+        const bypass = adminModeEnabled && (Boolean(session.isAdmin) || (await isAdmin({ userId, member })));
         if (!bypass) {
           return NextResponse.json(
             {

@@ -12,7 +12,6 @@ type DashboardRow = {
   out_change_pct: number | string | null;
   out_fee_bps: number | string | null;
   out_balance: number | string | null;
-  out_point_balance: number | string | null;
   out_holding_qty: number | string | null;
   out_holding_avg_price: number | string | null;
   out_holding_value: number | string | null;
@@ -54,7 +53,6 @@ function normalizeDashboard(raw: DashboardRow | null | undefined) {
     changePct: toSafeNumber(raw?.out_change_pct, 0),
     feeBps: toSafeNumber(raw?.out_fee_bps, 150),
     balance: toSafeNumber(raw?.out_balance, 0),
-    pointBalance: toSafeNumber(raw?.out_point_balance, 0),
     holdingQty: toSafeNumber(raw?.out_holding_qty, 0),
     holdingAvgPrice: toSafeNumber(raw?.out_holding_avg_price, 0),
     holdingValue: toSafeNumber(raw?.out_holding_value, 0),

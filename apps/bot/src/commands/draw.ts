@@ -105,6 +105,11 @@ export async function triggerGachaUI(
     stock_news_last_sent_at: null,
     stock_news_next_run_at: null,
     stock_news_force_run_at: null,
+    stock_holding_fee_enabled: true,
+    stock_holding_fee_daily_bps: 8,
+    stock_holding_fee_daily_cap_bps: 20,
+    stock_holding_fee_last_applied_on: null,
+    stock_holding_fee_timezone: 'Asia/Seoul',
     show_traceback_to_user: true,
   }));
 

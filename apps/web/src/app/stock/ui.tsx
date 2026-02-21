@@ -20,7 +20,6 @@ type StockDashboard = {
   changePct: number;
   feeBps: number;
   balance: number;
-  pointBalance: number;
   holdingQty: number;
   holdingAvgPrice: number;
   holdingValue: number;
@@ -107,7 +106,6 @@ function normalizeDashboard(raw: unknown): StockDashboard {
     changePct: toSafeNumber(body.changePct),
     feeBps: toSafeNumber(body.feeBps, 150),
     balance: toSafeNumber(body.balance),
-    pointBalance: toSafeNumber(body.pointBalance),
     holdingQty: toSafeNumber(body.holdingQty),
     holdingAvgPrice: toSafeNumber(body.holdingAvgPrice),
     holdingValue: toSafeNumber(body.holdingValue),
@@ -317,7 +315,7 @@ function StockChart({ status }: { status: StockDashboard | null }) {
             <g key={`grid-${i}`}>
               <line x1={x0} y1={y} x2={x0 + plotW} y2={y} stroke={palette.grid} strokeWidth={1} />
               <text x={x0 + plotW + 10} y={y + 4} fontSize={11} fill={palette.axis}>
-                {Math.round(value).toLocaleString('ko-KR')}냥
+                {Math.round(value).toLocaleString('ko-KR')}P
               </text>
             </g>
           );
@@ -397,7 +395,7 @@ function StockChart({ status }: { status: StockDashboard | null }) {
                   strokeDasharray="7 5"
                 />
                 <text x={x0 + 10} y={labelY} fontSize={11} fontWeight={700} fill={palette.avgLabel}>
-                  평단 {Math.round(holdingAvgPrice).toLocaleString('ko-KR')}냥
+                  평단 {Math.round(holdingAvgPrice).toLocaleString('ko-KR')}P
                 </text>
               </g>
             );
@@ -432,10 +430,6 @@ export default function StockClient() {
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [lastTrade, setLastTrade] = useState<TradeResult | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
-  const [pointsToNyangInput, setPointsToNyangInput] = useState('1000');
-  const [nyangToPointsInput, setNyangToPointsInput] = useState('100');
-  const [exchangeBusyDirection, setExchangeBusyDirection] = useState<'points_to_nyang' | 'nyang_to_points' | null>(null);
-  const [exchangeNotice, setExchangeNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const requestSeqRef = useRef(0);
 
   const loadStatus = useCallback(async () => {
@@ -551,65 +545,6 @@ export default function StockClient() {
     [qtyInput, loadStatus],
   );
 
-  const submitExchange = useCallback(async (direction: 'points_to_nyang' | 'nyang_to_points') => {
-    const rawAmount = direction === 'points_to_nyang' ? pointsToNyangInput : nyangToPointsInput;
-    const amount = Math.trunc(Number(rawAmount));
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setExchangeNotice({
-        type: 'error',
-        text: direction === 'points_to_nyang'
-          ? '환전 포인트는 1 이상 숫자로 입력해 주세요.'
-          : '환전 냥은 1 이상 숫자로 입력해 주세요.',
-      });
-      return;
-    }
-
-    setExchangeBusyDirection(direction);
-    setExchangeNotice(null);
-
-    try {
-      const res = await fetch('/api/stock/exchange', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ direction, amount }),
-      });
-
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(typeof body?.error === 'string' ? body.error : `HTTP ${res.status}`);
-      }
-
-      if (body.dashboard) {
-        setStatus(normalizeDashboard(body.dashboard));
-      } else {
-        await loadStatus();
-      }
-
-      const exchange = (body.exchange ?? {}) as Record<string, unknown>;
-      const pointsSpent = toSafeNumber(exchange.pointsSpent, 0);
-      const nyangReceived = toSafeNumber(exchange.nyangReceived, 0);
-      const nyangSpent = toSafeNumber(exchange.nyangSpent, 0);
-      const pointsReceived = toSafeNumber(exchange.pointsReceived, 0);
-      const rate = Math.max(1, toSafeNumber(exchange.rateNyangPerPoint, 100));
-
-      if (direction === 'points_to_nyang') {
-        setExchangeNotice({
-          type: 'success',
-          text: `환전 완료: ${pointsSpent.toLocaleString('ko-KR')}P -> ${nyangReceived.toLocaleString('ko-KR')}냥`,
-        });
-      } else {
-        setExchangeNotice({
-          type: 'success',
-          text: `환전 완료: ${nyangSpent.toLocaleString('ko-KR')}냥 -> ${pointsReceived.toLocaleString('ko-KR')}P (환율 ${rate}냥 = 1P)`,
-        });
-      }
-    } catch (e) {
-      setExchangeNotice({ type: 'error', text: e instanceof Error ? e.message : '환전에 실패했습니다.' });
-    } finally {
-      setExchangeBusyDirection(null);
-    }
-  }, [loadStatus, nyangToPointsInput, pointsToNyangInput]);
-
   const quickQuantities = [1, 5, 10, 50, 100, 500];
 
   const previewQty = Math.max(0, Math.floor(Number(qtyInput.replaceAll(',', '')) || 0));
@@ -672,7 +607,7 @@ export default function StockClient() {
           <div>
             <p className="text-xs font-semibold tracking-[0.16em] text-[color:color-mix(in_srgb,var(--fg)_74%,transparent)]">TRADING PANEL</p>
             <h1 className="mt-1 text-3xl font-black tracking-tight font-bangul text-[color:var(--fg)]">{status?.displayName ?? '쿠로 주식'}</h1>
-             <p className="mt-2 text-sm text-[color:color-mix(in_srgb,var(--fg)_74%,transparent)]">주식 전용 재화 냥으로 거래하고, 포인트는 환전으로만 충전해요.</p>
+              <p className="mt-2 text-sm text-[color:color-mix(in_srgb,var(--fg)_74%,transparent)]">주식은 포인트로 바로 거래돼요. 자동매매가 수급을 만들고 가격이 움직이며, 장기 보유에는 일일 보유 수수료가 적용됩니다.</p>
             <p className="mt-1 text-[11px] font-medium text-[color:color-mix(in_srgb,var(--fg)_64%,transparent)]">
               실시간 체결 반영 · 15초 자동 갱신
               {lastSyncedAt ? ` · 마지막 동기화 ${formatTime(lastSyncedAt)}` : ''}
@@ -693,22 +628,22 @@ export default function StockClient() {
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] px-4 py-3 transition motion-safe:hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(8,12,28,0.12)]">
             <p className="flex items-center gap-1.5 text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]"><CandlestickChart className="h-3.5 w-3.5" />현재가</p>
-            <p className="mt-1 text-xl font-black text-[color:var(--fg)]">{status ? `${status.price.toLocaleString('ko-KR')}냥` : '...'}</p>
+            <p className="mt-1 text-xl font-black text-[color:var(--fg)]">{status ? `${status.price.toLocaleString('ko-KR')}P` : '...'}</p>
             <p className={`mt-1 text-xs font-semibold ${status && status.changePct >= 0 ? 'text-[#e11d48] dark:text-[#fb7185]' : 'text-[#2563eb] dark:text-[#7dd3fc]'}`}>
               {status ? signedPct(status.changePct) : '-'}
             </p>
           </div>
 
           <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] px-4 py-3 transition motion-safe:hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(8,12,28,0.12)]">
-            <p className="flex items-center gap-1.5 text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]"><Coins className="h-3.5 w-3.5" />보유 냥</p>
-            <p className="mt-1 text-xl font-black text-[color:var(--fg)]">{status ? `${status.balance.toLocaleString('ko-KR')}냥` : '...'}</p>
-            <p className="mt-1 text-xs text-[color:color-mix(in_srgb,var(--fg)_68%,transparent)]">포인트 {status ? `${status.pointBalance.toLocaleString('ko-KR')}P` : '...'} · 수수료 {(toSafeNumber(status?.feeBps, 150) / 100).toFixed(2)}%</p>
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]"><Coins className="h-3.5 w-3.5" />보유 포인트</p>
+            <p className="mt-1 text-xl font-black text-[color:var(--fg)]">{status ? `${status.balance.toLocaleString('ko-KR')}P` : '...'}</p>
+            <p className="mt-1 text-xs text-[color:color-mix(in_srgb,var(--fg)_68%,transparent)]">거래 수수료 {(toSafeNumber(status?.feeBps, 150) / 100).toFixed(2)}% · 보유 수수료 일 0.08% (상한 0.20%)</p>
           </div>
 
           <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] px-4 py-3 transition motion-safe:hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(8,12,28,0.12)]">
             <p className="flex items-center gap-1.5 text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]"><Wallet className="h-3.5 w-3.5" />보유 수량</p>
             <p className="mt-1 text-xl font-black text-[color:var(--fg)]">{status ? `${status.holdingQty.toLocaleString('ko-KR')}주` : '...'}</p>
-            <p className="mt-1 text-xs text-[color:color-mix(in_srgb,var(--fg)_68%,transparent)]">평단 {status ? `${status.holdingAvgPrice.toLocaleString('ko-KR')}냥` : '-'}</p>
+            <p className="mt-1 text-xs text-[color:color-mix(in_srgb,var(--fg)_68%,transparent)]">평단 {status ? `${status.holdingAvgPrice.toLocaleString('ko-KR')}P` : '-'}</p>
             {holdingDeltaPct != null ? (
               <p className={`mt-1 text-xs font-semibold ${holdingDeltaPct >= 0 ? 'text-[#e11d48] dark:text-[#fb7185]' : 'text-[#2563eb] dark:text-[#7dd3fc]'}`}>
                 평단 대비 {signedPct(holdingDeltaPct)}
@@ -719,9 +654,9 @@ export default function StockClient() {
           <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] px-4 py-3 transition motion-safe:hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(8,12,28,0.12)]">
             <p className="flex items-center gap-1.5 text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]"><ArrowUpDown className="h-3.5 w-3.5" />평가손익</p>
             <p className={`mt-1 text-xl font-black ${status && status.unrealizedPnl >= 0 ? 'text-[#e11d48] dark:text-[#fb7185]' : 'text-[#2563eb] dark:text-[#7dd3fc]'}`}>
-              {status ? `${signed(status.unrealizedPnl)}냥` : '...'}
+              {status ? `${signed(status.unrealizedPnl)}P` : '...'}
             </p>
-            <p className="mt-1 text-xs text-[color:color-mix(in_srgb,var(--fg)_68%,transparent)]">평가금액 {status ? `${status.holdingValue.toLocaleString('ko-KR')}냥` : '-'}</p>
+            <p className="mt-1 text-xs text-[color:color-mix(in_srgb,var(--fg)_68%,transparent)]">평가금액 {status ? `${status.holdingValue.toLocaleString('ko-KR')}P` : '-'}</p>
           </div>
         </div>
 
@@ -734,66 +669,6 @@ export default function StockClient() {
             <div className="flex items-center gap-2">
               <ArrowUpDown className="h-4 w-4 text-[color:var(--muted)]" />
               <p className="text-sm font-semibold text-[color:var(--fg)]">거래</p>
-            </div>
-
-            <div className="mt-3 rounded-2xl border border-[color:color-mix(in_srgb,var(--accent-sky)_30%,var(--border))] bg-[linear-gradient(140deg,color-mix(in_srgb,var(--accent-sky)_10%,var(--card)),color-mix(in_srgb,var(--accent-pink)_6%,var(--card)))] p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="text-xs font-bold text-[color:var(--fg)]">환전소</p>
-                  <p className="text-[11px] text-[color:color-mix(in_srgb,var(--fg)_66%,transparent)]">
-                    포인트 {'->'} 냥: 1P = 1냥 · 냥 {'->'} 포인트: 100냥 = 1P
-                  </p>
-                </div>
-                <p className="text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_68%,transparent)]">
-                  포인트 {toSafeNumber(status?.pointBalance, 0).toLocaleString('ko-KR')}P · 냥 {toSafeNumber(status?.balance, 0).toLocaleString('ko-KR')}냥
-                </p>
-              </div>
-
-              <div className="mt-2 space-y-2">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <input
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={pointsToNyangInput}
-                    onChange={(e) => setPointsToNyangInput(e.target.value.replace(/[^0-9]/g, ''))}
-                    className="h-10 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)] px-3 text-sm font-semibold text-[color:var(--fg)] outline-none focus:border-[color:var(--accent-sky)] sm:min-w-0 sm:flex-1 sm:w-auto"
-                    placeholder="포인트 -> 냥"
-                  />
-                  <button
-                    type="button"
-                    disabled={exchangeBusyDirection !== null || loading}
-                    onClick={() => void submitExchange('points_to_nyang')}
-                    className="inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-xl bg-[color:var(--accent-sky)] px-4 text-sm font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {exchangeBusyDirection === 'points_to_nyang' ? '환전 중...' : 'P -> 냥'}
-                  </button>
-                </div>
-
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <input
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={nyangToPointsInput}
-                    onChange={(e) => setNyangToPointsInput(e.target.value.replace(/[^0-9]/g, ''))}
-                    className="h-10 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--bg)] px-3 text-sm font-semibold text-[color:var(--fg)] outline-none focus:border-[color:var(--accent-sky)] sm:min-w-0 sm:flex-1 sm:w-auto"
-                    placeholder="냥 -> 포인트 (100냥 단위)"
-                  />
-                  <button
-                    type="button"
-                    disabled={exchangeBusyDirection !== null || loading}
-                    onClick={() => void submitExchange('nyang_to_points')}
-                    className="inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-xl bg-[color:var(--accent-pink)] px-4 text-sm font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {exchangeBusyDirection === 'nyang_to_points' ? '환전 중...' : '냥 -> P'}
-                  </button>
-                </div>
-              </div>
-
-              {exchangeNotice ? (
-                <p className={`mt-2 text-xs font-semibold ${exchangeNotice.type === 'success' ? 'text-[#16a34a]' : 'text-[#dc2626]'}`}>
-                  {exchangeNotice.text}
-                </p>
-              ) : null}
             </div>
 
             <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -868,16 +743,16 @@ export default function StockClient() {
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <div className="rounded-xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,#ef4444_8%,var(--card))] px-3 py-2">
                   <p className="text-[10px] font-semibold tracking-[0.08em] text-[color:color-mix(in_srgb,var(--fg)_64%,transparent)]">매수 예상</p>
-                    <p className="mt-1 text-sm font-semibold text-[color:var(--fg)]">총 {buyPreview.settlement.toLocaleString('ko-KR')}냥</p>
+                    <p className="mt-1 text-sm font-semibold text-[color:var(--fg)]">총 {buyPreview.settlement.toLocaleString('ko-KR')}P</p>
                     <p className="text-[11px] text-[color:color-mix(in_srgb,var(--fg)_62%,transparent)]">
-                      체결가 {buyPreview.execPrice.toLocaleString('ko-KR')}냥 · 수수료 {buyPreview.fee.toLocaleString('ko-KR')}냥
+                      체결가 {buyPreview.execPrice.toLocaleString('ko-KR')}P · 수수료 {buyPreview.fee.toLocaleString('ko-KR')}P
                     </p>
                   </div>
                   <div className="rounded-xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,#2563eb_8%,var(--card))] px-3 py-2">
                     <p className="text-[10px] font-semibold tracking-[0.08em] text-[color:color-mix(in_srgb,var(--fg)_64%,transparent)]">매도 예상</p>
-                    <p className="mt-1 text-sm font-semibold text-[color:var(--fg)]">순수령 {sellPreview.settlement.toLocaleString('ko-KR')}냥</p>
+                    <p className="mt-1 text-sm font-semibold text-[color:var(--fg)]">순수령 {sellPreview.settlement.toLocaleString('ko-KR')}P</p>
                     <p className="text-[11px] text-[color:color-mix(in_srgb,var(--fg)_62%,transparent)]">
-                      체결가 {sellPreview.execPrice.toLocaleString('ko-KR')}냥 · 수수료 {sellPreview.fee.toLocaleString('ko-KR')}냥
+                      체결가 {sellPreview.execPrice.toLocaleString('ko-KR')}P · 수수료 {sellPreview.fee.toLocaleString('ko-KR')}P
                     </p>
                   </div>
                 </div>
@@ -923,22 +798,22 @@ export default function StockClient() {
                   수량: <span className="font-black">{lastTrade.qty.toLocaleString('ko-KR')}주</span>
                 </p>
                 <p>
-                  단가: <span className="font-black">{lastTrade.price.toLocaleString('ko-KR')}냥</span>
+                  단가: <span className="font-black">{lastTrade.price.toLocaleString('ko-KR')}P</span>
                 </p>
                 <p>
                   보유 수량: <span className="font-black">{lastTrade.holdingQty.toLocaleString('ko-KR')}주</span>
                 </p>
                 <p>
-                  현재 평단: <span className="font-black">{lastTrade.holdingAvgPrice.toLocaleString('ko-KR')}냥</span>
+                  현재 평단: <span className="font-black">{lastTrade.holdingAvgPrice.toLocaleString('ko-KR')}P</span>
                 </p>
                 <p>
-                  거래금액: <span className="font-black">{lastTrade.gross.toLocaleString('ko-KR')}냥</span>
+                  거래금액: <span className="font-black">{lastTrade.gross.toLocaleString('ko-KR')}P</span>
                 </p>
                 <p>
-                  수수료: <span className="font-black">{lastTrade.fee.toLocaleString('ko-KR')}냥</span>
+                  수수료: <span className="font-black">{lastTrade.fee.toLocaleString('ko-KR')}P</span>
                 </p>
                 <p>
-                  정산: <span className="font-black">{lastTrade.settlement.toLocaleString('ko-KR')}냥</span>
+                  정산: <span className="font-black">{lastTrade.settlement.toLocaleString('ko-KR')}P</span>
                 </p>
               </div>
             ) : (
