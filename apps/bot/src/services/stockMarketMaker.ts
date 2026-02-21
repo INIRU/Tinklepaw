@@ -28,14 +28,16 @@ export async function runStockMarketMakerCycle(): Promise<void> {
 
   const { data: feeData, error: feeError } = await rpc<ApplyDailyHoldingFeeRpcRow>('apply_daily_stock_holding_fee');
   if (feeError) {
-    throw new Error(`[StockMarketMaker] apply_daily_stock_holding_fee failed: ${feeError.message}`);
+    console.warn(`[StockMarketMaker] apply_daily_stock_holding_fee skipped: ${feeError.message}`);
   }
 
-  const feeRow = Array.isArray(feeData) ? feeData[0] : null;
-  if (feeRow?.out_applied) {
-    console.info(
-      `[StockHoldingFee] applied date=${feeRow.out_fee_date ?? '-'} users=${feeRow.out_charged_users} total=${feeRow.out_total_fee}`
-    );
+  if (!feeError) {
+    const feeRow = Array.isArray(feeData) ? feeData[0] : null;
+    if (feeRow?.out_applied) {
+      console.info(
+        `[StockHoldingFee] applied date=${feeRow.out_fee_date ?? '-'} users=${feeRow.out_charged_users} total=${feeRow.out_total_fee}`
+      );
+    }
   }
 
   const { data, error } = await rpc<RunStockMarketMakerRpcRow>('run_stock_market_maker');

@@ -811,7 +811,9 @@ const sendNewsMessage = async (client: Client, params: {
   }
 
   const signed = params.applied.out_signed_impact_bps;
-  const impactLabel = `${signed > 0 ? '+' : ''}${signed} bps`;
+  const impactPct = signed / 100;
+  const impactLabel = `${impactPct >= 0 ? '+' : ''}${impactPct.toFixed(2)}%`;
+  const directionLabel = signed > 0 ? '매수 우위' : signed < 0 ? '매도 우위' : '중립';
   const color = signed > 0 ? 0x2ecc71 : signed < 0 ? 0xe74c3c : 0x95a5a6;
   const sentimentLabel = params.draft.sentiment === 'bullish' ? '호재' : params.draft.sentiment === 'bearish' ? '악재' : '중립';
   const sentimentEmoji = params.draft.sentiment === 'bullish' ? '🟢' : params.draft.sentiment === 'bearish' ? '🔴' : '🟡';
@@ -831,7 +833,7 @@ const sendNewsMessage = async (client: Client, params: {
         '',
         `- ${sentimentEmoji} **분류:** **${sentimentLabel}**`,
         `- ${tierMeta.emoji} **티어:** **${tierMeta.label}**`,
-        `- ${moveEmoji} **영향:** \`${impactLabel}\``,
+        `- ${moveEmoji} **영향:** \`${directionLabel} ${impactLabel}\``,
         `- 🏷️ **종목:** **${params.displayName} (${params.symbol})**`,
         '',
         '**브리핑**',
@@ -841,7 +843,7 @@ const sendNewsMessage = async (client: Client, params: {
     .addFields(
       {
         name: '🧠 자동매매 신호',
-        value: `편향 강도 \`${impactLabel}\`\n${signalNote}`,
+        value: `편향 \`${directionLabel}\`\n강도 \`${impactLabel}\`\n${signalNote}`,
         inline: false
       },
       {
@@ -851,12 +853,12 @@ const sendNewsMessage = async (client: Client, params: {
       },
       {
         name: '🧠 신호',
-        value: `${sentimentEmoji} ${sentimentLabel} / ${tierMeta.emoji} ${tierMeta.label} / ${moveEmoji} ${impactLabel}`,
+        value: `${sentimentEmoji} ${sentimentLabel} / ${tierMeta.emoji} ${tierMeta.label} / ${moveEmoji} ${directionLabel} ${impactLabel}`,
         inline: true
       },
       {
-        name: '📐 기준',
-        value: '`100bps = 1.00%`',
+        name: '📐 해석',
+        value: '강도는 자동매매의 매수/매도 편향 비율입니다.',
         inline: true
       }
     )

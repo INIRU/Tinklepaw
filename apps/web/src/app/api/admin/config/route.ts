@@ -25,7 +25,7 @@ export async function PUT(req: Request) {
     if (isResponse(ctx)) return ctx;
 
     // Ensure the singleton row exists before updating.
-    await getOrInitAppConfig();
+    const currentCfg = await getOrInitAppConfig();
 
     const body = (await req.json()) as {
     server_intro?: string | null;
@@ -93,6 +93,11 @@ export async function PUT(req: Request) {
     stock_shrimp_max_sell_qty?: number;
     stock_ant_auto_buy_qty?: number;
     stock_ant_auto_buy_cooldown_seconds?: number;
+    stock_market_maker_interval_ms?: number | null;
+    stock_holding_fee_enabled?: boolean;
+    stock_holding_fee_daily_bps?: number;
+    stock_holding_fee_daily_cap_bps?: number;
+    stock_holding_fee_timezone?: string | null;
     stock_news_bullish_scenarios?: string[];
     stock_news_bearish_scenarios?: string[];
   };
@@ -263,6 +268,40 @@ export async function PUT(req: Request) {
     }
     if (body.stock_ant_auto_buy_cooldown_seconds !== undefined) {
       patch.stock_ant_auto_buy_cooldown_seconds = Math.max(10, Math.min(3600, Math.floor(body.stock_ant_auto_buy_cooldown_seconds)));
+    }
+    if (body.stock_market_maker_interval_ms !== undefined) {
+      if (body.stock_market_maker_interval_ms === null) {
+        patch.stock_market_maker_interval_ms = null;
+      } else {
+        patch.stock_market_maker_interval_ms = Math.max(5000, Math.min(300000, Math.floor(body.stock_market_maker_interval_ms)));
+      }
+    }
+    if (body.stock_holding_fee_enabled !== undefined) {
+      patch.stock_holding_fee_enabled = Boolean(body.stock_holding_fee_enabled);
+    }
+    if (body.stock_holding_fee_daily_bps !== undefined) {
+      patch.stock_holding_fee_daily_bps = Math.max(1, Math.min(1000, Math.floor(body.stock_holding_fee_daily_bps)));
+    }
+    if (body.stock_holding_fee_daily_cap_bps !== undefined) {
+      patch.stock_holding_fee_daily_cap_bps = Math.max(1, Math.min(2000, Math.floor(body.stock_holding_fee_daily_cap_bps)));
+    }
+    const currentCfgAny = currentCfg as Record<string, unknown>;
+    const effectiveDailyBps = Number(
+      patch.stock_holding_fee_daily_bps
+      ?? currentCfgAny.stock_holding_fee_daily_bps
+      ?? 8
+    );
+    const effectiveCapBps = Number(
+      patch.stock_holding_fee_daily_cap_bps
+      ?? currentCfgAny.stock_holding_fee_daily_cap_bps
+      ?? 20
+    );
+    if (effectiveCapBps < effectiveDailyBps) {
+      patch.stock_holding_fee_daily_cap_bps = effectiveDailyBps;
+    }
+    if (body.stock_holding_fee_timezone !== undefined) {
+      const tz = typeof body.stock_holding_fee_timezone === 'string' ? body.stock_holding_fee_timezone.trim() : '';
+      patch.stock_holding_fee_timezone = tz.length > 0 ? tz.slice(0, 64) : 'Asia/Seoul';
     }
 
     const bullishScenarios = normalizeScenarioList(body.stock_news_bullish_scenarios);
