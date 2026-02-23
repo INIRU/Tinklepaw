@@ -523,24 +523,19 @@ export function registerInteractionCreate(client: Client) {
         const timestampLabel = `${now.getMonth() + 1}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
 
         const profanity = detectAskProfanity(question);
-        const questionEmbed = new EmbedBuilder()
-          .setColor(mode === 'anonymous' ? 0xdb2777 : 0x3b82f6)
-          .setTitle(mode === 'anonymous' ? '🎭 익명 질문' : '💬 질문')
-          .setDescription(question)
-          .addFields(
-            { name: '질문 타입', value: askModeLabel(mode), inline: true },
-            { name: '답변 위치', value: '아래 연결된 쓰레드에서 답변해 주세요.', inline: true },
-            {
-              name: '작성자',
-              value: mode === 'anonymous' ? '익명' : `<@${interaction.user.id}>`,
-              inline: true,
-            }
-          )
-          .setFooter({ text: `작성 시각: ${now.toLocaleString('ko-KR')}` });
+        const quotedQuestion = question
+          .split('\n')
+          .map((line) => `> ${line}`)
+          .join('\n');
+        const questionMessageBase = [
+          '**질문이 왔어요~**',
+          mode === 'public' ? `질문자: <@${interaction.user.id}>` : '질문자: 익명',
+          '',
+          quotedQuestion,
+        ].join('\n');
 
         const askMessage = await sourceChannel.send({
-          content: mode === 'public' ? `📮 질문이 접수되었어요 · 질문자: <@${interaction.user.id}>` : '📮 익명 질문이 접수되었어요',
-          embeds: [questionEmbed],
+          content: questionMessageBase,
         });
 
         const threadName = `${mode === 'anonymous' ? '익명질문' : '질문'}-${timestampLabel}`.slice(0, 90);
@@ -554,6 +549,10 @@ export function registerInteractionCreate(client: Client) {
           await interaction.reply({ content: '질문 쓰레드를 만들지 못했어요. 봇 권한을 확인해 주세요.', ephemeral: true });
           return;
         }
+
+        await askMessage.edit({
+          content: `${questionMessageBase}\n\n답변 쓰레드: ${thread}`,
+        }).catch(() => null);
 
         await thread.send({
           embeds: [
