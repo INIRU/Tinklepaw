@@ -135,6 +135,7 @@ export async function PUT(req: Request) {
     };
 
     const patch: Record<string, unknown> = {};
+    const currentCfgAny = currentCfg as Record<string, unknown>;
 
     if (body.server_intro !== undefined) {
       const v = typeof body.server_intro === 'string' ? body.server_intro : null;
@@ -286,9 +287,6 @@ export async function PUT(req: Request) {
     if (body.stock_ant_auto_buy_qty !== undefined) {
       patch.stock_ant_auto_buy_qty = Math.max(1, Math.min(500, Math.floor(body.stock_ant_auto_buy_qty)));
     }
-    if (body.stock_ant_auto_buy_cooldown_seconds !== undefined) {
-      patch.stock_ant_auto_buy_cooldown_seconds = Math.max(10, Math.min(3600, Math.floor(body.stock_ant_auto_buy_cooldown_seconds)));
-    }
     if (body.stock_market_maker_interval_ms !== undefined) {
       if (body.stock_market_maker_interval_ms === null) {
         patch.stock_market_maker_interval_ms = null;
@@ -296,6 +294,16 @@ export async function PUT(req: Request) {
         patch.stock_market_maker_interval_ms = Math.max(5000, Math.min(300000, Math.floor(body.stock_market_maker_interval_ms)));
       }
     }
+    const effectiveMakerIntervalMs = Number(
+      patch.stock_market_maker_interval_ms
+      ?? currentCfgAny.stock_market_maker_interval_ms
+      ?? currentCfgAny.bot_sync_interval_ms
+      ?? 30000
+    );
+    patch.stock_ant_auto_buy_cooldown_seconds = Math.max(
+      10,
+      Math.min(3600, Math.round((effectiveMakerIntervalMs / 1000) * 4))
+    );
     if (body.stock_holding_fee_enabled !== undefined) {
       patch.stock_holding_fee_enabled = Boolean(body.stock_holding_fee_enabled);
     }
@@ -305,7 +313,6 @@ export async function PUT(req: Request) {
     if (body.stock_holding_fee_daily_cap_bps !== undefined) {
       patch.stock_holding_fee_daily_cap_bps = Math.max(1, Math.min(2000, Math.floor(body.stock_holding_fee_daily_cap_bps)));
     }
-    const currentCfgAny = currentCfg as Record<string, unknown>;
     const effectiveDailyBps = Number(
       patch.stock_holding_fee_daily_bps
       ?? currentCfgAny.stock_holding_fee_daily_bps

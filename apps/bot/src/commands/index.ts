@@ -12,6 +12,7 @@ import { webCommand } from './web.js';
 import { notificationCommand } from './notification.js';
 import { notificationSendCommand } from './notification-send.js';
 import { setupCommand } from './setup.js';
+import { askSetupCommand } from './ask-setup.js';
 import { interfaceCommand } from './voice-room.js';
 import type { SlashCommand } from './types.js';
 
@@ -26,6 +27,7 @@ export const commands: SlashCommand[] = [
   helpCommand,
   webCommand,
   setupCommand,
+  askSetupCommand,
   interfaceCommand,
   notificationCommand,
   notificationSendCommand

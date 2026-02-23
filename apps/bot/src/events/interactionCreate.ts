@@ -25,6 +25,17 @@ const FILTER_PRESET_OPTIONS: Array<{ value: MusicFilterPreset; label: string; de
   { value: 'karaoke', label: 'Karaoke', description: '보컬 대역을 약화합니다.' }
 ];
 const pendingFilterSelection = new Map<string, MusicFilterPreset>();
+type AskMode = 'anonymous' | 'public';
+const pendingAskModeSelection = new Map<string, { mode: AskMode; selectedAt: number }>();
+const ASK_MODE_TTL_MS = 20 * 60 * 1000;
+const ASK_PROFANITY_TERMS: Array<{ label: string; regex: RegExp }> = [
+  { label: '씨발', regex: /씨발|시발|ㅅㅂ/gi },
+  { label: '병신', regex: /병신|븅신|ㅂㅅ/gi },
+  { label: '좆', regex: /좆|좃|ㅈ같/gi },
+  { label: '개새끼', regex: /개새끼|개색기|개쉐이/gi },
+  { label: 'fuck', regex: /fuck|f\*\*k/gi },
+  { label: 'shit', regex: /shit|s\*\*t/gi },
+];
 const musicUiColor = 0x3b82f6;
 const buildMusicStatusEmbed = (title: string, description: string) =>
   new EmbedBuilder().setTitle(title).setDescription(description).setColor(musicUiColor);
@@ -37,6 +48,47 @@ const toFilterPreset = (value: unknown): MusicFilterPreset => {
 };
 
 const filterSelectionKey = (guildId: string, userId: string) => `${guildId}:${userId}`;
+const askModeSelectionKey = (panelMessageId: string, userId: string) => `${panelMessageId}:${userId}`;
+
+const rememberAskModeSelection = (panelMessageId: string, userId: string, mode: AskMode) => {
+  const now = Date.now();
+  for (const [key, value] of pendingAskModeSelection.entries()) {
+    if (now - value.selectedAt > ASK_MODE_TTL_MS) {
+      pendingAskModeSelection.delete(key);
+    }
+  }
+  pendingAskModeSelection.set(askModeSelectionKey(panelMessageId, userId), { mode, selectedAt: now });
+};
+
+const getAskModeSelection = (panelMessageId: string, userId: string): AskMode | null => {
+  const key = askModeSelectionKey(panelMessageId, userId);
+  const entry = pendingAskModeSelection.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.selectedAt > ASK_MODE_TTL_MS) {
+    pendingAskModeSelection.delete(key);
+    return null;
+  }
+  return entry.mode;
+};
+
+const askModeLabel = (mode: AskMode) => (mode === 'anonymous' ? '익명 질문' : '질문');
+
+const detectAskProfanity = (content: string) => {
+  const matches = ASK_PROFANITY_TERMS.filter((entry) => entry.regex.test(content)).map((entry) => entry.label);
+  for (const entry of ASK_PROFANITY_TERMS) {
+    entry.regex.lastIndex = 0;
+  }
+  return {
+    flagged: matches.length > 0,
+    matches,
+  };
+};
+
+const clipAskText = (value: string, max = 900) => {
+  const text = value.trim();
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}…`;
+};
 
 const buildFilterRows = (selected: MusicFilterPreset) => [
   new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
@@ -249,6 +301,28 @@ export function registerInteractionCreate(client: Client) {
         await handleError(e, interaction, interaction.commandName);
       }
     } else if (interaction.isStringSelectMenu()) {
+      if (interaction.customId === 'ask:mode') {
+        const panelMessageId = interaction.message?.id;
+        if (!panelMessageId) {
+          await interaction.reply({ content: '질문 모드를 저장할 수 없어요. 패널을 다시 만들어 주세요.', ephemeral: true });
+          return;
+        }
+
+        const mode: AskMode = interaction.values[0] === 'anonymous' ? 'anonymous' : 'public';
+        rememberAskModeSelection(panelMessageId, interaction.user.id, mode);
+
+        await interaction.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle('✅ 질문 모드 설정 완료')
+              .setDescription(`현재 모드: **${askModeLabel(mode)}**\n이제 아래 **질문하기** 버튼을 눌러 작성해 주세요.`)
+              .setColor(0xec4899)
+          ],
+          ephemeral: true,
+        });
+        return;
+      }
+
       if (interaction.customId === 'music_filter_select') {
         if (!interaction.guildId) {
           await interaction.update({
@@ -410,6 +484,151 @@ export function registerInteractionCreate(client: Client) {
         }
       }
     } else if (interaction.isModalSubmit()) {
+      if (interaction.customId.startsWith('ask:submit:')) {
+        if (!interaction.guildId || !interaction.guild) {
+          await interaction.reply({ content: '서버에서만 사용할 수 있어요.', ephemeral: true });
+          return;
+        }
+
+        const parts = interaction.customId.split(':');
+        if (parts.length < 5) {
+          await interaction.reply({ content: '질문 요청 형식이 올바르지 않아요. 패널을 다시 만들어 주세요.', ephemeral: true });
+          return;
+        }
+
+        const mode: AskMode = parts[2] === 'anonymous' ? 'anonymous' : 'public';
+        const logChannelIdRaw = parts[3] ?? 'none';
+        const panelMessageId = parts[4] ?? '';
+
+        const rawQuestion = interaction.fields.getTextInputValue('ask:question') ?? '';
+        const question = clipAskText(rawQuestion, 900);
+        if (question.length < 4) {
+          await interaction.reply({ content: '질문은 4자 이상 입력해 주세요.', ephemeral: true });
+          return;
+        }
+
+        const sourceChannel = interaction.channel;
+        if (!sourceChannel || !sourceChannel.isTextBased() || sourceChannel.isDMBased() || !('messages' in sourceChannel)) {
+          await interaction.reply({ content: '질문을 생성할 수 없는 채널이에요.', ephemeral: true });
+          return;
+        }
+
+        const panelMessage = await sourceChannel.messages.fetch(panelMessageId).catch(() => null);
+        if (!panelMessage) {
+          await interaction.reply({ content: '에스크 패널 메시지를 찾지 못했어요. 다시 셋팅해 주세요.', ephemeral: true });
+          return;
+        }
+
+        const now = new Date();
+        const timestampLabel = `${now.getMonth() + 1}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+        const threadName = `${mode === 'anonymous' ? '익명질문' : '질문'}-${timestampLabel}`.slice(0, 90);
+
+        const thread = await panelMessage.startThread({
+          name: threadName,
+          autoArchiveDuration: 1440,
+          reason: `ask question by ${interaction.user.tag}`,
+        }).catch(() => null);
+        if (!thread) {
+          await interaction.reply({ content: '질문 쓰레드를 만들지 못했어요. 봇 권한을 확인해 주세요.', ephemeral: true });
+          return;
+        }
+
+        const profanity = detectAskProfanity(question);
+        const questionEmbed = new EmbedBuilder()
+          .setColor(mode === 'anonymous' ? 0xdb2777 : 0x3b82f6)
+          .setTitle(mode === 'anonymous' ? '🎭 익명 질문' : '💬 질문')
+          .setDescription(question)
+          .addFields(
+            { name: '질문 타입', value: askModeLabel(mode), inline: true },
+            { name: '답변 위치', value: `이 쓰레드에서 답변해 주세요.`, inline: true },
+            {
+              name: '작성자',
+              value: mode === 'anonymous' ? '익명' : `<@${interaction.user.id}>`,
+              inline: true,
+            }
+          )
+          .setFooter({ text: `작성 시각: ${now.toLocaleString('ko-KR')}` });
+
+        const askMessage = await thread.send({
+          content: mode === 'public' ? `질문자: <@${interaction.user.id}>` : '질문자: 익명',
+          embeds: [questionEmbed],
+        });
+
+        await thread.send({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0x14b8a6)
+              .setTitle('🛠️ 답변 가이드')
+              .setDescription('관리자분들은 이 쓰레드에 답변을 남겨 주세요.')
+          ]
+        }).catch(() => {});
+
+        const fallbackCfg = await getAppConfig().catch(() => null);
+        const logChannelId = logChannelIdRaw !== 'none'
+          ? logChannelIdRaw
+          : (fallbackCfg?.error_log_channel_id ?? null);
+
+        if (logChannelId) {
+          const logChannel = await interaction.guild.channels.fetch(logChannelId).catch(() => null);
+          if (logChannel && logChannel.isTextBased() && !logChannel.isDMBased()) {
+            const logEmbed = new EmbedBuilder()
+              .setColor(profanity.flagged ? 0xef4444 : 0x6366f1)
+              .setTitle('🧾 에스크 감사 로그')
+              .addFields(
+                {
+                  name: '작성자',
+                  value: `<@${interaction.user.id}>\n${interaction.user.tag}\n\`${interaction.user.id}\``,
+                  inline: true,
+                },
+                {
+                  name: '질문 타입',
+                  value: askModeLabel(mode),
+                  inline: true,
+                },
+                {
+                  name: '욕설 감지',
+                  value: profanity.flagged
+                    ? `감지됨 (${profanity.matches.join(', ')})`
+                    : '정상',
+                  inline: true,
+                },
+                {
+                  name: '위치',
+                  value: `패널: <#${interaction.channelId}>\n쓰레드: <#${thread.id}>`,
+                  inline: true,
+                },
+                {
+                  name: '질문 링크',
+                  value: `[바로가기](https://discord.com/channels/${interaction.guildId}/${thread.id}/${askMessage.id})`,
+                  inline: true,
+                },
+                {
+                  name: '질문 내용',
+                  value: clipAskText(question, 1000),
+                  inline: false,
+                }
+              )
+              .setTimestamp();
+
+            await logChannel.send({
+              content: profanity.flagged ? '🚨 욕설 감지된 에스크가 접수되었습니다.' : undefined,
+              embeds: [logEmbed],
+            }).catch(() => {});
+          }
+        }
+
+        await interaction.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0x22c55e)
+              .setTitle('✅ 질문이 접수되었어요')
+              .setDescription(`${thread} 쓰레드가 생성되었어요. 관리자 답변을 기다려 주세요.`)
+          ],
+          ephemeral: true,
+        });
+        return;
+      }
+
       if (interaction.customId === 'voice_if:rename_modal') {
         if (!interaction.guild) {
           await interaction.reply({ content: '서버에서만 사용할 수 있어요.', ephemeral: true });
@@ -678,6 +897,39 @@ export function registerInteractionCreate(client: Client) {
 
       scheduleMusicStateUpdate(player);
     } else if (interaction.isButton()) {
+      if (interaction.customId.startsWith('ask:open:')) {
+        const panelMessageId = interaction.message?.id;
+        if (!panelMessageId) {
+          await interaction.reply({ content: '에스크 패널 정보를 찾지 못했어요.', ephemeral: true });
+          return;
+        }
+
+        const mode = getAskModeSelection(panelMessageId, interaction.user.id) ?? 'public';
+        const [, , logChannelIdRaw = 'none'] = interaction.customId.split(':');
+        const modalCustomId = `ask:submit:${mode}:${logChannelIdRaw}:${panelMessageId}`;
+
+        const modal = new ModalBuilder()
+          .setCustomId(modalCustomId)
+          .setTitle(mode === 'anonymous' ? '익명 질문 작성' : '질문 작성');
+
+        const questionInput = new TextInputBuilder()
+          .setCustomId('ask:question')
+          .setLabel('질문 내용')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true)
+          .setMinLength(4)
+          .setMaxLength(900)
+          .setPlaceholder(
+            mode === 'anonymous'
+              ? '익명으로 남길 질문을 입력해 주세요.'
+              : '관리자에게 남길 질문을 입력해 주세요.'
+          );
+
+        modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(questionInput));
+        await interaction.showModal(modal);
+        return;
+      }
+
       if (interaction.customId.startsWith('voice_if:')) {
         if (!interaction.guild) {
           await interaction.reply({ content: '서버에서만 사용할 수 있어요.', ephemeral: true });

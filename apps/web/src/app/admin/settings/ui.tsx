@@ -1885,7 +1885,7 @@ export default function SettingsClient() {
 
         <div className="mt-4 rounded-2xl border border-[color:var(--line)] bg-[color:var(--chip)]/70 p-4">
           <h3 className="text-sm font-semibold">시장 메이커 설정</h3>
-          <p className="mt-1 text-xs muted">자동매매 주기, 고래/새우 최대 수량, 개미 자동 매수 수량·쿨타임을 설정합니다.</p>
+          <p className="mt-1 text-xs muted">자동매매 주기와 고래/새우/개미 수량을 설정합니다. 개미 쿨타임은 주기를 기준으로 자동 계산됩니다.</p>
 
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="text-sm">
@@ -1904,7 +1904,7 @@ export default function SettingsClient() {
                   });
                 }}
               />
-              <p className="mt-1 text-xs muted-2">비우면 기본 주기(봇 동기화 주기)를 사용합니다.</p>
+              <p className="mt-1 text-xs muted-2">비우면 기본 주기(봇 동기화 주기)를 사용합니다. 개미 자동매수 쿨타임은 주기 x 4로 자동 적용됩니다.</p>
             </label>
 
             <label className="text-sm">
@@ -1967,17 +1967,6 @@ export default function SettingsClient() {
               />
             </label>
 
-            <label className="text-sm">
-              자동 매수 쿨타임(초)
-              <input
-                className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
-                type="number"
-                min={10}
-                max={3600}
-                value={cfg.stock_ant_auto_buy_cooldown_seconds}
-                onChange={(e) => setCfg({ ...cfg, stock_ant_auto_buy_cooldown_seconds: Number(e.target.value) })}
-              />
-            </label>
           </div>
         </div>
 
