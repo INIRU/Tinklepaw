@@ -496,7 +496,8 @@ export function registerInteractionCreate(client: Client) {
           return;
         }
 
-        const mode: AskMode = parts[2] === 'anonymous' ? 'anonymous' : 'public';
+        const modeRaw = parts[2] ?? '';
+        const mode: AskMode = modeRaw === 'public' ? 'public' : 'anonymous';
         const logChannelIdRaw = parts[3] ?? 'none';
         const panelMessageId = parts[4] ?? '';
 
@@ -904,7 +905,7 @@ export function registerInteractionCreate(client: Client) {
           return;
         }
 
-        const mode = getAskModeSelection(panelMessageId, interaction.user.id) ?? 'public';
+        const mode = getAskModeSelection(panelMessageId, interaction.user.id) ?? 'anonymous';
         const [, , logChannelIdRaw = 'none'] = interaction.customId.split(':');
         const modalCustomId = `ask:submit:${mode}:${logChannelIdRaw}:${panelMessageId}`;
 
