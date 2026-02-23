@@ -76,11 +76,6 @@ export const askSetupCommand: SlashCommand = {
           name: '🧭 질문 모드',
           value: '드롭다운에서 **익명 질문 / 질문** 중 하나를 먼저 선택해 주세요.',
           inline: false,
-        },
-        {
-          name: '🧾 로그 채널',
-          value: effectiveLogChannelId ? `<#${effectiveLogChannelId}>` : '설정 없음 (기본 로그 채널 미사용)',
-          inline: false,
         }
       )
       .setFooter({ text: '익명 질문도 내부 감사 로그에는 작성자 정보가 기록됩니다.' })

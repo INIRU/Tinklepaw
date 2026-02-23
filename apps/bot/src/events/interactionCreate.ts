@@ -521,17 +521,6 @@ export function registerInteractionCreate(client: Client) {
 
         const now = new Date();
         const timestampLabel = `${now.getMonth() + 1}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
-        const threadName = `${mode === 'anonymous' ? '익명질문' : '질문'}-${timestampLabel}`.slice(0, 90);
-
-        const thread = await panelMessage.startThread({
-          name: threadName,
-          autoArchiveDuration: 1440,
-          reason: `ask question by ${interaction.user.tag}`,
-        }).catch(() => null);
-        if (!thread) {
-          await interaction.reply({ content: '질문 쓰레드를 만들지 못했어요. 봇 권한을 확인해 주세요.', ephemeral: true });
-          return;
-        }
 
         const profanity = detectAskProfanity(question);
         const questionEmbed = new EmbedBuilder()
@@ -540,7 +529,7 @@ export function registerInteractionCreate(client: Client) {
           .setDescription(question)
           .addFields(
             { name: '질문 타입', value: askModeLabel(mode), inline: true },
-            { name: '답변 위치', value: `이 쓰레드에서 답변해 주세요.`, inline: true },
+            { name: '답변 위치', value: '아래 연결된 쓰레드에서 답변해 주세요.', inline: true },
             {
               name: '작성자',
               value: mode === 'anonymous' ? '익명' : `<@${interaction.user.id}>`,
@@ -549,10 +538,22 @@ export function registerInteractionCreate(client: Client) {
           )
           .setFooter({ text: `작성 시각: ${now.toLocaleString('ko-KR')}` });
 
-        const askMessage = await thread.send({
-          content: mode === 'public' ? `질문자: <@${interaction.user.id}>` : '질문자: 익명',
+        const askMessage = await sourceChannel.send({
+          content: mode === 'public' ? `📮 질문이 접수되었어요 · 질문자: <@${interaction.user.id}>` : '📮 익명 질문이 접수되었어요',
           embeds: [questionEmbed],
         });
+
+        const threadName = `${mode === 'anonymous' ? '익명질문' : '질문'}-${timestampLabel}`.slice(0, 90);
+        const thread = await askMessage.startThread({
+          name: threadName,
+          autoArchiveDuration: 1440,
+          reason: `ask question by ${interaction.user.tag}`,
+        }).catch(() => null);
+        if (!thread) {
+          await askMessage.delete().catch(() => null);
+          await interaction.reply({ content: '질문 쓰레드를 만들지 못했어요. 봇 권한을 확인해 주세요.', ephemeral: true });
+          return;
+        }
 
         await thread.send({
           embeds: [
@@ -594,12 +595,12 @@ export function registerInteractionCreate(client: Client) {
                 },
                 {
                   name: '위치',
-                  value: `패널: <#${interaction.channelId}>\n쓰레드: <#${thread.id}>`,
+                  value: `패널: <#${interaction.channelId}>\n질문: [바로가기](https://discord.com/channels/${interaction.guildId}/${interaction.channelId}/${askMessage.id})\n쓰레드: <#${thread.id}>`,
                   inline: true,
                 },
                 {
                   name: '질문 링크',
-                  value: `[바로가기](https://discord.com/channels/${interaction.guildId}/${thread.id}/${askMessage.id})`,
+                  value: `[바로가기](https://discord.com/channels/${interaction.guildId}/${interaction.channelId}/${askMessage.id})`,
                   inline: true,
                 },
                 {
@@ -622,7 +623,7 @@ export function registerInteractionCreate(client: Client) {
             new EmbedBuilder()
               .setColor(0x22c55e)
               .setTitle('✅ 질문이 접수되었어요')
-              .setDescription(`${thread} 쓰레드가 생성되었어요. 관리자 답변을 기다려 주세요.`)
+              .setDescription(`질문이 채널에 등록되고 ${thread} 쓰레드가 생성되었어요. 관리자 답변을 기다려 주세요.`)
           ],
           ephemeral: true,
         });
