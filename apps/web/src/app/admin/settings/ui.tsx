@@ -61,6 +61,11 @@ type AppConfig = {
   stock_news_channel_id: string | null;
   stock_news_schedule_mode: 'interval' | 'daily_random';
   stock_news_interval_minutes: number;
+  stock_news_signal_duration_rumor_minutes: number;
+  stock_news_signal_duration_mixed_minutes: number;
+  stock_news_signal_duration_confirmed_minutes: number;
+  stock_news_signal_duration_reversal_minutes: number;
+  stock_news_signal_duration_max_minutes: number;
   stock_news_daily_window_start_hour: number;
   stock_news_daily_window_end_hour: number;
   stock_news_bullish_min_impact_bps: number;
@@ -241,6 +246,11 @@ const STOCK_DIRTY_KEYS: ReadonlyArray<keyof AppConfig> = [
   'stock_news_channel_id',
   'stock_news_schedule_mode',
   'stock_news_interval_minutes',
+  'stock_news_signal_duration_rumor_minutes',
+  'stock_news_signal_duration_mixed_minutes',
+  'stock_news_signal_duration_confirmed_minutes',
+  'stock_news_signal_duration_reversal_minutes',
+  'stock_news_signal_duration_max_minutes',
   'stock_news_daily_window_start_hour',
   'stock_news_daily_window_end_hour',
   'stock_news_bullish_min_impact_bps',
@@ -714,6 +724,11 @@ export default function SettingsClient() {
       stock_news_channel_id: cfgBody.stock_news_channel_id ?? null,
       stock_news_schedule_mode: cfgBody.stock_news_schedule_mode === 'daily_random' ? 'daily_random' : 'interval',
       stock_news_interval_minutes: Number(cfgBody.stock_news_interval_minutes ?? 60),
+      stock_news_signal_duration_rumor_minutes: Number(cfgBody.stock_news_signal_duration_rumor_minutes ?? 15),
+      stock_news_signal_duration_mixed_minutes: Number(cfgBody.stock_news_signal_duration_mixed_minutes ?? 35),
+      stock_news_signal_duration_confirmed_minutes: Number(cfgBody.stock_news_signal_duration_confirmed_minutes ?? 60),
+      stock_news_signal_duration_reversal_minutes: Number(cfgBody.stock_news_signal_duration_reversal_minutes ?? 12),
+      stock_news_signal_duration_max_minutes: Number(cfgBody.stock_news_signal_duration_max_minutes ?? 180),
       stock_news_daily_window_start_hour: Number(cfgBody.stock_news_daily_window_start_hour ?? 9),
       stock_news_daily_window_end_hour: Number(cfgBody.stock_news_daily_window_end_hour ?? 23),
       stock_news_bullish_min_impact_bps: Number(cfgBody.stock_news_bullish_min_impact_bps ?? legacyMinImpactBps),
@@ -1663,6 +1678,66 @@ export default function SettingsClient() {
               value={cfg.stock_news_interval_minutes}
               disabled={cfg.stock_news_schedule_mode !== 'interval'}
               onChange={(e) => setCfg({ ...cfg, stock_news_interval_minutes: Number(e.target.value) })}
+            />
+          </label>
+
+          <label className="text-sm">
+            루머 지속시간(분)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              min={5}
+              max={360}
+              value={cfg.stock_news_signal_duration_rumor_minutes}
+              onChange={(e) => setCfg({ ...cfg, stock_news_signal_duration_rumor_minutes: Number(e.target.value) })}
+            />
+          </label>
+
+          <label className="text-sm">
+            혼재 지속시간(분)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              min={5}
+              max={360}
+              value={cfg.stock_news_signal_duration_mixed_minutes}
+              onChange={(e) => setCfg({ ...cfg, stock_news_signal_duration_mixed_minutes: Number(e.target.value) })}
+            />
+          </label>
+
+          <label className="text-sm">
+            확정 지속시간(분)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              min={5}
+              max={360}
+              value={cfg.stock_news_signal_duration_confirmed_minutes}
+              onChange={(e) => setCfg({ ...cfg, stock_news_signal_duration_confirmed_minutes: Number(e.target.value) })}
+            />
+          </label>
+
+          <label className="text-sm">
+            반전 카드 지속시간(분)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              min={5}
+              max={180}
+              value={cfg.stock_news_signal_duration_reversal_minutes}
+              onChange={(e) => setCfg({ ...cfg, stock_news_signal_duration_reversal_minutes: Number(e.target.value) })}
+            />
+          </label>
+
+          <label className="text-sm">
+            지속시간 상한(분)
+            <input
+              className="mt-1 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 text-sm text-[color:var(--fg)]"
+              type="number"
+              min={5}
+              max={720}
+              value={cfg.stock_news_signal_duration_max_minutes}
+              onChange={(e) => setCfg({ ...cfg, stock_news_signal_duration_max_minutes: Number(e.target.value) })}
             />
           </label>
 

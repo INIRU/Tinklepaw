@@ -79,6 +79,11 @@ export async function PUT(req: Request) {
     stock_news_channel_id?: string | null;
     stock_news_schedule_mode?: 'interval' | 'daily_random';
     stock_news_interval_minutes?: number;
+    stock_news_signal_duration_rumor_minutes?: number;
+    stock_news_signal_duration_mixed_minutes?: number;
+    stock_news_signal_duration_confirmed_minutes?: number;
+    stock_news_signal_duration_reversal_minutes?: number;
+    stock_news_signal_duration_max_minutes?: number;
     stock_news_daily_window_start_hour?: number;
     stock_news_daily_window_end_hour?: number;
     stock_news_bullish_min_impact_bps?: number;
@@ -207,6 +212,21 @@ export async function PUT(req: Request) {
     if (body.stock_news_interval_minutes !== undefined) {
       patch.stock_news_interval_minutes = Math.max(5, Math.min(1440, Math.floor(body.stock_news_interval_minutes)));
     }
+    if (body.stock_news_signal_duration_rumor_minutes !== undefined) {
+      patch.stock_news_signal_duration_rumor_minutes = Math.max(5, Math.min(360, Math.floor(body.stock_news_signal_duration_rumor_minutes)));
+    }
+    if (body.stock_news_signal_duration_mixed_minutes !== undefined) {
+      patch.stock_news_signal_duration_mixed_minutes = Math.max(5, Math.min(360, Math.floor(body.stock_news_signal_duration_mixed_minutes)));
+    }
+    if (body.stock_news_signal_duration_confirmed_minutes !== undefined) {
+      patch.stock_news_signal_duration_confirmed_minutes = Math.max(5, Math.min(360, Math.floor(body.stock_news_signal_duration_confirmed_minutes)));
+    }
+    if (body.stock_news_signal_duration_reversal_minutes !== undefined) {
+      patch.stock_news_signal_duration_reversal_minutes = Math.max(5, Math.min(180, Math.floor(body.stock_news_signal_duration_reversal_minutes)));
+    }
+    if (body.stock_news_signal_duration_max_minutes !== undefined) {
+      patch.stock_news_signal_duration_max_minutes = Math.max(5, Math.min(720, Math.floor(body.stock_news_signal_duration_max_minutes)));
+    }
     if (body.stock_news_daily_window_start_hour !== undefined) {
       patch.stock_news_daily_window_start_hour = Math.max(0, Math.min(23, Math.floor(body.stock_news_daily_window_start_hour)));
     }
@@ -302,6 +322,41 @@ export async function PUT(req: Request) {
     if (body.stock_holding_fee_timezone !== undefined) {
       const tz = typeof body.stock_holding_fee_timezone === 'string' ? body.stock_holding_fee_timezone.trim() : '';
       patch.stock_holding_fee_timezone = tz.length > 0 ? tz.slice(0, 64) : 'Asia/Seoul';
+    }
+
+    const effectiveSignalRumor = Number(
+      patch.stock_news_signal_duration_rumor_minutes
+      ?? currentCfgAny.stock_news_signal_duration_rumor_minutes
+      ?? 15
+    );
+    const effectiveSignalMixed = Number(
+      patch.stock_news_signal_duration_mixed_minutes
+      ?? currentCfgAny.stock_news_signal_duration_mixed_minutes
+      ?? 35
+    );
+    const effectiveSignalConfirmed = Number(
+      patch.stock_news_signal_duration_confirmed_minutes
+      ?? currentCfgAny.stock_news_signal_duration_confirmed_minutes
+      ?? 60
+    );
+    const effectiveSignalReversal = Number(
+      patch.stock_news_signal_duration_reversal_minutes
+      ?? currentCfgAny.stock_news_signal_duration_reversal_minutes
+      ?? 12
+    );
+    const effectiveSignalMax = Number(
+      patch.stock_news_signal_duration_max_minutes
+      ?? currentCfgAny.stock_news_signal_duration_max_minutes
+      ?? 180
+    );
+    const requiredSignalMax = Math.max(
+      effectiveSignalRumor,
+      effectiveSignalMixed,
+      effectiveSignalConfirmed,
+      effectiveSignalReversal,
+    );
+    if (effectiveSignalMax < requiredSignalMax) {
+      patch.stock_news_signal_duration_max_minutes = requiredSignalMax;
     }
 
     const bullishScenarios = normalizeScenarioList(body.stock_news_bullish_scenarios);

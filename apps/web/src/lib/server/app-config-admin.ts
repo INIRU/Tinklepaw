@@ -16,11 +16,16 @@ export async function getOrInitAppConfig() {
   if (existing) return existing;
 
   const env = getServerEnv();
+  const guildId = env.NYARU_GUILD_ID?.trim();
+  if (!guildId) {
+    throw new Error('NYARU_GUILD_ID is required to initialize app_config');
+  }
+
   const { data: created, error: insErr } = await supabase
     .from('app_config')
     .insert({
       id: 1,
-      guild_id: env.NYARU_GUILD_ID,
+      guild_id: guildId,
       admin_role_ids: [],
       reward_points_per_interval: 10,
       reward_interval_seconds: 180,
@@ -74,6 +79,11 @@ export async function getOrInitAppConfig() {
       stock_news_bullish_max_impact_bps: 260,
       stock_news_bearish_min_impact_bps: 40,
       stock_news_bearish_max_impact_bps: 260,
+      stock_news_signal_duration_rumor_minutes: 15,
+      stock_news_signal_duration_mixed_minutes: 35,
+      stock_news_signal_duration_confirmed_minutes: 60,
+      stock_news_signal_duration_reversal_minutes: 12,
+      stock_news_signal_duration_max_minutes: 180,
       maintenance_mode_enabled: false,
       maintenance_mode_reason: null,
       maintenance_mode_until: null,
