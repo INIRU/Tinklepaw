@@ -5,7 +5,7 @@ import { useToast } from '@/components/toast/ToastProvider';
 import { GachaScene } from './GachaScene';
 import { AnimatePresence, m } from 'framer-motion';
 import gsap from 'gsap';
-import { X, Info, Coins, AlertCircle, ChevronDown, History, Copy, Download, Search, Sparkles } from 'lucide-react';
+import { X, Info, Coins, AlertCircle, ChevronDown, History, Copy, Download, Search, Sparkles, Settings2 } from 'lucide-react';
 import Image from 'next/image';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useSearchParams } from 'next/navigation';
@@ -92,6 +92,11 @@ const RARITY_PRIORITY: Record<DrawResult['rarity'], number> = {
 
 const RARITY_DISPLAY_ORDER = ['SSS', 'SS', 'S', 'R'] as const;
 
+const clampBulkDrawCount = (value: number) => {
+  if (!Number.isFinite(value)) return 10;
+  return Math.max(10, Math.min(100, Math.trunc(value)));
+};
+
 function getResultLabel(item: DrawResult) {
   const reward = item.rewardPoints ?? 0;
   if (!item.discordRoleId && reward > 0) return `+${reward}P`;
@@ -173,6 +178,8 @@ export default function DrawClient() {
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawResults, setDrawResults] = useState<DrawResult[]>([]);
   const [showResultModal, setShowResultModal] = useState(false);
+  const [bulkDrawCount, setBulkDrawCount] = useState(10);
+  const [showBulkDrawSettings, setShowBulkDrawSettings] = useState(false);
   const [busy, setBusy] = useState(false);
   const resultModalRef = useRef<HTMLDivElement | null>(null);
   const prefersReducedMotionRef = useRef(false);
@@ -195,6 +202,18 @@ export default function DrawClient() {
 
     return () => media.removeEventListener('change', syncMotionPreference);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const saved = window.localStorage.getItem('nyaru:web:draw:bulk-count');
+    if (!saved) return;
+    setBulkDrawCount(clampBulkDrawCount(Number(saved)));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('nyaru:web:draw:bulk-count', String(bulkDrawCount));
+  }, [bulkDrawCount]);
 
   // Computed
   // Avoid leaking "변동" upgrades in the initial capsule/scene.
@@ -900,18 +919,67 @@ export default function DrawClient() {
             </button>
           </div>
 
-          <div className='absolute top-[calc(env(safe-area-inset-top)+0.75rem)] right-4 pointer-events-auto rounded-xl border border-[color:var(--border)] bg-[color:var(--card)]/86 px-2.5 py-2 shadow-[0_8px_22px_rgba(0,0,0,0.2)] backdrop-blur-md'>
-            <div className='mb-1 flex items-center gap-1.5'>
-              <Coins className='h-3 w-3 text-[color:var(--accent-pink)]' />
-              <span className='text-[10px] font-semibold tracking-[0.18em] muted-2'>POINTS</span>
+          <div className='absolute top-[calc(env(safe-area-inset-top)+0.75rem)] right-4 z-20 pointer-events-auto'>
+            <div className='flex items-center gap-2'>
+              <div className='flex h-9 items-center rounded-xl border border-[color:var(--border)] bg-[color:var(--card)]/86 px-3 shadow-[0_8px_22px_rgba(0,0,0,0.2)] backdrop-blur-md'>
+                <span className='text-xs font-bold text-[color:var(--accent-pink)]'>
+                  {userStatus ? (
+                    `${toSafeNumber(userStatus.balance).toLocaleString()} p`
+                  ) : (
+                    <Skeleton className='h-4 w-12 sm:w-16 inline-block align-middle' />
+                  )}
+                </span>
+              </div>
+
+              <div className='relative'>
+                <button
+                  type='button'
+                  onClick={() => setShowBulkDrawSettings((prev) => !prev)}
+                  className='flex h-9 w-9 items-center justify-center rounded-xl border border-[color:var(--border)] bg-[color:var(--card)]/86 text-[color:var(--muted)] shadow-[0_8px_22px_rgba(0,0,0,0.2)] backdrop-blur-md transition-colors hover:text-[color:var(--fg)] cursor-pointer'
+                  title='연속 뽑기 설정'
+                >
+                  <Settings2 className='h-4 w-4' />
+                </button>
+
+                <AnimatePresence>
+                  {showBulkDrawSettings ? (
+                    <m.div
+                      initial={{ opacity: 0, y: -6, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -6, scale: 0.96 }}
+                      transition={{ duration: 0.16, ease: 'easeOut' }}
+                      className='absolute right-0 mt-2 w-56 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)]/92 p-3 shadow-[0_14px_34px_rgba(0,0,0,0.28)] backdrop-blur-md'
+                    >
+                      <div className='mb-2 flex items-center justify-between'>
+                        <span className='text-[11px] font-semibold text-[color:var(--fg)]'>연속 뽑기 횟수</span>
+                        <span className='text-[11px] font-bold text-[color:var(--accent-pink)]'>{bulkDrawCount}회</span>
+                      </div>
+
+                      <input
+                        type='range'
+                        min={10}
+                        max={100}
+                        step={1}
+                        value={bulkDrawCount}
+                        onChange={(e) => setBulkDrawCount(clampBulkDrawCount(Number(e.target.value)))}
+                        className='w-full accent-[color:var(--accent-pink)]'
+                      />
+
+                      <input
+                        type='number'
+                        min={10}
+                        max={100}
+                        value={bulkDrawCount}
+                        onChange={(e) => setBulkDrawCount(clampBulkDrawCount(Number(e.target.value)))}
+                        className='mt-2 h-8 w-full rounded-lg border border-[color:var(--border)] bg-[color:var(--chip)] px-2 text-xs text-[color:var(--fg)]'
+                      />
+
+                      <p className='mt-2 text-[10px] muted'>웹 연속 뽑기는 10~100회까지 설정할 수 있어요.</p>
+                    </m.div>
+                  ) : null}
+                </AnimatePresence>
+              </div>
             </div>
-            <span className='text-xs font-bold text-[color:var(--accent-pink)]'>
-              {userStatus ? (
-                `${toSafeNumber(userStatus.balance).toLocaleString()} P`
-              ) : (
-                <Skeleton className='h-4 w-12 sm:w-16 inline-block align-middle' />
-              )}
-            </span>
           </div>
 
           {/* Header */}
@@ -1003,7 +1071,7 @@ export default function DrawClient() {
 
                 <button
                   type='button'
-                  onClick={() => void onDraw(10)}
+                  onClick={() => void onDraw(bulkDrawCount)}
                   disabled={busy || !selectedPoolId || isDrawing}
                   className={`
                     group relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#ff5fa2] via-[#ff7f9f] to-[#ffac6d]
@@ -1017,9 +1085,9 @@ export default function DrawClient() {
                       <span className='text-xs'>진행 중…</span>
                     ) : (
                       <>
-                        <span className='text-xs font-bold'>10회 연속</span>
+                        <span className='text-xs font-bold'>{bulkDrawCount}회 연속</span>
                         <span className='mt-0.5 text-[10px] text-white/85'>
-                          {(selectedPool?.cost_points ?? 0) * 10}P
+                          {(selectedPool?.cost_points ?? 0) * bulkDrawCount}P
                         </span>
                       </>
                     )}
