@@ -103,9 +103,9 @@ const drawChip = (ctx: CanvasRenderingContext2D, x: number, y: number, text: str
   const width = textWidth + 18;
   const height = 18;
   const radius = 9;
-  const bg = tone === 'green' ? 'rgba(29,185,84,0.24)' : 'rgba(100,116,139,0.28)';
-  const border = tone === 'green' ? 'rgba(110,231,183,0.45)' : 'rgba(203,213,225,0.28)';
-  const fg = tone === 'green' ? '#a7f3d0' : '#e2e8f0';
+  const bg = tone === 'green' ? 'rgba(255,95,162,0.20)' : 'rgba(100,116,139,0.28)';
+  const border = tone === 'green' ? 'rgba(255,139,194,0.45)' : 'rgba(203,213,225,0.28)';
+  const fg = tone === 'green' ? '#ffb8d9' : '#e2e8f0';
   ctx.fillStyle = bg;
   drawRoundedRect(ctx, x, y, width, height, radius);
   ctx.fill();
@@ -185,15 +185,15 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
   const ctx = canvas.getContext('2d');
 
   const gradient = ctx.createLinearGradient(0, 0, canvasWidth, canvasHeight);
-  gradient.addColorStop(0, '#09130f');
-  gradient.addColorStop(0.5, '#0e1716');
-  gradient.addColorStop(1, '#111a1a');
+  gradient.addColorStop(0, '#0e0e18');
+  gradient.addColorStop(0.5, '#141426');
+  gradient.addColorStop(1, '#0e0e18');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
   const glow = ctx.createRadialGradient(180, 120, 40, 180, 120, 300);
-  glow.addColorStop(0, 'rgba(29,185,84,0.36)');
-  glow.addColorStop(1, 'rgba(29,185,84,0)');
+  glow.addColorStop(0, 'rgba(255,95,162,0.30)');
+  glow.addColorStop(1, 'rgba(255,95,162,0)');
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
@@ -214,8 +214,8 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
   ctx.shadowColor = 'rgba(0,0,0,0.42)';
   ctx.shadowBlur = 24;
   const leftPanelGradient = ctx.createLinearGradient(leftPanelX, leftPanelY, leftPanelX, leftPanelY + leftPanelHeight);
-  leftPanelGradient.addColorStop(0, 'rgba(16,22,21,0.86)');
-  leftPanelGradient.addColorStop(1, 'rgba(13,18,18,0.80)');
+  leftPanelGradient.addColorStop(0, 'rgba(20,16,22,0.88)');
+  leftPanelGradient.addColorStop(1, 'rgba(14,14,24,0.82)');
   ctx.fillStyle = leftPanelGradient;
   drawRoundedRect(ctx, leftPanelX, leftPanelY, leftPanelWidth, leftPanelHeight, 26);
   ctx.fill();
@@ -226,8 +226,8 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
   ctx.restore();
 
   const artworkShellGradient = ctx.createLinearGradient(artX, artY, artX + artSize, artY + artSize);
-  artworkShellGradient.addColorStop(0, '#121b19');
-  artworkShellGradient.addColorStop(1, '#0d1514');
+  artworkShellGradient.addColorStop(0, '#1a1220');
+  artworkShellGradient.addColorStop(1, '#0e0e18');
   ctx.fillStyle = artworkShellGradient;
   drawRoundedRect(ctx, artX, artY, artSize, artSize, 20);
   ctx.fill();
@@ -261,7 +261,7 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
   const labelHeight = 12;
   ctx.textAlign = 'center';
   ctx.font = `700 11px ${numberFontFamily}`;
-  ctx.fillStyle = '#6ee7b7';
+  ctx.fillStyle = '#ff8bc2';
   ctx.fillText('NOW PLAYING', textCenterX, titleStartY - (labelGap + labelHeight));
 
   ctx.font = `600 18px ${fontFamily}`;
@@ -298,14 +298,14 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
 
   if (progressWidth > 0) {
     const progressGradient = ctx.createLinearGradient(barX, barY, barX + barWidth, barY);
-    progressGradient.addColorStop(0, '#1db954');
-    progressGradient.addColorStop(1, '#34d399');
+    progressGradient.addColorStop(0, '#ff5fa2');
+    progressGradient.addColorStop(1, '#ff8bc2');
     ctx.fillStyle = progressGradient;
     drawRoundedRect(ctx, barX, barY, Math.max(10, progressWidth), barHeight, 3);
     ctx.fill();
 
     const knobX = Math.min(barX + barWidth - 4, barX + Math.max(10, progressWidth));
-    ctx.fillStyle = '#a7f3d0';
+    ctx.fillStyle = '#ffb8d9';
     ctx.beginPath();
     ctx.arc(knobX, barY + barHeight / 2, 4.5, 0, Math.PI * 2);
     ctx.fill();
@@ -354,18 +354,23 @@ export const buildMusicPanelImage = async (params: MusicPanelParams) => {
       ctx.stroke();
       ctx.restore();
 
+      // Left accent bar
+      ctx.fillStyle = 'rgba(255,95,162,0.6)';
+      drawRoundedRect(ctx, queueX, y + 6, 3, 54, 2);
+      ctx.fill();
+
       const badgeX = queueX + 24;
       const badgeY = y + 20;
-      ctx.fillStyle = 'rgba(29,185,84,0.26)';
+      ctx.fillStyle = 'rgba(255,95,162,0.22)';
       ctx.beginPath();
       ctx.arc(badgeX, badgeY, 10, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(134,239,172,0.44)';
+      ctx.strokeStyle = 'rgba(255,139,194,0.44)';
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.arc(badgeX, badgeY, 10, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.fillStyle = '#bbf7d0';
+      ctx.fillStyle = '#ffe0f0';
       ctx.font = `700 10px ${numberFontFamily}`;
       ctx.textAlign = 'center';
       ctx.fillText(String(index + 1), badgeX, badgeY + 3.5);

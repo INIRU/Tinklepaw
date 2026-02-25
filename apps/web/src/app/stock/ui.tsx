@@ -114,6 +114,9 @@ function normalizeDashboard(raw: unknown): StockDashboard {
     holdingValue: toSafeNumber(body.holdingValue),
     unrealizedPnl: toSafeNumber(body.unrealizedPnl),
     candles,
+    holdingFeeDailyBps: toSafeNumber(body.holdingFeeDailyBps, 8),
+    holdingFeeCapBps: toSafeNumber(body.holdingFeeCapBps, 20),
+    holdingFeeEnabled: body.holdingFeeEnabled !== false,
   };
 }
 

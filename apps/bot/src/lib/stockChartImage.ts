@@ -7,12 +7,24 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const fontPath = path.resolve(__dirname, '../assets/fonts/NotoSansKR-Regular.ttf');
-if (fs.existsSync(fontPath)) {
+const safeRegisterFont = (src: string, options: Parameters<typeof registerFont>[1]) => {
   try {
-    registerFont(fontPath, { family: 'Noto Sans KR' });
+    registerFont(src, options);
   } catch {}
+};
+
+const pretendardPath = path.resolve(__dirname, '../assets/fonts/Pretendard-Regular.ttf');
+const notoKRPath = path.resolve(__dirname, '../assets/fonts/NotoSansKR-Regular.ttf');
+
+if (fs.existsSync(pretendardPath)) {
+  safeRegisterFont(pretendardPath, { family: 'Pretendard', weight: '400' });
+  safeRegisterFont(pretendardPath, { family: 'Pretendard', weight: '700' });
 }
+if (fs.existsSync(notoKRPath)) {
+  safeRegisterFont(notoKRPath, { family: 'Noto Sans KR', weight: '400' });
+}
+
+const FONT = 'Pretendard, "Noto Sans KR", sans-serif';
 
 type StockCandle = {
   t: string;
@@ -128,16 +140,25 @@ function drawBackground(ctx: CanvasRenderingContext2D) {
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
+  // Blue glow top-left
   const glowA = ctx.createRadialGradient(210, 80, 20, 210, 80, 260);
   glowA.addColorStop(0, 'rgba(59,130,246,0.17)');
   glowA.addColorStop(1, 'rgba(59,130,246,0)');
   ctx.fillStyle = glowA;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
+  // Red glow bottom-right
   const glowB = ctx.createRadialGradient(WIDTH - 160, HEIGHT - 100, 24, WIDTH - 160, HEIGHT - 100, 300);
   glowB.addColorStop(0, 'rgba(239,68,68,0.15)');
   glowB.addColorStop(1, 'rgba(239,68,68,0)');
   ctx.fillStyle = glowB;
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  // Pink glow top-center
+  const glowC = ctx.createRadialGradient(WIDTH / 2, 0, 10, WIDTH / 2, 0, 320);
+  glowC.addColorStop(0, 'rgba(255,95,162,0.13)');
+  glowC.addColorStop(1, 'rgba(255,95,162,0)');
+  ctx.fillStyle = glowC;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 }
 
@@ -257,7 +278,7 @@ export async function generateStockChartImage(params: {
   const xStep = priceW / Math.max(candles.length, 1);
   const xAt = (index: number) => priceX + xStep * index + xStep / 2;
 
-  ctx.font = "12px 'Noto Sans KR', sans-serif";
+  ctx.font = `12px ${FONT}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
 
@@ -280,7 +301,7 @@ export async function generateStockChartImage(params: {
   const labelEvery = Math.max(1, Math.floor(candles.length / 9));
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  ctx.font = "11px 'Noto Sans KR', sans-serif";
+  ctx.font = `11px ${FONT}`;
 
   for (let i = 0; i < candles.length; i += labelEvery) {
     const x = xAt(i);
@@ -296,6 +317,26 @@ export async function generateStockChartImage(params: {
   }
 
   const candleWidth = Math.max(7, Math.min(20, xStep * 0.9));
+
+  // Area fill under closing price line (subtle)
+  for (let i = 0; i < candles.length; i += 1) {
+    const c = candles[i];
+    const x = xAt(i);
+    const yClose = yAtPrice(c.c);
+    const isUp = c.c >= c.o;
+    const areaGrad = ctx.createLinearGradient(x, yClose, x, priceY + priceH);
+    if (isUp) {
+      areaGrad.addColorStop(0, 'rgba(239,68,68,0.06)');
+      areaGrad.addColorStop(1, 'rgba(239,68,68,0)');
+    } else {
+      areaGrad.addColorStop(0, 'rgba(59,130,246,0.06)');
+      areaGrad.addColorStop(1, 'rgba(59,130,246,0)');
+    }
+    ctx.fillStyle = areaGrad;
+    ctx.fillRect(x - xStep / 2, yClose, xStep, priceY + priceH - yClose);
+  }
+
+  // Candles
   for (let i = 0; i < candles.length; i += 1) {
     const c = candles[i];
     const x = xAt(i);
@@ -325,20 +366,58 @@ export async function generateStockChartImage(params: {
   drawLineSeries(ctx, ma5, xAt, yAtPrice, 'rgba(250,204,21,0.92)', 1.8, false);
   drawLineSeries(ctx, ma20, xAt, yAtPrice, 'rgba(248,250,252,0.78)', 1.8, true);
 
+  // MA legend — top-right inside price panel
+  const legendX = priceX + priceW - 110;
+  const legendY = priceY + 14;
+  ctx.font = `600 11px ${FONT}`;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  // MA5 dot
+  ctx.fillStyle = 'rgba(250,204,21,0.92)';
+  ctx.beginPath();
+  ctx.arc(legendX, legendY, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(226,232,240,0.80)';
+  ctx.fillText('MA5', legendX + 10, legendY);
+  // MA20 dot (dashed indicator)
+  ctx.fillStyle = 'rgba(248,250,252,0.78)';
+  ctx.beginPath();
+  ctx.arc(legendX + 56, legendY, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.setLineDash([3, 3]);
+  ctx.strokeStyle = 'rgba(248,250,252,0.78)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(legendX + 52, legendY);
+  ctx.lineTo(legendX + 60, legendY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(226,232,240,0.80)';
+  ctx.fillText('MA20', legendX + 66, legendY);
+
+  // Volume bars with gradient fade at top
   const maxVolume = Math.max(1, ...candles.map((c) => c.v));
   for (let i = 0; i < candles.length; i += 1) {
     const c = candles[i];
     const x = xAt(i);
     const isUp = c.c >= c.o;
-    const color = isUp ? 'rgba(239,68,68,0.55)' : 'rgba(59,130,246,0.55)';
 
     const h = (Math.max(0, c.v) / maxVolume) * (volumeH - 24);
     const y = volumeY + volumeH - h - 8;
-    ctx.fillStyle = color;
+
+    const volGrad = ctx.createLinearGradient(x, y, x, y + h);
+    if (isUp) {
+      volGrad.addColorStop(0, 'rgba(239,68,68,0.28)');
+      volGrad.addColorStop(1, 'rgba(239,68,68,0.55)');
+    } else {
+      volGrad.addColorStop(0, 'rgba(59,130,246,0.28)');
+      volGrad.addColorStop(1, 'rgba(59,130,246,0.55)');
+    }
+    ctx.fillStyle = volGrad;
     ctx.fillRect(x - candleWidth / 2, y, candleWidth, h);
   }
 
-  ctx.font = "11px 'Noto Sans KR', sans-serif";
+  ctx.font = `11px ${FONT}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = 'rgba(203,213,225,0.82)';
@@ -357,10 +436,23 @@ export async function generateStockChartImage(params: {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  ctx.fillStyle = 'rgba(250,204,21,0.9)';
-  ctx.font = "600 11px 'Noto Sans KR', sans-serif";
+  // Current price pill on right y-axis edge
+  const isUpTrend = params.changePct >= 0;
+  const pillColor = isUpTrend ? 'rgba(239,68,68,0.85)' : 'rgba(59,130,246,0.85)';
+  const pillText = `현재가 ${last.c.toLocaleString()}P`;
+  ctx.font = `700 11px ${FONT}`;
+  ctx.textBaseline = 'middle';
+  const pillTextW = ctx.measureText(pillText).width;
+  const pillW = pillTextW + 18;
+  const pillH = 20;
+  const pillX = priceX + 8;
+  const pillY = Math.max(priceY + pillH / 2 + 4, Math.min(priceY + priceH - pillH / 2 - 4, lastY));
+  drawRoundedRect(ctx, pillX, pillY - pillH / 2, pillW, pillH, 6);
+  ctx.fillStyle = pillColor;
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'left';
-  ctx.fillText(`현재가 ${last.c.toLocaleString()}P`, priceX + 10, Math.max(priceY + 14, lastY - 10));
+  ctx.fillText(pillText, pillX + 9, pillY);
 
   if (holdingAvgPrice != null) {
     const avgY = yAtPrice(holdingAvgPrice);
@@ -374,7 +466,8 @@ export async function generateStockChartImage(params: {
     ctx.setLineDash([]);
 
     ctx.fillStyle = AVG_COLOR;
-    ctx.font = "700 11px 'Noto Sans KR', sans-serif";
+    ctx.font = `700 11px ${FONT}`;
+    ctx.textBaseline = 'middle';
     ctx.fillText(
       `평단 ${Math.round(holdingAvgPrice).toLocaleString()}P`,
       priceX + 10,
@@ -382,33 +475,69 @@ export async function generateStockChartImage(params: {
     );
   }
 
-  const trendColor = params.changePct >= 0 ? '#fecaca' : '#bfdbfe';
+  const trendColor = params.changePct >= 0 ? UP_COLOR : DOWN_COLOR;
+  const changePctSign = params.changePct >= 0 ? '+' : '';
 
+  // Header: title (bigger/bolder)
   ctx.fillStyle = '#f8fafc';
-  ctx.font = "700 30px 'Noto Sans KR', sans-serif";
+  ctx.font = `700 36px ${FONT}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
-  ctx.fillText(`${params.title} (${params.symbol})`, 34, 50);
+  ctx.fillText(`${params.title} (${params.symbol})`, 34, 54);
 
-  ctx.font = "600 16px 'Noto Sans KR', sans-serif";
-  ctx.fillStyle = trendColor;
+  // Change badge (pill)
+  const badgeText = `${changePctSign}${params.changePct.toFixed(2)}%`;
+  ctx.font = `700 13px ${FONT}`;
+  const badgeTextW = ctx.measureText(badgeText).width;
+  const badgeW = badgeTextW + 20;
+  const badgeH = 22;
+  const badgeX = 36;
+  const badgeBaseY = 66;
+  drawRoundedRect(ctx, badgeX, badgeBaseY, badgeW, badgeH, 7);
+  ctx.fillStyle = isUpTrend ? 'rgba(239,68,68,0.82)' : 'rgba(59,130,246,0.82)';
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(badgeText, badgeX + 10, badgeBaseY + badgeH / 2);
+
+  // Subtitle line
+  ctx.font = `500 13px ${FONT}`;
+  ctx.fillStyle = 'rgba(226,232,240,0.72)';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
   ctx.fillText(
-    `현재가 ${params.currentPrice.toLocaleString()}P  ·  등락 ${params.changePct >= 0 ? '+' : ''}${params.changePct.toFixed(2)}%  ·  5분봉 ${Math.max(realCandles.length, 1)}개`,
-    36,
-    78,
+    `현재가 ${params.currentPrice.toLocaleString()}P  ·  5분봉 ${Math.max(realCandles.length, 1)}개`,
+    badgeX + badgeW + 12,
+    badgeBaseY + badgeH / 2,
   );
 
-  ctx.font = "500 12px 'Noto Sans KR', sans-serif";
-  ctx.fillStyle = 'rgba(226,232,240,0.78)';
-  ctx.fillText(`기간 ${formatDateTime(first.t)} ~ ${formatDateTime(last.t)}`, WIDTH - 430, 76);
+  // Period info right-aligned
+  ctx.font = `500 11px ${FONT}`;
+  ctx.fillStyle = 'rgba(226,232,240,0.60)';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`기간 ${formatDateTime(first.t)} ~ ${formatDateTime(last.t)}`, WIDTH - 14, badgeBaseY + badgeH / 2);
 
-  ctx.font = "600 12px 'Noto Sans KR', sans-serif";
+  // OHLC pill card
+  const ohlcText = `O ${last.o.toLocaleString()}  H ${last.h.toLocaleString()}  L ${last.l.toLocaleString()}  C ${last.c.toLocaleString()}`;
+  ctx.font = `600 12px ${FONT}`;
+  const ohlcTextW = ctx.measureText(ohlcText).width;
+  const ohlcCardW = ohlcTextW + 28;
+  const ohlcCardH = 24;
+  const ohlcCardX = WIDTH - PAD.right - ohlcCardW - 4;
+  const ohlcCardY = priceY - ohlcCardH - 8;
+  drawRoundedRect(ctx, ohlcCardX, ohlcCardY, ohlcCardW, ohlcCardH, 8);
+  ctx.fillStyle = 'rgba(15,23,42,0.72)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(148,163,184,0.28)';
+  ctx.lineWidth = 1;
+  drawRoundedRect(ctx, ohlcCardX, ohlcCardY, ohlcCardW, ohlcCardH, 8);
+  ctx.stroke();
   ctx.fillStyle = 'rgba(226,232,240,0.9)';
-  ctx.fillText(
-    `O ${last.o.toLocaleString()}  H ${last.h.toLocaleString()}  L ${last.l.toLocaleString()}  C ${last.c.toLocaleString()}`,
-    WIDTH - 432,
-    98,
-  );
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(ohlcText, ohlcCardX + 14, ohlcCardY + ohlcCardH / 2);
 
   const buffer = canvas.toBuffer('image/png');
   return new AttachmentBuilder(buffer, { name: 'stock-chart.png' });
