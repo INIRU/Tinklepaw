@@ -323,30 +323,44 @@ export const stockCommand: SlashCommand = {
       let qtyPlaceholder = '예: 10';
 
       if (cachedBoard && cachedBoard.price > 0) {
-        const feeRate = cachedBoard.feeBps / 10000;
-        const feePct = (cachedBoard.feeBps / 100).toFixed(2);
+        const board = cachedBoard; // narrow for closures
+        const feeRate = board.feeBps / 10000;
+        const feePct = (board.feeBps / 100).toFixed(2);
+
+        // Matches DB trade_stock(): impact + floor-fee
+        const estimateTrade = (s: 'buy' | 'sell', qty: number) => {
+          if (qty <= 0) return { execPrice: board.price, gross: 0, fee: 0, settlement: 0 };
+          const p = board.price;
+          const impactBps = Math.min(320, Math.max(12, Math.ceil(Math.sqrt(qty) * 12)));
+          const delta = Math.max(1, Math.round(p * impactBps / 10000));
+          const postPrice = s === 'buy' ? p + delta : Math.max(50, p - delta);
+          const execPrice = Math.max(1, Math.round((p + postPrice) / 2));
+          const gross = execPrice * qty;
+          const fee = Math.max(1, Math.floor(gross * feeRate));
+          const settlement = s === 'buy' ? gross + fee : Math.max(gross - fee, 0);
+          return { execPrice, gross, fee, settlement };
+        };
 
         if (side === 'buy') {
-          const costPerShare = cachedBoard.price * (1 + feeRate);
-          let maxBuy = Math.floor(cachedBoard.balance / costPerShare);
-          // ceil() on fee can push actual cost 1P over estimate — verify and adjust
-          if (maxBuy > 0) {
-            const verifyGross = maxBuy * cachedBoard.price;
-            const verifyFee = Math.ceil(verifyGross * feeRate);
-            if (verifyGross + verifyFee > cachedBoard.balance) maxBuy--;
+          // Binary search for max affordable qty (same as web)
+          const naiveUpper = Math.max(Math.floor(board.balance / board.price), 0);
+          let lo = 0, hi = naiveUpper;
+          while (lo < hi) {
+            const mid = Math.floor((lo + hi + 1) / 2);
+            if (estimateTrade('buy', mid).settlement <= board.balance) lo = mid;
+            else hi = mid - 1;
           }
-          const totalCost = maxBuy > 0 ? maxBuy * cachedBoard.price : 0;
-          const totalFee = maxBuy > 0 ? Math.ceil(totalCost * feeRate) : 0;
+          const maxBuy = lo;
+          const est = estimateTrade('buy', maxBuy);
 
           qtyLabel = `수량 (최대 ${maxBuy.toLocaleString()}주 매수 가능)`;
           qtyPlaceholder = maxBuy > 0
-            ? `잔액 ${cachedBoard.balance.toLocaleString()}P · 단가 ${cachedBoard.price.toLocaleString()}P · 수수료 ${feePct}% (${totalFee.toLocaleString()}P)`
-            : `잔액 ${cachedBoard.balance.toLocaleString()}P · 포인트가 부족합니다`;
+            ? `잔액 ${board.balance.toLocaleString()}P · 예상단가 ${est.execPrice.toLocaleString()}P · 수수료 ${feePct}%`
+            : `잔액 ${board.balance.toLocaleString()}P · 포인트가 부족합니다`;
         } else {
-          const maxSell = cachedBoard.holdingQty;
-          const grossSell = maxSell * cachedBoard.price;
-          const sellFee = Math.ceil(grossSell * feeRate);
-          const netSell = grossSell - sellFee;
+          const maxSell = board.holdingQty;
+          const est = estimateTrade('sell', maxSell);
+          const netSell = est.settlement;
 
           qtyLabel = `수량 (보유: ${maxSell.toLocaleString()}주)`;
           qtyPlaceholder = maxSell > 0

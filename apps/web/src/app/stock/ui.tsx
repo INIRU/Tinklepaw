@@ -25,6 +25,9 @@ type StockDashboard = {
   holdingValue: number;
   unrealizedPnl: number;
   candles: StockCandle[];
+  holdingFeeDailyBps?: number;
+  holdingFeeCapBps?: number;
+  holdingFeeEnabled?: boolean;
 };
 
 type TradeResult = {
@@ -637,7 +640,7 @@ export default function StockClient() {
           <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] px-4 py-3 transition motion-safe:hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(8,12,28,0.12)]">
             <p className="flex items-center gap-1.5 text-[11px] font-semibold text-[color:color-mix(in_srgb,var(--fg)_70%,transparent)]"><Coins className="h-3.5 w-3.5" />보유 포인트</p>
             <p className="mt-1 text-xl font-black text-[color:var(--fg)]">{status ? `${status.balance.toLocaleString('ko-KR')}P` : '...'}</p>
-            <p className="mt-1 text-xs text-[color:color-mix(in_srgb,var(--fg)_68%,transparent)]">거래 수수료 {(toSafeNumber(status?.feeBps, 150) / 100).toFixed(2)}% · 보유 수수료 일 0.08% (상한 0.20%)</p>
+            <p className="mt-1 text-xs text-[color:color-mix(in_srgb,var(--fg)_68%,transparent)]">거래 수수료 {(toSafeNumber(status?.feeBps, 150) / 100).toFixed(2)}%{status?.holdingFeeEnabled !== false ? ` · 보유 수수료 일 ${(toSafeNumber(status?.holdingFeeDailyBps, 8) / 100).toFixed(2)}% (상한 ${(toSafeNumber(status?.holdingFeeCapBps, 20) / 100).toFixed(2)}%)` : ''}</p>
           </div>
 
           <div className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] px-4 py-3 transition motion-safe:hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(8,12,28,0.12)]">

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
 import { isResponse, requireGuildMemberApi } from '@/lib/server/guards-api';
+import { getOrInitAppConfig } from '@/lib/server/app-config-admin';
 
 export const runtime = 'nodejs';
 
@@ -85,5 +86,13 @@ export async function GET() {
     return NextResponse.json({ error: 'STOCK_DASHBOARD_EMPTY' }, { status: 500 });
   }
 
-  return NextResponse.json(normalizeDashboard(row));
+  const cfg = await getOrInitAppConfig();
+  const cfgAny = cfg as Record<string, unknown>;
+
+  return NextResponse.json({
+    ...normalizeDashboard(row),
+    holdingFeeDailyBps: Number(cfgAny.stock_holding_fee_daily_bps ?? 8),
+    holdingFeeCapBps: Number(cfgAny.stock_holding_fee_daily_cap_bps ?? 20),
+    holdingFeeEnabled: Boolean(cfgAny.stock_holding_fee_enabled ?? true),
+  });
 }
