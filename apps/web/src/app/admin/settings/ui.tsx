@@ -86,6 +86,7 @@ type AppConfig = {
   stock_holding_fee_daily_cap_bps: number;
   stock_holding_fee_timezone: string;
   stock_holding_fee_last_applied_on?: string | null;
+  stock_holding_fee_force_run_at?: string | null;
   stock_news_last_sent_at?: string | null;
   stock_news_next_run_at?: string | null;
   stock_news_force_run_at?: string | null;
@@ -640,6 +641,7 @@ export default function SettingsClient() {
   const [rewardSaving, setRewardSaving] = useState(false);
   const [saving, setSaving] = useState(false);
   const [newsTriggering, setNewsTriggering] = useState(false);
+  const [holdingFeeTriggering, setHoldingFeeTriggering] = useState(false);
   const [activeTab, setActiveTabRaw] = useState<SettingsTab>(getTabFromHash);
   const setActiveTab = useCallback((tab: SettingsTab) => {
     setActiveTabRaw(tab);
@@ -796,6 +798,7 @@ export default function SettingsClient() {
       stock_holding_fee_daily_cap_bps: Number(cfgBody.stock_holding_fee_daily_cap_bps ?? 20),
       stock_holding_fee_timezone: String(cfgBody.stock_holding_fee_timezone ?? 'Asia/Seoul'),
       stock_holding_fee_last_applied_on: cfgBody.stock_holding_fee_last_applied_on ?? null,
+      stock_holding_fee_force_run_at: cfgBody.stock_holding_fee_force_run_at ?? null,
       stock_news_last_sent_at: cfgBody.stock_news_last_sent_at ?? null,
       stock_news_next_run_at: cfgBody.stock_news_next_run_at ?? null,
       stock_news_force_run_at: cfgBody.stock_news_force_run_at ?? null,
@@ -995,6 +998,21 @@ export default function SettingsClient() {
       setNewsTriggering(false);
     }
   }, [forcedNewsScenario, forcedNewsSentiment, forcedNewsTier, loadAll, toast]);
+
+  const triggerHoldingFee = useCallback(async () => {
+    setHoldingFeeTriggering(true);
+    try {
+      const res = await fetch('/api/admin/stock/holding-fee/trigger', { method: 'POST' });
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+      toast.success('수수료 강제 회수 요청을 등록했습니다. 잠시 후 봇이 처리합니다.');
+      await loadAll();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '수수료 강제 회수 요청에 실패했습니다.');
+    } finally {
+      setHoldingFeeTriggering(false);
+    }
+  }, [loadAll, toast]);
 
   const toggleRewardChannel = useCallback(
     (channelId: string) => {
@@ -2148,7 +2166,16 @@ export default function SettingsClient() {
 
           <p className="mt-3 text-xs muted">
             마지막 적용일: {cfg.stock_holding_fee_last_applied_on ? cfg.stock_holding_fee_last_applied_on : '아직 없음'}
+            {cfg.stock_holding_fee_force_run_at ? ' · 강제 회수 대기 중' : ''}
           </p>
+          <button
+            type="button"
+            disabled={holdingFeeTriggering || !cfg.stock_holding_fee_enabled}
+            onClick={() => void triggerHoldingFee()}
+            className="mt-3 inline-flex items-center gap-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-4 py-2 text-sm font-semibold text-[color:var(--fg)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {holdingFeeTriggering ? '요청 중…' : '수수료 강제 회수 & DM 전송'}
+          </button>
         </div>
       </section>
 

@@ -110,6 +110,16 @@ export async function runStockMarketMakerCycle(client: Client): Promise<void> {
     args?: Record<string, unknown>
   ) => RpcResult<T>;
 
+  // Check for admin-requested force run
+  const appCfgRaw = await ctx.supabase.from('app_config').select('stock_holding_fee_force_run_at').eq('id', 1).maybeSingle();
+  const forceRunAt = (appCfgRaw.data as Record<string, unknown> | null)?.stock_holding_fee_force_run_at as string | null | undefined;
+  const isForceRun = Boolean(forceRunAt && (Date.now() - new Date(forceRunAt).getTime()) < 5 * 60 * 1000);
+
+  if (isForceRun) {
+    // Reset the daily gate so the RPC will execute
+    await ctx.supabase.from('app_config').update({ stock_holding_fee_last_applied_on: null, stock_holding_fee_force_run_at: null } as Record<string, unknown>).eq('id', 1);
+  }
+
   const { data: feeData, error: feeError } = await rpc<ApplyDailyHoldingFeeRpcRow>('apply_daily_stock_holding_fee');
   if (feeError) {
     console.warn(`[StockMarketMaker] apply_daily_stock_holding_fee skipped: ${feeError.message}`);

@@ -93,6 +93,7 @@ export type Database = {
           stock_holding_fee_daily_cap_bps: number;
           stock_holding_fee_last_applied_on: string | null;
           stock_holding_fee_timezone: string;
+          stock_holding_fee_force_run_at: string | null;
           show_traceback_to_user: boolean;
           created_at: string;
           updated_at: string;
