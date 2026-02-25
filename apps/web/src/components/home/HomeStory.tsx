@@ -282,7 +282,7 @@ export default function HomeStory(props: {
   /* ── Render ─────────────────────────────────────────────── */
 
   return (
-    <div ref={rootRef}>
+    <main ref={rootRef}>
       {/* ── HERO ─────────────────────────────────────── */}
       <section
         ref={heroRef}
@@ -496,6 +496,6 @@ export default function HomeStory(props: {
       <div className="mx-auto max-w-6xl px-6 pb-20">
         <HomeActionGrid />
       </div>
-    </div>
+    </main>
   );
 }
