@@ -216,8 +216,22 @@ export const stockCommand: SlashCommand = {
     await interaction.deferReply();
     const userId = interaction.user.id;
 
+    // Cache latest board data so modals can show max qty / fee info instantly
+    let cachedBoard: {
+      price: number;
+      feeBps: number;
+      balance: number;
+      holdingQty: number;
+    } | null = null;
+
     const renderPanel = async (disabled = false) => {
       const board = await fetchDashboard(userId);
+      cachedBoard = {
+        price: board.price,
+        feeBps: board.feeBps,
+        balance: board.balance,
+        holdingQty: board.holdingQty,
+      };
       const chart = await generateStockChartImage({
         title: board.name,
         symbol: board.symbol,
@@ -303,16 +317,48 @@ export const stockCommand: SlashCommand = {
       if (buttonInteraction.customId !== 'stock:buy' && buttonInteraction.customId !== 'stock:sell') return;
 
       const side = buttonInteraction.customId === 'stock:buy' ? 'buy' : 'sell';
+
+      // Build modal with max qty / fee info from cached board
+      let qtyLabel = '수량';
+      let qtyPlaceholder = '예: 10';
+
+      if (cachedBoard && cachedBoard.price > 0) {
+        const feeRate = cachedBoard.feeBps / 10000;
+        const feePct = (cachedBoard.feeBps / 100).toFixed(2);
+
+        if (side === 'buy') {
+          const costPerShare = cachedBoard.price * (1 + feeRate);
+          const maxBuy = Math.floor(cachedBoard.balance / costPerShare);
+          const totalCost = maxBuy > 0 ? maxBuy * cachedBoard.price : 0;
+          const totalFee = maxBuy > 0 ? Math.ceil(totalCost * feeRate) : 0;
+
+          qtyLabel = `수량 (최대 ${maxBuy.toLocaleString()}주 매수 가능)`;
+          qtyPlaceholder = maxBuy > 0
+            ? `잔액 ${cachedBoard.balance.toLocaleString()}P · 단가 ${cachedBoard.price.toLocaleString()}P · 수수료 ${feePct}% (${totalFee.toLocaleString()}P)`
+            : `잔액 ${cachedBoard.balance.toLocaleString()}P · 포인트가 부족합니다`;
+        } else {
+          const maxSell = cachedBoard.holdingQty;
+          const grossSell = maxSell * cachedBoard.price;
+          const sellFee = Math.ceil(grossSell * feeRate);
+          const netSell = grossSell - sellFee;
+
+          qtyLabel = `수량 (보유: ${maxSell.toLocaleString()}주)`;
+          qtyPlaceholder = maxSell > 0
+            ? `전량 매도 시 약 ${netSell.toLocaleString()}P 정산 (수수료 ${feePct}%)`
+            : '보유 주식이 없습니다';
+        }
+      }
+
       const modalCustomId = `stock:${side}:modal:${buttonInteraction.id}`;
       const modal = new ModalBuilder()
         .setCustomId(modalCustomId)
-        .setTitle(side === 'buy' ? '주식 매수' : '주식 매도');
+        .setTitle(side === 'buy' ? '📈 주식 매수' : '📉 주식 매도');
 
       const quantityInput = new TextInputBuilder()
         .setCustomId('qty')
-        .setLabel('수량')
+        .setLabel(qtyLabel)
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('예: 10')
+        .setPlaceholder(qtyPlaceholder)
         .setRequired(true)
         .setMaxLength(9);
 
