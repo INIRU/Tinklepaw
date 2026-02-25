@@ -328,7 +328,13 @@ export const stockCommand: SlashCommand = {
 
         if (side === 'buy') {
           const costPerShare = cachedBoard.price * (1 + feeRate);
-          const maxBuy = Math.floor(cachedBoard.balance / costPerShare);
+          let maxBuy = Math.floor(cachedBoard.balance / costPerShare);
+          // ceil() on fee can push actual cost 1P over estimate — verify and adjust
+          if (maxBuy > 0) {
+            const verifyGross = maxBuy * cachedBoard.price;
+            const verifyFee = Math.ceil(verifyGross * feeRate);
+            if (verifyGross + verifyFee > cachedBoard.balance) maxBuy--;
+          }
           const totalCost = maxBuy > 0 ? maxBuy * cachedBoard.price : 0;
           const totalFee = maxBuy > 0 ? Math.ceil(totalCost * feeRate) : 0;
 
