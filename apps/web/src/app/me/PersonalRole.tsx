@@ -30,6 +30,7 @@ export type PersonalRoleData = {
 
 type Props = {
   isBoosting: boolean;
+  isGranted: boolean;
   initialRole: PersonalRoleData | null;
   userName: string;
   userAvatarUrl: string | null;
@@ -66,7 +67,8 @@ const COLOR_TYPE_META: Record<ColorType, { label: string; desc: string }> = {
 
 // ── Component ────────────────────────────────────────────────
 
-export default function PersonalRole({ isBoosting, initialRole, userName, userAvatarUrl }: Props) {
+export default function PersonalRole({ isBoosting, isGranted, initialRole, userName, userAvatarUrl }: Props) {
+  const canUse = isBoosting || isGranted;
   const [role, setRole] = useState<PersonalRoleData | null>(initialRole);
   const [name, setName] = useState(initialRole?.name ?? '');
   const [colorType, setColorType] = useState<ColorType>(initialRole?.colorType ?? 'solid');
@@ -218,7 +220,7 @@ export default function PersonalRole({ isBoosting, initialRole, userName, userAv
   // Non-booster
   // ────────────────────────────────────────────────────────
 
-  if (!isBoosting) {
+  if (!canUse) {
     return (
       <article data-me-scroll-reveal className="rounded-3xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_90%,transparent)] p-5">
         <div className="flex items-center gap-2">

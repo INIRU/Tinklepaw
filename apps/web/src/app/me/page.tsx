@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '../../../auth';
 import { fetchGuildMember, getRole, roleIconUrl } from '@/lib/server/discord';
 import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
+import { getOrInitAppConfig } from '@/lib/server/app-config-admin';
 import MeClient from './ui';
 
 export const runtime = 'nodejs';
@@ -20,8 +21,8 @@ export default async function MePage() {
 
   const supabase = createSupabaseAdminClient();
 
-  // Parallel: fetch balance + personal role mapping
-  const [balResult, prResult] = await Promise.all([
+  // Parallel: fetch balance + personal role mapping + app config
+  const [balResult, prResult, appCfg] = await Promise.all([
     supabase
       .from('point_balances')
       .select('balance')
@@ -32,7 +33,11 @@ export default async function MePage() {
       .select('discord_role_id, color_type, color_secondary')
       .eq('discord_user_id', userId)
       .maybeSingle(),
+    getOrInitAppConfig(),
   ]);
+
+  const grantedIds = (appCfg as Record<string, unknown>).personal_role_granted_user_ids as string[] | undefined;
+  const isGranted = Array.isArray(grantedIds) && grantedIds.includes(userId);
 
   // Resolve personal role from Discord if mapping exists
   let personalRole: {
@@ -69,6 +74,7 @@ export default async function MePage() {
       <MeClient
         user={user}
         isBoosting={!!member.premium_since}
+        isGranted={isGranted}
         personalRole={personalRole}
         fallbackAvatar={<div className="h-18 w-18 rounded-3xl border border-[color:var(--border)] bg-[color:var(--chip)]" />}
       >

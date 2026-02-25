@@ -7,7 +7,7 @@ import NextImage from 'next/image';
 import MarkdownPreview from '@/components/content/MarkdownPreview';
 import { CustomSelect } from '@/components/ui/CustomSelect';
 import { useToast } from '@/components/toast/ToastProvider';
-import { Check, ChevronDown, ChevronLeft } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, Crown, Loader2, Search, X } from 'lucide-react';
 
 type AppConfig = {
   server_intro?: string | null;
@@ -93,12 +93,36 @@ type AppConfig = {
   stock_news_force_tier?: 'general' | 'rare' | 'shock' | null;
   stock_news_force_scenario?: string | null;
   personal_role_anchor_id: string | null;
+  personal_role_granted_user_ids: string[];
 };
 
 type StockNewsForceSentimentOption = 'auto' | 'bullish' | 'bearish' | 'neutral';
 type StockNewsForceTierOption = 'auto' | 'general' | 'rare' | 'shock';
 
-type SettingsTab = 'general' | 'maintenance' | 'stock' | 'economy';
+type SettingsTab = 'general' | 'maintenance' | 'stock' | 'economy' | 'personal-role';
+const VALID_TABS = new Set<SettingsTab>(['general', 'maintenance', 'stock', 'economy', 'personal-role']);
+
+function getTabFromHash(): SettingsTab {
+  if (typeof window === 'undefined') return 'general';
+  const hash = window.location.hash.replace('#', '');
+  return VALID_TABS.has(hash as SettingsTab) ? (hash as SettingsTab) : 'general';
+}
+
+type GrantedMemberInfo = {
+  id: string;
+  username: string;
+  globalName: string | null;
+  nick: string | null;
+  avatarUrl: string | null;
+};
+
+type MemberSearchResult = {
+  id: string;
+  username: string;
+  globalName: string | null;
+  nick: string | null;
+  avatarUrl: string | null;
+};
 
 type DiscordChannel = { id: string; name: string; type: number; parent_id?: string | null };
 type DiscordRoleSummary = { id: string; name: string; position: number };
@@ -241,7 +265,11 @@ const GENERAL_DIRTY_KEYS: ReadonlyArray<keyof AppConfig> = [
   'maintenance_mode_until',
   'maintenance_web_target_paths',
   'maintenance_bot_target_commands',
-  'personal_role_anchor_id'
+];
+
+const PERSONAL_ROLE_DIRTY_KEYS: ReadonlyArray<keyof AppConfig> = [
+  'personal_role_anchor_id',
+  'personal_role_granted_user_ids',
 ];
 
 const STOCK_DIRTY_KEYS: ReadonlyArray<keyof AppConfig> = [
@@ -316,10 +344,11 @@ const ECONOMY_DIRTY_KEYS: ReadonlyArray<keyof AppConfig> = [
 function cloneConfigSnapshot(snapshot: AppConfig): AppConfig {
   return {
     ...snapshot,
-    stock_news_bullish_scenarios: [...snapshot.stock_news_bullish_scenarios],
-    stock_news_bearish_scenarios: [...snapshot.stock_news_bearish_scenarios],
-    maintenance_web_target_paths: [...snapshot.maintenance_web_target_paths],
-    maintenance_bot_target_commands: [...snapshot.maintenance_bot_target_commands]
+    stock_news_bullish_scenarios: [...(snapshot.stock_news_bullish_scenarios ?? [])],
+    stock_news_bearish_scenarios: [...(snapshot.stock_news_bearish_scenarios ?? [])],
+    maintenance_web_target_paths: [...(snapshot.maintenance_web_target_paths ?? [])],
+    maintenance_bot_target_commands: [...(snapshot.maintenance_bot_target_commands ?? [])],
+    personal_role_granted_user_ids: [...(snapshot.personal_role_granted_user_ids ?? [])],
   };
 }
 
@@ -611,12 +640,23 @@ export default function SettingsClient() {
   const [rewardSaving, setRewardSaving] = useState(false);
   const [saving, setSaving] = useState(false);
   const [newsTriggering, setNewsTriggering] = useState(false);
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const [activeTab, setActiveTabRaw] = useState<SettingsTab>(getTabFromHash);
+  const setActiveTab = useCallback((tab: SettingsTab) => {
+    setActiveTabRaw(tab);
+    window.history.replaceState(null, '', `#${tab}`);
+  }, []);
   const [bullishScenarioDraft, setBullishScenarioDraft] = useState('');
   const [bearishScenarioDraft, setBearishScenarioDraft] = useState('');
   const [forcedNewsSentiment, setForcedNewsSentiment] = useState<StockNewsForceSentimentOption>('auto');
   const [forcedNewsTier, setForcedNewsTier] = useState<StockNewsForceTierOption>('auto');
   const [forcedNewsScenario, setForcedNewsScenario] = useState('');
+
+  // ── Personal role grant search ──
+  const [grantSearch, setGrantSearch] = useState('');
+  const [grantSearchResults, setGrantSearchResults] = useState<MemberSearchResult[]>([]);
+  const [grantSearching, setGrantSearching] = useState(false);
+  const [grantedMembers, setGrantedMembers] = useState<Map<string, GrantedMemberInfo>>(new Map());
+  const grantSearchTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const [stagedBanner, setStagedBanner] = useState<StagedAsset | null>(null);
   const [stagedIcon, setStagedIcon] = useState<StagedAsset | null>(null);
@@ -764,6 +804,9 @@ export default function SettingsClient() {
       stock_news_force_scenario: cfgBody.stock_news_force_scenario ?? null,
       lottery_activity_jackpot_rate_pct: Number(cfgBody.lottery_activity_jackpot_rate_pct ?? 10),
       personal_role_anchor_id: (cfgBody as Record<string, unknown>).personal_role_anchor_id as string | null ?? null,
+      personal_role_granted_user_ids: Array.isArray((cfgBody as Record<string, unknown>).personal_role_granted_user_ids)
+        ? ((cfgBody as Record<string, unknown>).personal_role_granted_user_ids as string[])
+        : [],
     });
     setCfg(cloneConfigSnapshot(normalizedCfg));
     setSavedCfg(cloneConfigSnapshot(normalizedCfg));
@@ -814,6 +857,53 @@ export default function SettingsClient() {
     });
   }, [loadAll, toast]);
 
+  // Resolve display names for granted user IDs
+  useEffect(() => {
+    if (!cfg) return;
+    const ids = cfg.personal_role_granted_user_ids ?? [];
+    if (ids.length === 0) { setGrantedMembers(new Map()); return; }
+
+    const missing = ids.filter((id) => !grantedMembers.has(id));
+    if (missing.length === 0) return;
+
+    void (async () => {
+      try {
+        const res = await fetch(`/api/admin/discord/member-search?ids=${missing.join(',')}`);
+        const body = (await res.json()) as { members?: MemberSearchResult[] };
+        if (body.members?.length) {
+          setGrantedMembers((prev) => {
+            const next = new Map(prev);
+            for (const m of body.members!) next.set(m.id, m);
+            return next;
+          });
+        }
+      } catch { /* ignore */ }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg?.personal_role_granted_user_ids]);
+
+  // Debounced member search for grant tab
+  const doGrantSearch = useCallback(async (q: string) => {
+    if (q.length < 2) { setGrantSearchResults([]); setGrantSearching(false); return; }
+    setGrantSearching(true);
+    try {
+      const res = await fetch(`/api/admin/discord/member-search?q=${encodeURIComponent(q)}&limit=10`);
+      const body = (await res.json()) as { members?: MemberSearchResult[] };
+      setGrantSearchResults(body.members ?? []);
+    } catch {
+      setGrantSearchResults([]);
+    } finally {
+      setGrantSearching(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    clearTimeout(grantSearchTimer.current);
+    if (grantSearch.length < 2) { setGrantSearchResults([]); return; }
+    grantSearchTimer.current = setTimeout(() => void doGrantSearch(grantSearch), 300);
+    return () => clearTimeout(grantSearchTimer.current);
+  }, [grantSearch, doGrantSearch]);
+
   const saveConfig = useCallback(async (): Promise<boolean> => {
     if (!cfg) return false;
     setSaving(true);
@@ -844,7 +934,10 @@ export default function SettingsClient() {
       const normalizedSavedCfg = cloneConfigSnapshot({
         ...savedCfg,
         stock_news_bullish_scenarios: normalizedBullish,
-        stock_news_bearish_scenarios: normalizedBearish
+        stock_news_bearish_scenarios: normalizedBearish,
+        personal_role_granted_user_ids: Array.isArray(savedCfg.personal_role_granted_user_ids)
+          ? savedCfg.personal_role_granted_user_ids
+          : cfg.personal_role_granted_user_ids,
       });
       setCfg(cloneConfigSnapshot(normalizedSavedCfg));
       setSavedCfg(cloneConfigSnapshot(normalizedSavedCfg));
@@ -1007,16 +1100,21 @@ export default function SettingsClient() {
     () => hasConfigChangesForKeys(cfg, savedCfg, ECONOMY_DIRTY_KEYS),
     [cfg, savedCfg]
   );
-  const configDirty = generalConfigDirty || stockConfigDirty || economyConfigDirty;
+  const personalRoleConfigDirty = useMemo(
+    () => hasConfigChangesForKeys(cfg, savedCfg, PERSONAL_ROLE_DIRTY_KEYS),
+    [cfg, savedCfg]
+  );
+  const configDirty = generalConfigDirty || stockConfigDirty || economyConfigDirty || personalRoleConfigDirty;
 
   const dirtySections = useMemo(() => {
     const sections: string[] = [];
     if (generalConfigDirty) sections.push('기본 설정');
     if (stockConfigDirty) sections.push('주식 설정');
     if (economyConfigDirty) sections.push('보상/경제 설정');
+    if (personalRoleConfigDirty) sections.push('개인역할 설정');
     if (rewardDirty) sections.push('보상 채널');
     return sections;
-  }, [economyConfigDirty, generalConfigDirty, rewardDirty, stockConfigDirty]);
+  }, [economyConfigDirty, generalConfigDirty, personalRoleConfigDirty, rewardDirty, stockConfigDirty]);
 
   const hasUnsavedChanges = dirtySections.length > 0;
 
@@ -1317,6 +1415,17 @@ export default function SettingsClient() {
             onClick={() => setActiveTab('economy')}
           >
             보상/경제
+          </button>
+          <button
+            type="button"
+            className={`rounded-xl px-3 py-2 transition ${
+              activeTab === 'personal-role'
+                ? 'bg-[color:var(--card)] text-[color:var(--fg)] shadow-[0_8px_20px_rgba(0,0,0,0.12)]'
+                : 'text-[color:var(--muted)] hover:text-[color:var(--fg)]'
+            }`}
+            onClick={() => setActiveTab('personal-role')}
+          >
+            개인역할
           </button>
         </div>
 
@@ -2128,13 +2237,17 @@ export default function SettingsClient() {
         </div>
       </section>
 
-      <section className={`${activeTab === 'general' ? '' : 'hidden '}mt-6 max-w-2xl rounded-3xl card-glass p-6`}>
-        <h2 className="text-lg font-semibold">개인역할</h2>
+      {/* ── Personal Role tab ── */}
+      <section className={`${activeTab === 'personal-role' ? '' : 'hidden '}mt-6 max-w-2xl rounded-3xl card-glass p-6`}>
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <Crown className="h-5 w-5 text-[color:var(--accent-pink)]" />
+          개인역할 설정
+        </h2>
         <p className="mt-2 text-xs muted">
           서버 부스터가 개인역할을 만들면 선택한 역할 바로 아래에 배치됩니다.
         </p>
 
-        <label className="mt-3 block text-sm muted">기준 역할 (개인역할이 이 역할 아래에 생성됨)</label>
+        <label className="mt-4 block text-sm muted">기준 역할 (개인역할이 이 역할 아래에 생성됨)</label>
         <div className="relative mt-1">
           <select
             className="w-full appearance-none rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 pr-10 text-sm text-[color:var(--fg)]"
@@ -2159,6 +2272,125 @@ export default function SettingsClient() {
             <div className="h-3 w-3 rounded-full bg-[color:var(--accent-lavender)]" />
             <span className="text-sm font-medium">{roles.find((r) => r.id === cfg.personal_role_anchor_id)?.name ?? cfg.personal_role_anchor_id}</span>
             <span className="text-xs muted-2 ml-auto">← 이 역할 아래에 개인역할 배치</span>
+          </div>
+        )}
+      </section>
+
+      <section className={`${activeTab === 'personal-role' ? '' : 'hidden '}mt-4 max-w-2xl rounded-3xl card-glass p-6`}>
+        <h2 className="text-lg font-semibold">부스트 없이 개인역할 허용</h2>
+        <p className="mt-2 text-xs muted">
+          등록된 멤버는 서버 부스트 없이도 개인역할을 만들고 관리할 수 있어요.
+        </p>
+
+        {/* Search input */}
+        <div className="relative mt-4">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--muted-2)]" />
+          <input
+            type="text"
+            placeholder="유저 이름으로 검색..."
+            value={grantSearch}
+            onChange={(e) => setGrantSearch(e.target.value)}
+            className="w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] pl-9 pr-9 py-2.5 text-sm text-[color:var(--fg)] outline-none transition-colors focus:border-[color:var(--accent-pink)]"
+          />
+          {grantSearch && (
+            <button
+              type="button"
+              onClick={() => { setGrantSearch(''); setGrantSearchResults([]); }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--muted)] hover:text-[color:var(--fg)] transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+
+        {/* Search results dropdown */}
+        {grantSearch.length >= 2 && (
+          <div className="mt-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] overflow-hidden">
+            {grantSearching ? (
+              <div className="flex items-center justify-center gap-2 py-6 text-sm muted">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                검색 중...
+              </div>
+            ) : grantSearchResults.length === 0 ? (
+              <div className="py-6 text-center text-sm muted">검색 결과가 없어요.</div>
+            ) : (
+              <ul className="divide-y divide-[color:var(--border)]">
+                {grantSearchResults.map((m) => {
+                  const alreadyAdded = (cfg.personal_role_granted_user_ids ?? []).includes(m.id);
+                  return (
+                    <li key={m.id} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-[color:var(--chip)]">
+                      {m.avatarUrl ? (
+                        <img src={m.avatarUrl} alt="" className="h-8 w-8 rounded-full" />
+                      ) : (
+                        <div className="h-8 w-8 rounded-full bg-[color:var(--chip)] border border-[color:var(--border)]" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-[color:var(--fg)] truncate">
+                          {m.nick ?? m.globalName ?? m.username}
+                        </div>
+                        <div className="text-xs muted-2 truncate">{m.username}</div>
+                      </div>
+                      {alreadyAdded ? (
+                        <span className="text-xs font-semibold text-[color:var(--accent-pink)]">추가됨</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCfg({ ...cfg, personal_role_granted_user_ids: [...(cfg.personal_role_granted_user_ids ?? []), m.id] });
+                            setGrantedMembers((prev) => new Map(prev).set(m.id, m));
+                            setGrantSearch('');
+                            setGrantSearchResults([]);
+                          }}
+                          className="rounded-lg bg-[color:var(--accent-pink)] px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-80"
+                        >
+                          추가
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {/* Granted users list */}
+        {(cfg.personal_role_granted_user_ids ?? []).length > 0 ? (
+          <div className="mt-4 space-y-2">
+            <div className="text-xs font-semibold muted-2">
+              허용된 멤버 ({(cfg.personal_role_granted_user_ids ?? []).length}명)
+            </div>
+            {(cfg.personal_role_granted_user_ids ?? []).map((uid) => {
+              const member = grantedMembers.get(uid);
+              return (
+                <div key={uid} className="flex items-center gap-3 rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-4 py-3">
+                  {member?.avatarUrl ? (
+                    <img src={member.avatarUrl} alt="" className="h-8 w-8 rounded-full" />
+                  ) : (
+                    <div className="h-8 w-8 rounded-full bg-[color:var(--card)] border border-[color:var(--border)]" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-[color:var(--fg)] truncate">
+                      {member ? (member.nick ?? member.globalName ?? member.username) : uid}
+                    </div>
+                    <div className="text-xs muted-2 truncate">{uid}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCfg({ ...cfg, personal_role_granted_user_ids: (cfg.personal_role_granted_user_ids ?? []).filter((x) => x !== uid) })}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg text-[color:var(--muted)] transition-colors hover:bg-red-500/10 hover:text-red-400"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="mt-4 rounded-xl border border-dashed border-[color:color-mix(in_srgb,var(--border)_70%,transparent)] bg-[color:var(--chip)] px-5 py-8 text-center">
+            <Crown className="mx-auto h-6 w-6 text-[color:var(--muted)]" />
+            <p className="mt-2 text-sm muted">아직 허용된 멤버가 없어요.</p>
+            <p className="mt-1 text-xs muted-2">위 검색창에서 유저를 찾아 추가하세요.</p>
           </div>
         )}
       </section>

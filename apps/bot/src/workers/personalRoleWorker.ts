@@ -5,9 +5,9 @@ import { getBotContext } from '../context.js';
 const CHECK_INTERVAL_MS = 5 * 60_000; // 5 minutes
 
 /**
- * Periodically checks that users with personal roles are still boosting.
- * If a member stopped boosting, deletes their Discord role and removes
- * the DB mapping.
+ * Periodically checks that users with personal roles are still boosting
+ * (or admin-granted). If a member stopped boosting and is not in the
+ * granted whitelist, deletes their Discord role and removes the DB mapping.
  */
 export function startPersonalRoleWorker(client: Client) {
   let isRunning = false;
@@ -20,14 +20,28 @@ export function startPersonalRoleWorker(client: Client) {
       const ctx = getBotContext();
       const guild = await client.guilds.fetch(ctx.env.NYARU_GUILD_ID);
 
-      const { data: rows, error } = await ctx.supabase
-        .from('personal_roles')
-        .select('discord_user_id, discord_role_id');
+      const [{ data: rows, error }, { data: cfgRow }] = await Promise.all([
+        ctx.supabase
+          .from('personal_roles')
+          .select('discord_user_id, discord_role_id'),
+        ctx.supabase
+          .from('app_config')
+          .select('personal_role_granted_user_ids')
+          .eq('id', 1)
+          .maybeSingle(),
+      ]);
 
       if (error || !rows || rows.length === 0) return;
 
+      const grantedSet = new Set<string>(
+        (cfgRow as Record<string, unknown> | null)?.personal_role_granted_user_ids as string[] ?? [],
+      );
+
       for (const row of rows) {
         try {
+          // Skip admin-granted users — they keep their role regardless of boost
+          if (grantedSet.has(row.discord_user_id)) continue;
+
           const member = await guild.members.fetch(row.discord_user_id).catch(() => null);
 
           // Member left the guild or is no longer boosting → clean up

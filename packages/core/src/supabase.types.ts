@@ -54,6 +54,7 @@ export type Database = {
           voice_reward_daily_cap_points: number | null;
           booster_voice_bonus_points: number;
           personal_role_anchor_id: string | null;
+          personal_role_granted_user_ids: string[];
           daily_chest_legendary_rate_pct: number;
           daily_chest_epic_rate_pct: number;
           daily_chest_rare_rate_pct: number;

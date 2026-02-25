@@ -33,6 +33,7 @@ export default function MeClient(props: {
   children: ReactNode;
   fallbackAvatar: ReactNode;
   isBoosting: boolean;
+  isGranted: boolean;
   personalRole: PersonalRoleData | null;
 }) {
   const [animatedPoints, setAnimatedPoints] = useState(0);
@@ -275,7 +276,7 @@ export default function MeClient(props: {
           </article>
         </div>
 
-        <PersonalRole isBoosting={props.isBoosting} initialRole={props.personalRole} userName={props.user.name} userAvatarUrl={props.user.imageUrl} />
+        <PersonalRole isBoosting={props.isBoosting} isGranted={props.isGranted} initialRole={props.personalRole} userName={props.user.name} userAvatarUrl={props.user.imageUrl} />
 
         <section
           data-me-scroll-reveal

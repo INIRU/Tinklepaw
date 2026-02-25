@@ -41,6 +41,13 @@ function buildDiscordColors(
   }
 }
 
+/** Check whether a user is in the admin-granted personal-role whitelist. */
+async function isGrantedUser(userId: string): Promise<boolean> {
+  const cfg = await getOrInitAppConfig();
+  const granted = (cfg as Record<string, unknown>).personal_role_granted_user_ids as string[] | undefined;
+  return Array.isArray(granted) && granted.includes(userId);
+}
+
 /** GET – Return the caller's personal-role info (or null). */
 export async function GET() {
   const session = await auth();
@@ -51,6 +58,7 @@ export async function GET() {
   if (!member) return NextResponse.json({ error: 'NOT_IN_GUILD' }, { status: 403 });
 
   const isBoosting = !!member.premium_since;
+  const isGranted = await isGrantedUser(userId);
 
   const supabase = createSupabaseAdminClient();
   const { data: row } = await supabase
@@ -59,14 +67,15 @@ export async function GET() {
     .eq('discord_user_id', userId)
     .maybeSingle();
 
-  if (!row) return NextResponse.json({ isBoosting, role: null });
+  if (!row) return NextResponse.json({ isBoosting, isGranted, role: null });
 
   const role = await getRole(row.discord_role_id);
-  if (!role) return NextResponse.json({ isBoosting, role: null });
+  if (!role) return NextResponse.json({ isBoosting, isGranted, role: null });
 
   const iconUrl = role.icon ? roleIconUrl(role.id, role.icon) : null;
   return NextResponse.json({
     isBoosting,
+    isGranted,
     role: {
       id: role.id,
       name: role.name,
@@ -79,7 +88,7 @@ export async function GET() {
   });
 }
 
-/** POST – Create a new personal role for a booster. */
+/** POST – Create a new personal role for a booster or granted user. */
 export async function POST(req: Request) {
   const session = await auth();
   const userId = session?.user?.id;
@@ -87,7 +96,7 @@ export async function POST(req: Request) {
 
   const member = await fetchGuildMember({ userId });
   if (!member) return NextResponse.json({ error: 'NOT_IN_GUILD' }, { status: 403 });
-  if (!member.premium_since) {
+  if (!member.premium_since && !(await isGrantedUser(userId))) {
     return NextResponse.json({ error: '서버 부스터만 개인역할을 만들 수 있어요.' }, { status: 403 });
   }
 
@@ -178,7 +187,7 @@ export async function PATCH(req: Request) {
 
   const member = await fetchGuildMember({ userId });
   if (!member) return NextResponse.json({ error: 'NOT_IN_GUILD' }, { status: 403 });
-  if (!member.premium_since) {
+  if (!member.premium_since && !(await isGrantedUser(userId))) {
     return NextResponse.json({ error: '서버 부스터만 개인역할을 수정할 수 있어요.' }, { status: 403 });
   }
 

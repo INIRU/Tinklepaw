@@ -106,6 +106,7 @@ export async function PUT(req: Request) {
     stock_news_bullish_scenarios?: string[];
     stock_news_bearish_scenarios?: string[];
     personal_role_anchor_id?: string | null;
+    personal_role_granted_user_ids?: string[];
   };
 
     const normalizeScenarioList = (input: string[] | undefined) => {
@@ -369,6 +370,12 @@ export async function PUT(req: Request) {
 
     if (body.personal_role_anchor_id !== undefined) {
       patch.personal_role_anchor_id = body.personal_role_anchor_id ?? null;
+    }
+    if (Array.isArray(body.personal_role_granted_user_ids)) {
+      patch.personal_role_granted_user_ids = body.personal_role_granted_user_ids
+        .map((id) => String(id).trim())
+        .filter(Boolean)
+        .slice(0, 100);
     }
 
     const bullishScenarios = normalizeScenarioList(body.stock_news_bullish_scenarios);
