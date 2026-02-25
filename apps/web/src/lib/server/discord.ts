@@ -6,6 +6,7 @@ export type DiscordGuildMember = {
   user?: DiscordUser;
   nick?: string | null;
   roles: string[];
+  premium_since?: string | null;
 };
 
 type DiscordUser = {
@@ -15,9 +16,18 @@ type DiscordUser = {
   avatar?: string | null;
 };
 
-type DiscordRole = {
+export type DiscordRoleColors = {
+  primary_color: number;
+  secondary_color: number | null;
+  tertiary_color: number | null;
+};
+
+export type DiscordRole = {
   id: string;
   name: string;
+  color: number;
+  colors?: DiscordRoleColors | null;
+  position: number;
   permissions: string;
   managed: boolean;
   icon?: string | null;
@@ -146,7 +156,7 @@ async function fetchRolesById(): Promise<Map<string, DiscordRole>> {
 
   const res = await fetch(`https://discord.com/api/v10/guilds/${env.NYARU_GUILD_ID}/roles`, {
     headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}` },
-    next: { revalidate: 60 }
+    cache: 'no-store'
   });
   if (!res.ok) throw new Error(`Discord roles fetch failed: ${res.status}`);
   const roles = (await res.json()) as DiscordRole[];
@@ -194,3 +204,117 @@ export async function isAdmin(params: { userId: string; member: DiscordGuildMemb
   const ADMINISTRATOR = BigInt(8);
   return (perms & ADMINISTRATOR) === ADMINISTRATOR;
 }
+
+// ── Personal-role helpers ───────────────────────────────────
+
+export async function getRole(roleId: string): Promise<DiscordRole | null> {
+  const byId = await fetchRolesById();
+  return byId.get(roleId) ?? null;
+}
+
+export async function createGuildRole(params: {
+  name: string;
+  color?: number;
+}): Promise<DiscordRole> {
+  const env = getServerEnv();
+  const res = await fetch(
+    `https://discord.com/api/v10/guilds/${env.NYARU_GUILD_ID}/roles`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: params.name,
+        color: params.color ?? 0,
+        permissions: '0',
+        mentionable: false,
+        hoist: false,
+      }),
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Discord create-role failed (${res.status}) ${text}`);
+  }
+  // Invalidate cached roles
+  cache.roles = null;
+  return (await res.json()) as DiscordRole;
+}
+
+export async function modifyGuildRole(params: {
+  roleId: string;
+  name?: string;
+  color?: number;
+  colors?: DiscordRoleColors | null;
+  icon?: string | null;
+}): Promise<DiscordRole> {
+  const env = getServerEnv();
+  const body: Record<string, unknown> = {};
+  if (params.name !== undefined) body.name = params.name;
+  if (params.color !== undefined) body.color = params.color;
+  if (params.colors !== undefined) body.colors = params.colors;
+  if (params.icon !== undefined) body.icon = params.icon;
+
+  const res = await fetch(
+    `https://discord.com/api/v10/guilds/${env.NYARU_GUILD_ID}/roles/${params.roleId}`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Discord modify-role failed (${res.status}) ${text}`);
+  }
+  cache.roles = null;
+  return (await res.json()) as DiscordRole;
+}
+
+export async function moveRolePosition(params: {
+  roleId: string;
+  position: number;
+}): Promise<void> {
+  const env = getServerEnv();
+  const res = await fetch(
+    `https://discord.com/api/v10/guilds/${env.NYARU_GUILD_ID}/roles`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify([{ id: params.roleId, position: params.position }]),
+    },
+  );
+  if (!res.ok && res.status !== 204) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Discord move-role failed (${res.status}) ${text}`);
+  }
+  cache.roles = null;
+}
+
+export async function addMemberRole(params: {
+  userId: string;
+  roleId: string;
+}): Promise<void> {
+  const env = getServerEnv();
+  const res = await fetch(
+    `https://discord.com/api/v10/guilds/${env.NYARU_GUILD_ID}/members/${params.userId}/roles/${params.roleId}`,
+    {
+      method: 'PUT',
+      headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}` },
+    },
+  );
+  if (!res.ok && res.status !== 204) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Discord add-member-role failed (${res.status}) ${text}`);
+  }
+}
+
+export { roleIconUrl };

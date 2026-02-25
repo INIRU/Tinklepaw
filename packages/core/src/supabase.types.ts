@@ -53,6 +53,7 @@ export type Database = {
           voice_reward_interval_seconds: number;
           voice_reward_daily_cap_points: number | null;
           booster_voice_bonus_points: number;
+          personal_role_anchor_id: string | null;
           daily_chest_legendary_rate_pct: number;
           daily_chest_epic_rate_pct: number;
           daily_chest_rare_rate_pct: number;
@@ -458,6 +459,23 @@ export type Database = {
             referencedColumns: ["item_id"]
           }
         ];
+      };
+      personal_roles: {
+        Row: {
+          discord_user_id: string;
+          discord_role_id: string;
+          color_type: 'solid' | 'gradient' | 'hologram';
+          color_secondary: number;
+          created_at: string;
+        };
+        Insert: {
+          discord_user_id: string;
+          discord_role_id: string;
+          color_type?: 'solid' | 'gradient' | 'hologram';
+          color_secondary?: number;
+        };
+        Update: Partial<Database['nyang']['Tables']['personal_roles']['Row']>;
+        Relationships: [];
       };
     };
     Views: Record<string, never>;

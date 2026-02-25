@@ -21,6 +21,7 @@ import { startMusicControlWorker } from './workers/musicControlWorker.js';
 import { startVoiceRewardWorker } from './workers/voiceRewardWorker.js';
 import { startStockNewsWorker } from './workers/stockNewsWorker.js';
 import { startStockMarketMakerWorker } from './workers/stockMarketMakerWorker.js';
+import { startPersonalRoleWorker } from './workers/personalRoleWorker.js';
 import { initMusic, restoreMusicSession } from './services/music.js';
 import { primeChannelCache } from './services/channelCache.js';
 
@@ -71,6 +72,7 @@ client.once('ready', () => {
   startVoiceRewardWorker(client);
   startStockNewsWorker(client);
   startStockMarketMakerWorker();
+  startPersonalRoleWorker(client);
 });
 
 await client.login(env.DISCORD_BOT_TOKEN);

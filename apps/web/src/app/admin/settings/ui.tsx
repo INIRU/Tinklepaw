@@ -92,6 +92,7 @@ type AppConfig = {
   stock_news_force_sentiment?: 'bullish' | 'bearish' | 'neutral' | null;
   stock_news_force_tier?: 'general' | 'rare' | 'shock' | null;
   stock_news_force_scenario?: string | null;
+  personal_role_anchor_id: string | null;
 };
 
 type StockNewsForceSentimentOption = 'auto' | 'bullish' | 'bearish' | 'neutral';
@@ -100,6 +101,7 @@ type StockNewsForceTierOption = 'auto' | 'general' | 'rare' | 'shock';
 type SettingsTab = 'general' | 'maintenance' | 'stock' | 'economy';
 
 type DiscordChannel = { id: string; name: string; type: number; parent_id?: string | null };
+type DiscordRoleSummary = { id: string; name: string; position: number };
 
 type AssetKey = 'banner' | 'icon';
 type StagedAsset = { stagedPath: string; publicUrl: string };
@@ -238,7 +240,8 @@ const GENERAL_DIRTY_KEYS: ReadonlyArray<keyof AppConfig> = [
   'maintenance_mode_reason',
   'maintenance_mode_until',
   'maintenance_web_target_paths',
-  'maintenance_bot_target_commands'
+  'maintenance_bot_target_commands',
+  'personal_role_anchor_id'
 ];
 
 const STOCK_DIRTY_KEYS: ReadonlyArray<keyof AppConfig> = [
@@ -601,6 +604,7 @@ export default function SettingsClient() {
   const [savedCfg, setSavedCfg] = useState<AppConfig | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [channels, setChannels] = useState<DiscordChannel[]>([]);
+  const [roles, setRoles] = useState<DiscordRoleSummary[]>([]);
   const [rewardChannels, setRewardChannels] = useState<string[]>([]); // draft
   const [rewardChannelsSaved, setRewardChannelsSaved] = useState<string[]>([]);
   const [rewardSearch, setRewardSearch] = useState('');
@@ -759,6 +763,7 @@ export default function SettingsClient() {
       stock_news_force_tier: cfgBody.stock_news_force_tier ?? null,
       stock_news_force_scenario: cfgBody.stock_news_force_scenario ?? null,
       lottery_activity_jackpot_rate_pct: Number(cfgBody.lottery_activity_jackpot_rate_pct ?? 10),
+      personal_role_anchor_id: (cfgBody as Record<string, unknown>).personal_role_anchor_id as string | null ?? null,
     });
     setCfg(cloneConfigSnapshot(normalizedCfg));
     setSavedCfg(cloneConfigSnapshot(normalizedCfg));
@@ -766,9 +771,10 @@ export default function SettingsClient() {
     setBearishScenarioDraft(formatScenarioLines(bearishScenarios));
     setLoadError(null);
 
-    const [chRes, rcRes] = await Promise.all([
+    const [chRes, rcRes, rolesRes] = await Promise.all([
       fetch('/api/admin/discord/channels'),
-      fetch('/api/admin/reward-channels')
+      fetch('/api/admin/reward-channels'),
+      fetch('/api/admin/discord/roles')
     ]);
 
     const chBody = (await chRes.json().catch(() => null)) as ({ channels?: DiscordChannel[]; error?: string } | null);
@@ -776,6 +782,11 @@ export default function SettingsClient() {
       toast.error(chBody?.error ?? `채널을 불러오지 못했습니다. (HTTP ${chRes.status})`);
     } else {
       setChannels(chBody?.channels ?? []);
+    }
+
+    const rolesBody = (await rolesRes.json().catch(() => null)) as ({ roles?: DiscordRoleSummary[]; error?: string } | null);
+    if (rolesRes.ok) {
+      setRoles(rolesBody?.roles ?? []);
     }
 
     const rcBody = (await rcRes.json().catch(() => null)) as (
@@ -2115,6 +2126,41 @@ export default function SettingsClient() {
             strokeWidth={2}
           />
         </div>
+      </section>
+
+      <section className={`${activeTab === 'general' ? '' : 'hidden '}mt-6 max-w-2xl rounded-3xl card-glass p-6`}>
+        <h2 className="text-lg font-semibold">개인역할</h2>
+        <p className="mt-2 text-xs muted">
+          서버 부스터가 개인역할을 만들면 선택한 역할 바로 아래에 배치됩니다.
+        </p>
+
+        <label className="mt-3 block text-sm muted">기준 역할 (개인역할이 이 역할 아래에 생성됨)</label>
+        <div className="relative mt-1">
+          <select
+            className="w-full appearance-none rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2 pr-10 text-sm text-[color:var(--fg)]"
+            value={cfg.personal_role_anchor_id ?? ''}
+            onChange={(e) => setCfg({ ...cfg, personal_role_anchor_id: e.target.value || null })}
+          >
+            <option value="">(미설정)</option>
+            {roles.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--muted-2)]"
+            aria-hidden="true"
+            strokeWidth={2}
+          />
+        </div>
+        {cfg.personal_role_anchor_id && (
+          <div className="mt-3 flex items-center gap-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2">
+            <div className="h-3 w-3 rounded-full bg-[color:var(--accent-lavender)]" />
+            <span className="text-sm font-medium">{roles.find((r) => r.id === cfg.personal_role_anchor_id)?.name ?? cfg.personal_role_anchor_id}</span>
+            <span className="text-xs muted-2 ml-auto">← 이 역할 아래에 개인역할 배치</span>
+          </div>
+        )}
       </section>
 
       <section className={`${activeTab === 'economy' ? '' : 'hidden '}mt-6 max-w-2xl rounded-3xl card-glass p-6`}>

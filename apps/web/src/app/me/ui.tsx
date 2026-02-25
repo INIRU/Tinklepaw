@@ -13,6 +13,7 @@ import {
   Sparkles,
   Ticket,
 } from 'lucide-react';
+import PersonalRole, { type PersonalRoleData } from './PersonalRole';
 import { signOut } from 'next-auth/react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -31,6 +32,8 @@ export default function MeClient(props: {
   user: UserView;
   children: ReactNode;
   fallbackAvatar: ReactNode;
+  isBoosting: boolean;
+  personalRole: PersonalRoleData | null;
 }) {
   const [animatedPoints, setAnimatedPoints] = useState(0);
   const previousPointsRef = useRef(0);
@@ -271,6 +274,8 @@ export default function MeClient(props: {
             </ul>
           </article>
         </div>
+
+        <PersonalRole isBoosting={props.isBoosting} initialRole={props.personalRole} userName={props.user.name} userAvatarUrl={props.user.imageUrl} />
 
         <section
           data-me-scroll-reveal

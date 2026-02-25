@@ -105,6 +105,7 @@ export async function PUT(req: Request) {
     stock_holding_fee_timezone?: string | null;
     stock_news_bullish_scenarios?: string[];
     stock_news_bearish_scenarios?: string[];
+    personal_role_anchor_id?: string | null;
   };
 
     const normalizeScenarioList = (input: string[] | undefined) => {
@@ -364,6 +365,10 @@ export async function PUT(req: Request) {
     );
     if (effectiveSignalMax < requiredSignalMax) {
       patch.stock_news_signal_duration_max_minutes = requiredSignalMax;
+    }
+
+    if (body.personal_role_anchor_id !== undefined) {
+      patch.personal_role_anchor_id = body.personal_role_anchor_id ?? null;
     }
 
     const bullishScenarios = normalizeScenarioList(body.stock_news_bullish_scenarios);

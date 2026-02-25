@@ -2,7 +2,7 @@ import Image from 'next/image';
 import { redirect } from 'next/navigation';
 
 import { auth } from '../../../auth';
-import { fetchGuildMember } from '@/lib/server/discord';
+import { fetchGuildMember, getRole, roleIconUrl } from '@/lib/server/discord';
 import { createSupabaseAdminClient } from '@/lib/server/supabase-admin';
 import MeClient from './ui';
 
@@ -19,21 +19,59 @@ export default async function MePage() {
   if (!member) redirect('/not-in-guild');
 
   const supabase = createSupabaseAdminClient();
-  const { data: bal } = await supabase
-    .from('point_balances')
-    .select('balance')
-    .eq('discord_user_id', userId)
-    .maybeSingle();
+
+  // Parallel: fetch balance + personal role mapping
+  const [balResult, prResult] = await Promise.all([
+    supabase
+      .from('point_balances')
+      .select('balance')
+      .eq('discord_user_id', userId)
+      .maybeSingle(),
+    supabase
+      .from('personal_roles')
+      .select('discord_role_id, color_type, color_secondary')
+      .eq('discord_user_id', userId)
+      .maybeSingle(),
+  ]);
+
+  // Resolve personal role from Discord if mapping exists
+  let personalRole: {
+    id: string;
+    name: string;
+    color: number;
+    colorType: 'solid' | 'gradient' | 'hologram';
+    colorSecondary: number;
+    iconUrl: string | null;
+  } | null = null;
+
+  if (prResult.data) {
+    const role = await getRole(prResult.data.discord_role_id);
+    if (role) {
+      personalRole = {
+        id: role.id,
+        name: role.name,
+        color: role.color,
+        colorType: prResult.data.color_type as 'solid' | 'gradient' | 'hologram',
+        colorSecondary: prResult.data.color_secondary,
+        iconUrl: role.icon ? roleIconUrl(role.id, role.icon) : null,
+      };
+    }
+  }
 
   const user = {
     name: session.user.name ?? '사용자',
     imageUrl: session.user.image ?? null,
-    points: bal?.balance ?? 0
+    points: balResult.data?.balance ?? 0
   };
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
-      <MeClient user={user} fallbackAvatar={<div className="h-18 w-18 rounded-3xl border border-[color:var(--border)] bg-[color:var(--chip)]" />}>
+      <MeClient
+        user={user}
+        isBoosting={!!member.premium_since}
+        personalRole={personalRole}
+        fallbackAvatar={<div className="h-18 w-18 rounded-3xl border border-[color:var(--border)] bg-[color:var(--chip)]" />}
+      >
         {user.imageUrl ? (
           <Image
             src={user.imageUrl}

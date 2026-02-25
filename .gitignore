@@ -2,6 +2,7 @@
 .env.*
 .DS_Store
 .sisyphus
+.omc
 screenshots/
 node_modules/
 .next/
