@@ -1,9 +1,10 @@
-import { EmbedBuilder, SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder } from 'discord.js';
 import type { ChatInputCommandInteraction } from 'discord.js';
 
 import { getBotContext } from '../context.js';
 import { generateLotteryTicketImage } from '../lib/lotteryTicketImage.js';
 import type { LotteryTier } from '../lib/lotteryTicketImage.js';
+import { LINE, brandEmbed, cooldownEmbed, errorEmbed, statBlock } from '../lib/embed.js';
 import type { SlashCommand } from './types.js';
 
 type LotteryResultRow = {
@@ -115,36 +116,41 @@ export const lotteryCommand: SlashCommand = {
         if (row.out_error_code === 'COOLDOWN_ACTIVE') {
           const nextAt = formatKstTime(row.out_next_available_at);
           const nextAtRelative = toRelativeTime(row.out_next_available_at);
-          const cooldownEmbed = new EmbedBuilder()
-            .setColor(0x64748b)
-            .setTitle('⏳ 복권 재구매 대기 중')
-            .setDescription(
-              [
-                `다음 구매 가능 시간: **${nextAt} (KST)**${nextAtRelative ? ` (${nextAtRelative})` : ''}`,
-                `현재 잔액: **${row.out_new_balance.toLocaleString('ko-KR')} p**`
-              ].join('\n')
-            )
+          const cdEmbed = cooldownEmbed(
+            '복권 재구매 대기 중',
+            [
+              `⏰ 다음 구매 가능: **${nextAt} (KST)**${nextAtRelative ? ` (${nextAtRelative})` : ''}`,
+              '',
+              LINE,
+              '',
+              statBlock([
+                { emoji: '💳', label: '현재 잔액', value: `${row.out_new_balance.toLocaleString('ko-KR')}P` },
+              ]),
+            ].join('\n'),
+          )
+            .setAuthor({ name: interaction.user.displayName, iconURL: interaction.user.displayAvatarURL() })
             .setFooter({ text: '조금만 기다리면 다시 구매할 수 있어!' });
 
-          await interaction.editReply({ embeds: [cooldownEmbed] });
+          await interaction.editReply({ embeds: [cdEmbed] });
           return;
         }
 
         if (row.out_error_code === 'INSUFFICIENT_POINTS') {
           const need = Math.max(0, row.out_ticket_price - row.out_new_balance);
-          const insufficientEmbed = new EmbedBuilder()
-            .setColor(0xef4444)
-            .setTitle('💸 포인트가 부족해!')
-            .setDescription(
-              [
-                `복권 1장 가격: **${row.out_ticket_price.toLocaleString('ko-KR')} p**`,
-                `현재 잔액: **${row.out_new_balance.toLocaleString('ko-KR')} p**`,
-                `부족한 포인트: **${need.toLocaleString('ko-KR')} p**`
-              ].join('\n')
-            )
-            .setFooter({ text: '채팅/음성 활동이나 /daily 로 p를 모아봐!' });
+          const insuffEmbed = errorEmbed(
+            '포인트가 부족해!',
+            [
+              statBlock([
+                { emoji: '🎫', label: '복권 가격', value: `${row.out_ticket_price.toLocaleString('ko-KR')}P` },
+                { emoji: '💳', label: '현재 잔액', value: `${row.out_new_balance.toLocaleString('ko-KR')}P` },
+                { emoji: '📉', label: '부족분', value: `${need.toLocaleString('ko-KR')}P` },
+              ]),
+            ].join('\n'),
+          )
+            .setAuthor({ name: interaction.user.displayName, iconURL: interaction.user.displayAvatarURL() })
+            .setFooter({ text: '채팅/음성 활동이나 /daily 로 P를 모아봐!' });
 
-          await interaction.editReply({ embeds: [insufficientEmbed] });
+          await interaction.editReply({ embeds: [insuffEmbed] });
           return;
         }
 
@@ -204,10 +210,11 @@ export const lotteryCommand: SlashCommand = {
         netChange: row.out_net_change
       });
 
-      const resultEmbed = new EmbedBuilder()
+      const resultEmbed = brandEmbed()
         .setColor(TIER_COLORS[tier])
+        .setAuthor({ name: interaction.user.displayName, iconURL: interaction.user.displayAvatarURL() })
         .setTitle(TIER_TITLES[tier])
-        .setDescription(resultLines.join('\n'))
+        .setDescription([...resultLines.slice(0, 1), '', LINE, '', ...resultLines.slice(1)].join('\n'))
         .setImage('attachment://lottery-result.png')
         .setFooter({ text: '다시 도전하려면 /lottery 를 한 번 더 입력해줘!' });
 

@@ -3,7 +3,7 @@
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Pause, Play, RefreshCw, SkipBack, SkipForward, Square, ListMusic, GripVertical, Trash2, Activity, AlertTriangle } from 'lucide-react';
+import { Pause, Play, RefreshCw, SkipBack, SkipForward, Square, ListMusic, GripVertical, Trash2, Activity, AlertTriangle, Music2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 
@@ -139,6 +139,13 @@ const STATUS_DOT: Record<MonitorStatus, string> = {
   unknown: 'bg-zinc-400'
 };
 
+const STATUS_DOT_GLOW: Record<MonitorStatus, string> = {
+  operational: 'shadow-[0_0_6px_rgba(52,211,153,0.7)]',
+  degraded: 'shadow-[0_0_6px_rgba(251,191,36,0.7)]',
+  down: 'shadow-[0_0_6px_rgba(239,68,68,0.7)]',
+  unknown: 'shadow-[0_0_4px_rgba(161,161,170,0.5)]'
+};
+
 const statusLabel = (value: string) => STATUS_LABEL[normalizeStatus(value)];
 
 const classifyLogStatus = (status: string): LogStatusTone => {
@@ -180,17 +187,34 @@ const LOG_STATUS_BADGE: Record<LogStatusTone, string> = {
   neutral: 'border-zinc-400/40 bg-zinc-500/10 text-zinc-300'
 };
 
+/* Equalizer bars shown when music is playing */
+const EqBars = () => (
+  <div className="flex items-end gap-[3px] h-4" aria-hidden="true">
+    <span className="w-1 rounded-sm bg-[color:var(--accent-pink)] animate-eq-1" style={{ height: '7px' }} />
+    <span className="w-1 rounded-sm bg-[color:var(--accent-pink-2)] animate-eq-2" style={{ height: '12px' }} />
+    <span className="w-1 rounded-sm bg-[color:var(--accent-lavender)] animate-eq-3" style={{ height: '5px' }} />
+  </div>
+);
+
 const ServiceStatusCard = ({ title, samples }: { title: string; samples: MonitorSample[] }) => {
   const latest = samples.at(-1);
   const status = normalizeStatus(latest?.status ?? 'unknown');
   const bars = samples.slice(-24);
 
   return (
-    <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/60 p-4 space-y-3">
+    <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/50 p-4 space-y-3 relative overflow-hidden">
+      {/* Subtle top gradient accent */}
+      <div className={`absolute top-0 left-0 right-0 h-px ${
+        status === 'operational' ? 'bg-gradient-to-r from-transparent via-emerald-400/50 to-transparent' :
+        status === 'degraded' ? 'bg-gradient-to-r from-transparent via-amber-400/50 to-transparent' :
+        status === 'down' ? 'bg-gradient-to-r from-transparent via-rose-400/50 to-transparent' :
+        'bg-gradient-to-r from-transparent via-zinc-400/30 to-transparent'
+      }`} />
+
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs uppercase tracking-[0.12em] muted">Service</p>
-          <h3 className="text-sm font-semibold">{title}</h3>
+          <p className="text-[10px] uppercase tracking-[0.14em] muted-2">Service</p>
+          <h3 className="text-sm font-semibold mt-0.5">{title}</h3>
         </div>
         <HoverStatusPopup
           title={`${title} 연결 상태`}
@@ -198,13 +222,21 @@ const ServiceStatusCard = ({ title, samples }: { title: string; samples: Monitor
           timestamp={latest?.created_at}
           description="최근 샘플 기준 연결 상태입니다."
         >
-          <span className={`inline-flex items-center rounded-full border px-2 py-1 text-[11px] font-semibold ${STATUS_BADGE[status]}`}>
+          <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${STATUS_BADGE[status]}`}>
+            {/* Live dot for operational */}
+            <span className={`relative flex h-1.5 w-1.5`}>
+              <span className={`inline-flex rounded-full h-1.5 w-1.5 ${STATUS_DOT[status]} ${STATUS_DOT_GLOW[status]}`} />
+              {status === 'operational' && (
+                <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400/50 animate-dot-ping" />
+              )}
+            </span>
             {STATUS_LABEL[status]}
           </span>
         </HoverStatusPopup>
       </div>
 
-      <div className="flex items-center gap-1.5">
+      {/* History bars */}
+      <div className="flex items-center gap-[3px]">
         {bars.length === 0 ? (
           <div className="text-xs muted">샘플 없음</div>
         ) : (
@@ -219,14 +251,14 @@ const ServiceStatusCard = ({ title, samples }: { title: string; samples: Monitor
                 description="샘플 시점의 연결 상태입니다."
                 className="flex-1"
               >
-                <span className={`block h-2.5 w-full rounded-full ${STATUS_DOT[sampleStatus]}`} />
+                <span className={`block h-3 w-full rounded-sm ${STATUS_DOT[sampleStatus]} transition-opacity hover:opacity-80`} />
               </HoverStatusPopup>
             );
           })
         )}
       </div>
 
-      <p className="text-xs muted">
+      <p className="text-[11px] muted">
         최신 갱신: {latest ? new Date(latest.created_at).toLocaleString() : '기록 없음'}
       </p>
     </div>
@@ -251,32 +283,48 @@ const QueueRow = ({
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="flex items-center gap-4 rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/70 p-3">
-      <button type="button" className="text-[color:var(--muted)]" {...attributes} {...listeners}>
+    <div ref={setNodeRef} style={style} className="queue-row flex items-center gap-3 p-3">
+      {/* Drag handle */}
+      <button
+        type="button"
+        className="text-[color:var(--muted-2)] hover:text-[color:var(--muted)] transition-colors shrink-0 cursor-grab active:cursor-grabbing"
+        {...attributes}
+        {...listeners}
+      >
         <GripVertical className="w-4 h-4" />
       </button>
-      <div className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-[color:var(--border)] px-1 text-[11px] font-semibold text-[color:var(--muted)]">
+
+      {/* Position number */}
+      <div className="inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full border border-[color:var(--border)] bg-[color:var(--chip)]/60 px-1.5 text-[11px] font-semibold text-[color:var(--muted)] shrink-0">
         {index + 1}
       </div>
-      <div className="w-12 h-12 rounded-xl overflow-hidden bg-black/40 shrink-0">
-        {track.thumbnail && (
+
+      {/* Thumbnail */}
+      <div className="w-11 h-11 rounded-xl overflow-hidden bg-[color:var(--chip)] shrink-0 shadow-sm border border-[color:var(--border)]/50">
+        {track.thumbnail ? (
           <Image
             src={track.thumbnail}
             alt=""
-            width={48}
-            height={48}
+            width={44}
+            height={44}
             className="w-full h-full object-cover"
             unoptimized
           />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <Music2 className="w-4 h-4 text-[color:var(--muted-2)]" />
+          </div>
         )}
       </div>
+
+      {/* Track info */}
       <div className="flex-1 min-w-0">
         {track.uri ? (
           <a
             href={track.uri}
             target="_blank"
             rel="noreferrer"
-            className="block truncate text-sm font-semibold decoration-dotted underline-offset-2 hover:underline"
+            className="block truncate text-sm font-semibold decoration-dotted underline-offset-2 hover:underline hover:text-[color:var(--accent-sky)] transition-colors"
             title={track.title}
           >
             {truncateText(track.title, 44)}
@@ -285,14 +333,14 @@ const QueueRow = ({
           <div className="text-sm font-semibold truncate">{truncateText(track.title, 44)}</div>
         )}
         <div className="text-xs muted truncate">{truncateText(track.author, 34)}</div>
-        <div className="mt-1 inline-flex items-center gap-1.5 text-[11px] muted">
-          <span className="w-4 h-4 rounded-full overflow-hidden bg-black/30 shrink-0">
+        <div className="mt-0.5 inline-flex items-center gap-1.5 text-[11px] muted">
+          <span className="w-3.5 h-3.5 rounded-full overflow-hidden bg-[color:var(--chip)] shrink-0 border border-[color:var(--border)]/40">
             {track.requester?.avatarUrl && (
               <Image
                 src={track.requester.avatarUrl}
                 alt=""
-                width={16}
-                height={16}
+                width={14}
+                height={14}
                 className="w-full h-full object-cover"
                 unoptimized
               />
@@ -301,12 +349,16 @@ const QueueRow = ({
           <span className="truncate">요청: {truncateText(requesterName(track), 24)}</span>
         </div>
       </div>
-      <div className="text-xs muted">{formatDuration(track.length)}</div>
+
+      {/* Duration */}
+      <div className="text-xs muted font-mono shrink-0">{formatDuration(track.length)}</div>
+
+      {/* Remove button */}
       <button
         type="button"
         onClick={() => onRemove(track)}
         disabled={disabled}
-        className="rounded-lg border border-rose-500/30 px-2 py-1 text-rose-300 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+        className="rounded-lg border border-rose-500/25 px-2 py-1.5 text-rose-400 hover:bg-rose-500/12 hover:border-rose-500/45 disabled:cursor-not-allowed disabled:opacity-50 transition-colors shrink-0"
       >
         <Trash2 className="w-3.5 h-3.5" />
       </button>
@@ -716,69 +768,117 @@ export default function MusicControlClient() {
 
   return (
     <div className="min-h-screen bg-[color:var(--bg)] text-[color:var(--fg)] relative">
-      <div className="mx-auto max-w-6xl px-6 py-10 space-y-10">
+      {/* Subtle ambient background decoration */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true">
+        <div className="absolute top-0 left-1/4 w-96 h-96 rounded-full bg-[color:var(--accent-pink)]/5 blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full bg-[color:var(--accent-sky)]/5 blur-3xl" />
+      </div>
+
+      <div className="relative mx-auto max-w-6xl px-6 py-10 space-y-6">
+
+        {/* Page header */}
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.2em] muted">Music Control</p>
-            <h1 className="text-2xl font-bold font-bangul">디스코드 음악 컨트롤</h1>
-            <p className="text-sm muted">서버 멤버만 접근 가능합니다.</p>
+            <p className="text-[10px] uppercase tracking-[0.22em] muted-2">Music Control</p>
+            <h1 className="text-2xl font-bold font-bangul mt-0.5">디스코드 음악 컨트롤</h1>
+            <p className="text-sm muted mt-0.5">서버 멤버만 접근 가능합니다.</p>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={refreshAll}
-              disabled={isLoading || isActionPending}
-              className="inline-flex items-center gap-2 rounded-full border border-[color:var(--border)] px-4 py-2 text-xs font-semibold hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
-            >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-              새로고침
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={refreshAll}
+            disabled={isLoading || isActionPending}
+            className="inline-flex items-center gap-2 rounded-full border border-[color:var(--border)] bg-[color:var(--chip)]/60 px-4 py-2 text-xs font-semibold hover:bg-[color:var(--chip)] hover:border-[color:var(--accent-sky)]/30 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent transition-colors"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            새로고침
+          </button>
         </div>
 
-        <section className="space-y-6">
-          <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6 space-y-6">
-            <div className="flex items-center gap-4">
-              <div className="w-20 h-20 rounded-2xl overflow-hidden bg-[color:var(--chip)]">
-                {current?.thumbnail && (
-                  <Image
-                    src={current.thumbnail}
-                    alt=""
-                    width={80}
-                    height={80}
-                    className="w-full h-full object-cover"
-                    unoptimized
-                  />
-                )}
+        {/* ── NOW PLAYING ── */}
+        <section className="music-card overflow-hidden">
+          {/* Artwork hero with gradient overlay */}
+          <div className="relative">
+            {/* Large blurred artwork background */}
+            {current?.thumbnail && (
+              <div className="absolute inset-0 overflow-hidden">
+                <Image
+                  src={current.thumbnail}
+                  alt=""
+                  fill
+                  className="object-cover scale-110 blur-2xl opacity-20"
+                  unoptimized
+                />
+                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[color:var(--card)]/60 to-[color:var(--card)]" />
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm muted">현재 재생</div>
-                <div className="text-lg font-semibold truncate">
-                  {current?.title ? truncateText(current.title, 46) : '재생 중인 곡이 없습니다.'}
-                </div>
-                <div className="text-xs muted truncate">{current?.author ? truncateText(current.author, 34) : '-'}</div>
-                {current && (
-                  <div className="mt-1 inline-flex items-center gap-2 text-[11px] muted">
-                    <span className="w-4 h-4 rounded-full overflow-hidden bg-black/30 shrink-0">
-                      {current.requester?.avatarUrl && (
-                        <Image
-                          src={current.requester.avatarUrl}
-                          alt=""
-                          width={16}
-                          height={16}
-                          className="w-full h-full object-cover"
-                          unoptimized
-                        />
-                      )}
-                    </span>
-                    <span className="truncate">요청자: {truncateText(requesterName(current), 26)}</span>
+            )}
+
+            <div className="relative p-6 pb-4">
+              <div className="flex items-start gap-5">
+                {/* Artwork */}
+                <div className="relative shrink-0">
+                  <div className="w-24 h-24 rounded-2xl overflow-hidden bg-[color:var(--chip)] shadow-[0_8px_24px_rgba(0,0,0,0.3)] border border-[color:var(--border)]/60">
+                    {current?.thumbnail ? (
+                      <Image
+                        src={current.thumbnail}
+                        alt=""
+                        width={96}
+                        height={96}
+                        className="w-full h-full object-cover"
+                        unoptimized
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[color:var(--accent-pink)]/20 to-[color:var(--accent-lavender)]/20">
+                        <Music2 className="w-10 h-10 text-[color:var(--muted-2)]" />
+                      </div>
+                    )}
                   </div>
-                )}
-                <div className="text-xs muted mt-1">{currentDuration}</div>
+                  {/* Playing indicator badge */}
+                  {current && (
+                    <div className="absolute -bottom-2 -right-2 rounded-full bg-[color:var(--accent-pink)] p-1.5 shadow-lg shadow-[color:var(--accent-pink)]/30">
+                      <EqBars />
+                    </div>
+                  )}
+                </div>
+
+                {/* Track info */}
+                <div className="flex-1 min-w-0 pt-1">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-[color:var(--accent-pink)] mb-1">
+                    현재 재생
+                  </div>
+                  <div className="text-xl font-bold leading-tight truncate">
+                    {current?.title ? truncateText(current.title, 46) : '재생 중인 곡이 없습니다.'}
+                  </div>
+                  <div className="text-sm muted truncate mt-0.5">
+                    {current?.author ? truncateText(current.author, 40) : '-'}
+                  </div>
+
+                  {current && (
+                    <div className="mt-2 inline-flex items-center gap-2 text-[11px] muted bg-[color:var(--chip)]/60 rounded-full px-2.5 py-1 border border-[color:var(--border)]/60">
+                      <span className="w-4 h-4 rounded-full overflow-hidden bg-[color:var(--chip)] shrink-0">
+                        {current.requester?.avatarUrl && (
+                          <Image
+                            src={current.requester.avatarUrl}
+                            alt=""
+                            width={16}
+                            height={16}
+                            className="w-full h-full object-cover"
+                            unoptimized
+                          />
+                        )}
+                      </span>
+                      <span className="truncate">요청자: {truncateText(requesterName(current), 26)}</span>
+                      <span className="text-[color:var(--muted-2)]">·</span>
+                      <span className="font-mono text-[color:var(--muted)]">{currentDuration}</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
+          </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          {/* Add to queue input */}
+          <div className="px-6 pb-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <input
                 type="text"
                 value={query}
@@ -788,14 +888,14 @@ export default function MusicControlClient() {
                 }}
                 disabled={!canAdd || isActionPending}
                 placeholder={canAdd ? '노래 제목 또는 URL을 입력하세요' : '재생 중인 곡이 없어서 추가할 수 없어요'}
-                className="flex-1 rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-[color:var(--accent-pink)]/20 disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex-1 rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/70 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[color:var(--accent-pink)]/25 focus:border-[color:var(--accent-pink)]/35 disabled:cursor-not-allowed disabled:opacity-60 transition-[box-shadow,border-color]"
               />
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={pasteAndAdd}
                   disabled={!canAdd || isActionPending}
-                  className="rounded-2xl border border-[color:var(--border)] px-3 py-2 text-xs font-semibold hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
+                  className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/60 px-3 py-2.5 text-xs font-semibold hover:bg-[color:var(--chip)] hover:border-[color:var(--accent-sky)]/30 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent transition-colors"
                 >
                   붙여넣기 추가
                 </button>
@@ -803,223 +903,254 @@ export default function MusicControlClient() {
                   type="button"
                   onClick={() => submitAdd()}
                   disabled={!canAdd || isActionPending}
-                  className="rounded-2xl border border-[color:var(--border)] px-4 py-2 text-sm font-semibold hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
+                  className="rounded-2xl border border-[color:var(--accent-pink)]/30 bg-gradient-to-r from-[color:var(--accent-pink)]/15 to-[color:var(--accent-lavender)]/10 px-4 py-2.5 text-sm font-semibold hover:from-[color:var(--accent-pink)]/22 hover:to-[color:var(--accent-lavender)]/16 hover:border-[color:var(--accent-pink)]/45 disabled:cursor-not-allowed disabled:opacity-60 transition-all text-[color:var(--fg)]"
                 >
                   노래 추가
                 </button>
               </div>
             </div>
-
-            <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-              <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)]/60 px-3 py-2">
-                <div className="muted">대기열 곡 수</div>
-                <div className="mt-1 text-sm font-semibold">{queue.length}곡</div>
-              </div>
-              <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)]/60 px-3 py-2">
-                <div className="muted">대기열 길이</div>
-                <div className="mt-1 text-sm font-semibold">{queueDuration}</div>
-              </div>
-              <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)]/60 px-3 py-2">
-                <div className="muted">세션 총 길이</div>
-                <div className="mt-1 text-sm font-semibold">{totalSessionDuration}</div>
-              </div>
-              <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--chip)]/60 px-3 py-2">
-                <div className="muted">요청자 수</div>
-                <div className="mt-1 text-sm font-semibold">{queueRequesterCount}명</div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-              <button
-                type="button"
-                onClick={() => runAction('previous', '이전 곡으로 이동했어요.')}
-                disabled={!canStop || isActionPending}
-                className="rounded-2xl border border-[color:var(--border)] py-3 hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
-              >
-                <div className="flex flex-col items-center gap-1">
-                  <SkipBack className="w-5 h-5" />
-                  <span className="text-[11px] font-semibold">이전</span>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => runAction('play', '재생을 시작했어요.')}
-                disabled={!canStop || isActionPending}
-                className="rounded-2xl border border-[color:var(--border)] py-3 hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
-              >
-                <div className="flex flex-col items-center gap-1">
-                  <Play className="w-5 h-5" />
-                  <span className="text-[11px] font-semibold">재생</span>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => runAction('pause', '일시정지했어요.')}
-                disabled={!canStop || isActionPending}
-                className="rounded-2xl border border-[color:var(--border)] py-3 hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
-              >
-                <div className="flex flex-col items-center gap-1">
-                  <Pause className="w-5 h-5" />
-                  <span className="text-[11px] font-semibold">일시정지</span>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => runAction('stop', '재생을 중지했어요.')}
-                disabled={!canStop || isActionPending}
-                className="rounded-2xl border border-red-500/40 text-red-400 py-3 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
-              >
-                <div className="flex flex-col items-center gap-1">
-                  <Square className="w-5 h-5" />
-                  <span className="text-[11px] font-semibold">정지</span>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => runAction('skip', '다음 곡으로 이동했어요.')}
-                disabled={!canSkip || isActionPending}
-                className="col-span-2 rounded-2xl border border-[color:var(--border)] py-3 hover:bg-[color:var(--chip)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent sm:col-span-1"
-              >
-                <div className="flex flex-col items-center gap-1">
-                  <SkipForward className="w-5 h-5" />
-                  <span className="text-[11px] font-semibold">다음</span>
-                </div>
-              </button>
-            </div>
           </div>
 
-          <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <ListMusic className="w-4 h-4" />
-                  <h2 className="text-sm font-semibold">대기열 (드래그로 순서 변경)</h2>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                  <span className="rounded-full border border-[color:var(--border)] bg-[color:var(--chip)]/70 px-2.5 py-1 text-[color:var(--muted)]">총 {queue.length}곡</span>
-                  <span className="rounded-full border border-[color:var(--border)] bg-[color:var(--chip)]/70 px-2.5 py-1 text-[color:var(--muted)]">총 길이 {queueDuration}</span>
-                  <span className="rounded-full border border-[color:var(--border)] bg-[color:var(--chip)]/70 px-2.5 py-1 text-[color:var(--muted)]">마지막 갱신 {state?.updated_at ? new Date(state.updated_at).toLocaleTimeString() : '-'}</span>
-                </div>
+          {/* Stats row */}
+          <div className="px-6 pb-4 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+            {[
+              { label: '대기열 곡 수', value: `${queue.length}곡` },
+              { label: '대기열 길이', value: queueDuration },
+              { label: '세션 총 길이', value: totalSessionDuration },
+              { label: '요청자 수', value: `${queueRequesterCount}명` }
+            ].map(({ label, value }) => (
+              <div key={label} className="rounded-xl border border-[color:var(--border)]/70 bg-[color:var(--chip)]/50 px-3 py-2.5">
+                <div className="muted-2 text-[10px] uppercase tracking-wide">{label}</div>
+                <div className="mt-1 text-sm font-bold">{value}</div>
               </div>
-              <button
-                type="button"
-                onClick={clearQueue}
-                disabled={!canClearQueue || isActionPending}
-                className="rounded-xl border border-rose-500/40 px-3 py-1.5 text-xs font-semibold text-rose-300 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                대기열 비우기
-              </button>
-            </div>
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={queue.map((track) => track.id)} strategy={verticalListSortingStrategy}>
-                <div className="space-y-3">
-                  {queue.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-[color:var(--border)] p-6 text-sm muted text-center">
-                      대기열이 비어있습니다.
-                    </div>
-                  ) : (
-                    queue.map((track, index) => (
-                      <QueueRow key={track.id} track={track} index={index} disabled={isActionPending} onRemove={removeFromQueue} />
-                    ))
-                  )}
-                </div>
-              </SortableContext>
-            </DndContext>
+            ))}
           </div>
 
-          <div className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6 space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Activity className="w-4 h-4" />
-                <h2 className="text-sm font-semibold">연결 모니터링</h2>
+          {/* Transport controls */}
+          <div className="px-6 pb-6 grid grid-cols-2 gap-2 sm:grid-cols-5">
+            <button
+              type="button"
+              onClick={() => runAction('previous', '이전 곡으로 이동했어요.')}
+              disabled={!canStop || isActionPending}
+              className="btn-transport py-3.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="flex flex-col items-center gap-1.5">
+                <SkipBack className="w-5 h-5" />
+                <span className="text-[11px] font-semibold">이전</span>
               </div>
-              <span className="text-xs muted">최근 이벤트 {activeIncidents.length}건</span>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              <ServiceStatusCard title="Discord Bot" samples={monitor.services.bot} />
-              <ServiceStatusCard title="Lavalink" samples={monitor.services.lavalink} />
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/60 p-3">
-                <div className="text-xs uppercase tracking-[0.12em] muted mb-1">Bot Status</div>
-                <div className="text-sm font-semibold">{statusLabel(latestBotStatus?.status ?? 'unknown')}</div>
-                <div className="text-xs muted mt-1">{latestBotStatus ? new Date(latestBotStatus.created_at).toLocaleString() : '기록 없음'}</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => runAction('play', '재생을 시작했어요.')}
+              disabled={!canStop || isActionPending}
+              className="btn-transport py-3.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="flex flex-col items-center gap-1.5">
+                <Play className="w-5 h-5" />
+                <span className="text-[11px] font-semibold">재생</span>
               </div>
-              <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/60 p-3">
-                <div className="text-xs uppercase tracking-[0.12em] muted mb-1">Lavalink Status</div>
-                <div className="text-sm font-semibold">{statusLabel(latestLavalinkStatus?.status ?? 'unknown')}</div>
-                <div className="text-xs muted mt-1">
-                  {latestLavalinkStatus ? new Date(latestLavalinkStatus.created_at).toLocaleString() : '기록 없음'}
-                </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => runAction('pause', '일시정지했어요.')}
+              disabled={!canStop || isActionPending}
+              className="btn-transport py-3.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="flex flex-col items-center gap-1.5">
+                <Pause className="w-5 h-5" />
+                <span className="text-[11px] font-semibold">일시정지</span>
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="text-xs uppercase tracking-[0.12em] muted">최근 모니터링 이벤트</div>
-              {monitor.incidents.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-[color:var(--border)] p-4 text-xs muted text-center">
-                  모니터링 이벤트가 없습니다.
-                </div>
-              ) : (
-                monitor.incidents.slice(0, 6).map((incident) => {
-                  const status = normalizeStatus(incident.status);
-                  const payload = incident.payload ?? {};
-                  const streak = typeof payload.streak === 'number' ? `${payload.streak}회` : '-';
-                  const latency = typeof payload.latency_ms === 'number' ? `${payload.latency_ms}ms` : '-';
-                  return (
-                    <div key={incident.log_id} className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/50 p-3">
-                      <div className="flex items-center justify-between gap-3 mb-1">
-                        <div className={`inline-flex items-center gap-1 text-[11px] font-semibold ${status === 'operational' ? 'text-emerald-300' : 'text-amber-300'}`}>
-                          <AlertTriangle className="w-3.5 h-3.5" />
-                          {STATUS_LABEL[status]}
-                        </div>
-                        <div className="text-[11px] muted">{new Date(incident.created_at).toLocaleString()}</div>
-                      </div>
-                      <div className="text-xs">{incident.message ?? 'monitor event'}</div>
-                      <div className="text-[11px] muted mt-1">연속 실패: {streak} · 지연: {latency}</div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => runAction('stop', '재생을 중지했어요.')}
+              disabled={!canStop || isActionPending}
+              className="btn-transport btn-transport-stop py-3.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="flex flex-col items-center gap-1.5">
+                <Square className="w-5 h-5" />
+                <span className="text-[11px] font-semibold">정지</span>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => runAction('skip', '다음 곡으로 이동했어요.')}
+              disabled={!canSkip || isActionPending}
+              className="btn-transport py-3.5 col-span-2 sm:col-span-1 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="flex flex-col items-center gap-1.5">
+                <SkipForward className="w-5 h-5" />
+                <span className="text-[11px] font-semibold">다음</span>
+              </div>
+            </button>
           </div>
         </section>
 
-        <section className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] p-6">
+        {/* ── QUEUE ── */}
+        <section className="music-card p-6">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <ListMusic className="w-4 h-4 text-[color:var(--accent-sky)]" />
+                <h2 className="text-sm font-semibold">대기열</h2>
+                <span className="text-[11px] muted">(드래그로 순서 변경)</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                <span className="rounded-full border border-[color:var(--border)] bg-[color:var(--chip)]/60 px-2.5 py-1 text-[color:var(--muted)]">
+                  총 {queue.length}곡
+                </span>
+                <span className="rounded-full border border-[color:var(--border)] bg-[color:var(--chip)]/60 px-2.5 py-1 text-[color:var(--muted)]">
+                  {queueDuration}
+                </span>
+                <span className="rounded-full border border-[color:var(--border)] bg-[color:var(--chip)]/60 px-2.5 py-1 text-[color:var(--muted)]">
+                  갱신 {state?.updated_at ? new Date(state.updated_at).toLocaleTimeString() : '-'}
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={clearQueue}
+              disabled={!canClearQueue || isActionPending}
+              className="shrink-0 rounded-xl border border-rose-500/30 px-3 py-1.5 text-xs font-semibold text-rose-400 hover:bg-rose-500/10 hover:border-rose-500/50 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+            >
+              대기열 비우기
+            </button>
+          </div>
+
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={queue.map((track) => track.id)} strategy={verticalListSortingStrategy}>
+              <div className="space-y-2">
+                {queue.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-[color:var(--border)] p-8 text-sm muted text-center flex flex-col items-center gap-3">
+                    <Music2 className="w-8 h-8 text-[color:var(--muted-2)]" />
+                    대기열이 비어있습니다.
+                  </div>
+                ) : (
+                  queue.map((track, index) => (
+                    <QueueRow key={track.id} track={track} index={index} disabled={isActionPending} onRemove={removeFromQueue} />
+                  ))
+                )}
+              </div>
+            </SortableContext>
+          </DndContext>
+        </section>
+
+        {/* ── CONNECTION MONITOR ── */}
+        <section className="music-card p-6 space-y-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4 text-[color:var(--accent-mint)]" />
+              <h2 className="text-sm font-semibold">연결 모니터링</h2>
+            </div>
+            <span className="text-[11px] rounded-full border border-[color:var(--border)] bg-[color:var(--chip)]/50 px-2.5 py-1 text-[color:var(--muted)]">
+              최근 이벤트 {activeIncidents.length}건
+            </span>
+          </div>
+
+          {/* Service cards */}
+          <div className="grid gap-3 md:grid-cols-2">
+            <ServiceStatusCard title="Discord Bot" samples={monitor.services.bot} />
+            <ServiceStatusCard title="Lavalink" samples={monitor.services.lavalink} />
+          </div>
+
+          {/* Quick status summary */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {[
+              { label: 'Bot Status', status: latestBotStatus?.status ?? 'unknown', time: latestBotStatus?.created_at },
+              { label: 'Lavalink Status', status: latestLavalinkStatus?.status ?? 'unknown', time: latestLavalinkStatus?.created_at }
+            ].map(({ label, status, time }) => {
+              const normalized = normalizeStatus(status);
+              return (
+                <div key={label} className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/40 p-3 flex items-center gap-3">
+                  <span className={`relative flex h-2.5 w-2.5 shrink-0`}>
+                    <span className={`inline-flex rounded-full h-2.5 w-2.5 ${STATUS_DOT[normalized]} ${STATUS_DOT_GLOW[normalized]}`} />
+                    {normalized === 'operational' && (
+                      <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400/40 animate-dot-ping" />
+                    )}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-[10px] uppercase tracking-[0.12em] muted-2">{label}</div>
+                    <div className="text-sm font-semibold">{statusLabel(status)}</div>
+                    <div className="text-[11px] muted">{time ? new Date(time).toLocaleString() : '기록 없음'}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Incidents */}
+          <div className="space-y-2">
+            <div className="text-[10px] uppercase tracking-[0.14em] muted-2">최근 모니터링 이벤트</div>
+            {monitor.incidents.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-[color:var(--border)] p-4 text-xs muted text-center">
+                모니터링 이벤트가 없습니다.
+              </div>
+            ) : (
+              monitor.incidents.slice(0, 6).map((incident) => {
+                const status = normalizeStatus(incident.status);
+                const payload = incident.payload ?? {};
+                const streak = typeof payload.streak === 'number' ? `${payload.streak}회` : '-';
+                const latency = typeof payload.latency_ms === 'number' ? `${payload.latency_ms}ms` : '-';
+                return (
+                  <div key={incident.log_id} className="log-row px-4 py-3">
+                    <div className="flex items-center justify-between gap-3 mb-1">
+                      <div className={`inline-flex items-center gap-1.5 text-[11px] font-semibold ${status === 'operational' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        {STATUS_LABEL[status]}
+                      </div>
+                      <div className="text-[11px] muted">{new Date(incident.created_at).toLocaleString()}</div>
+                    </div>
+                    <div className="text-xs">{incident.message ?? 'monitor event'}</div>
+                    <div className="text-[11px] muted mt-1">연속 실패: {streak} · 지연: {latency}</div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </section>
+
+        {/* ── OPERATION LOG ── */}
+        <section className="music-card p-6">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-sm font-semibold">조작 로그</h2>
-            <div className="inline-flex flex-wrap items-center gap-1 rounded-full border border-[color:var(--border)] bg-[color:var(--chip)]/70 p-1">
+            <div className="inline-flex flex-wrap items-center gap-1 rounded-full border border-[color:var(--border)] bg-[color:var(--chip)]/60 p-1">
               {(['all', 'success', 'pending', 'error'] as const).map((filter) => (
                 <button
                   key={filter}
                   type="button"
                   onClick={() => setLogFilter(filter)}
-                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+                  className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-colors ${
                     logFilter === filter
-                      ? 'bg-[color:var(--accent-pink)]/20 text-[color:var(--fg)]'
+                      ? 'bg-[color:var(--accent-pink)]/18 text-[color:var(--fg)] border border-[color:var(--accent-pink)]/25'
                       : 'text-[color:var(--muted)] hover:bg-[color:var(--chip)]'
                   }`}
                 >
-                  {LOG_FILTER_LABEL[filter]} {logSummary[filter]}
+                  {LOG_FILTER_LABEL[filter]}
+                  <span className={`ml-1.5 ${logFilter === filter ? 'text-[color:var(--muted)]' : 'text-[color:var(--muted-2)]'}`}>
+                    {logSummary[filter]}
+                  </span>
                 </button>
               ))}
             </div>
           </div>
+
           <div className="space-y-2">
             {filteredLogs.length === 0 && (
-              <div className="text-xs muted">
+              <div className="text-xs muted py-4 text-center">
                 {logs.length === 0 ? '아직 로그가 없습니다.' : '선택한 필터에 해당하는 로그가 없습니다.'}
               </div>
             )}
             {filteredLogs.map((log) => {
               const logTone = classifyLogStatus(log.status);
               return (
-                <div key={log.log_id} className="flex flex-col gap-2 rounded-2xl border border-[color:var(--border)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div
+                  key={log.log_id}
+                  className="log-row flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-full overflow-hidden bg-[color:var(--chip)] shrink-0">
-                      {log.requested_by_user?.avatarUrl && (
+                    {/* Avatar */}
+                    <div className="w-9 h-9 rounded-full overflow-hidden bg-[color:var(--chip)] shrink-0 border border-[color:var(--border)]/50">
+                      {log.requested_by_user?.avatarUrl ? (
                         <Image
                           src={log.requested_by_user.avatarUrl}
                           alt=""
@@ -1028,24 +1159,29 @@ export default function MusicControlClient() {
                           className="w-full h-full object-cover"
                           unoptimized
                         />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Music2 className="w-4 h-4 text-[color:var(--muted-2)]" />
+                        </div>
                       )}
                     </div>
+
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <div className="text-sm font-semibold truncate">{log.action}</div>
                         <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${LOG_STATUS_BADGE[logTone]}`}>
                           {LOG_STATUS_LABEL[logTone]}
                         </span>
                       </div>
-                      <div className="text-xs muted truncate">
+                      <div className="text-xs muted truncate mt-0.5">
                         {log.message ? truncateText(log.message, 60) : log.status}
                       </div>
-                      <div className="text-[11px] muted truncate">
+                      <div className="text-[11px] muted-2 truncate">
                         {log.requested_by_user ? `${log.requested_by_user.name} · ${log.requested_by_user.id}` : 'system'}
                       </div>
                     </div>
                   </div>
-                  <div className="text-xs muted">{new Date(log.created_at).toLocaleString()}</div>
+                  <div className="text-[11px] muted shrink-0 font-mono">{new Date(log.created_at).toLocaleString()}</div>
                 </div>
               );
             })}

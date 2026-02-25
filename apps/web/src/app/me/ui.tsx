@@ -160,11 +160,20 @@ export default function MeClient(props: {
       initial={{ opacity: 0, y: 10, filter: 'blur(2px)' }}
       animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-      className="relative overflow-hidden rounded-[32px] card-glass p-5 sm:p-7 lg:p-8"
+      className="relative overflow-hidden rounded-[32px] card-glass profile-card-accent p-5 sm:p-7 lg:p-8"
     >
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-20 -right-10 h-64 w-64 rounded-full bg-[color:var(--accent-sky)]/10 blur-3xl" />
-        <div className="absolute -bottom-20 -left-10 h-64 w-64 rounded-full bg-[color:var(--accent-pink)]/10 blur-3xl" />
+        <div className="absolute -top-20 -right-10 h-72 w-72 rounded-full bg-[color:var(--accent-sky)]/12 blur-3xl" />
+        <div className="absolute -bottom-20 -left-10 h-72 w-72 rounded-full bg-[color:var(--accent-pink)]/12 blur-3xl" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-48 w-96 rounded-full bg-[color:var(--accent-lavender)]/6 blur-3xl" />
+        {/* Subtle dot grid texture */}
+        <div
+          className="absolute inset-0 opacity-[0.035]"
+          style={{
+            backgroundImage: 'radial-gradient(circle, var(--fg) 1px, transparent 1px)',
+            backgroundSize: '22px 22px',
+          }}
+        />
       </div>
 
       <div className="relative space-y-7">
@@ -194,10 +203,14 @@ export default function MeClient(props: {
               <m.div
                 whileHover={{ rotate: 2, scale: 1.02 }}
                 transition={{ type: 'spring', stiffness: 420, damping: 28 }}
-                className="relative self-start"
+                className="relative self-start shrink-0"
               >
-                <div className="absolute inset-0 -z-10 rounded-[28px] bg-gradient-to-br from-[color:var(--accent-pink)]/18 to-[color:var(--accent-lavender)]/14 blur-xl" />
-                {props.children || props.fallbackAvatar}
+                {/* Gradient glow ring behind avatar */}
+                <div className="absolute -inset-2 rounded-[34px] bg-gradient-to-br from-[color:var(--accent-pink)]/40 via-[color:var(--accent-lavender)]/30 to-[color:var(--accent-sky)]/20 blur-lg opacity-70" />
+                <div className="absolute -inset-[3px] rounded-[30px] bg-gradient-to-br from-[color:var(--accent-pink)]/50 to-[color:var(--accent-lavender)]/35 opacity-50" />
+                <div className="relative">
+                  {props.children || props.fallbackAvatar}
+                </div>
               </m.div>
 
               <div className="min-w-0 flex-1">
@@ -212,15 +225,20 @@ export default function MeClient(props: {
 
                 <div
                   ref={pointsCardRef}
-                  className="inline-flex items-center gap-3 rounded-2xl border border-[color:var(--border)] bg-gradient-to-br from-[color:var(--accent-pink)]/10 to-transparent p-4"
+                  className="relative overflow-hidden inline-flex items-center gap-4 rounded-2xl border border-[color:color-mix(in_srgb,var(--accent-pink)_36%,var(--border))] bg-gradient-to-br from-[color:var(--accent-pink)]/14 via-[color:var(--accent-lavender)]/8 to-transparent p-4 shadow-[0_6px_20px_color-mix(in_srgb,var(--accent-pink)_14%,transparent)]"
                 >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[color:var(--accent-pink)] text-white shadow-lg shadow-pink-500/20">
+                  {/* Shimmer overlay */}
+                  <div className="pointer-events-none absolute inset-0 -skew-x-12 w-1/3 bg-gradient-to-r from-transparent via-white/8 to-transparent animate-shimmer" />
+                  <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[color:var(--accent-pink)] to-[color:var(--accent-lavender)] text-white shadow-lg shadow-[color:color-mix(in_srgb,var(--accent-pink)_35%,transparent)]">
                     <Coins className="h-5 w-5" />
                   </div>
                   <div>
                     <div className="text-[10px] font-bold uppercase tracking-wider muted-2">보유 포인트</div>
-                    <div ref={pointsValueRef} className="text-lg font-bold text-[color:var(--fg)]">
-                      {animatedPoints.toLocaleString()} <span className="ml-0.5 text-sm font-medium opacity-60">P</span>
+                    <div ref={pointsValueRef} className="mt-0.5 flex items-baseline gap-1">
+                      <span className="text-2xl font-black tabular-nums tracking-tight text-[color:var(--fg)]">
+                        {animatedPoints.toLocaleString()}
+                      </span>
+                      <span className="text-sm font-semibold opacity-50">P</span>
                     </div>
                   </div>
                 </div>
@@ -234,9 +252,22 @@ export default function MeClient(props: {
           >
             <h2 className="text-sm font-semibold tracking-[0.1em] muted-2">오늘 확인하면 좋은 것</h2>
             <ul className="mt-3 space-y-2 text-sm text-[color:var(--fg)]">
-              <li className="rounded-xl border border-[color:color-mix(in_srgb,var(--fg)_10%,transparent)] bg-[color:var(--chip)] px-3 py-2">일일상자와 복권으로 포인트 흐름 체크하기</li>
-              <li className="rounded-xl border border-[color:color-mix(in_srgb,var(--fg)_10%,transparent)] bg-[color:var(--chip)] px-3 py-2">인벤토리에서 장착 상태 확인하기</li>
-              <li className="rounded-xl border border-[color:color-mix(in_srgb,var(--fg)_10%,transparent)] bg-[color:var(--chip)] px-3 py-2">강화 페이지에서 손익/판매 가능 여부 보기</li>
+              {([
+                { text: '일일상자와 복권으로 포인트 흐름 체크하기', color: 'var(--accent-pink)' },
+                { text: '인벤토리에서 장착 상태 확인하기', color: 'var(--accent-lavender)' },
+                { text: '강화 페이지에서 손익/판매 가능 여부 보기', color: 'var(--accent-sky)' },
+              ] as const).map(({ text, color }) => (
+                <li
+                  key={text}
+                  className="flex items-start gap-2.5 rounded-xl border border-[color:color-mix(in_srgb,var(--fg)_10%,transparent)] bg-[color:var(--chip)] px-3 py-2.5"
+                >
+                  <span
+                    className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full"
+                    style={{ background: color }}
+                  />
+                  {text}
+                </li>
+              ))}
             </ul>
           </article>
         </div>
@@ -251,78 +282,83 @@ export default function MeClient(props: {
           </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {/* 인벤토리 */}
             <m.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }}>
               <Link
-                className="inline-flex w-full items-center justify-between rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] px-4 py-4 text-sm font-semibold shadow-sm transition-colors hover:bg-[color:var(--bg)]"
+                className="group inline-flex w-full items-center justify-between rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] px-4 py-4 text-sm font-semibold shadow-sm transition-all hover:border-[color:color-mix(in_srgb,var(--accent-lavender)_30%,var(--border))] hover:bg-[color:var(--bg)] hover:shadow-md"
                 href="/inventory"
               >
                 <span className="inline-flex items-center gap-3">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[color:var(--accent-lavender)]/20 text-[color:var(--accent-lavender)]">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[color:var(--accent-lavender)]/20 text-[color:var(--accent-lavender)] transition-transform group-hover:scale-110">
                     <Package className="h-4 w-4" />
                   </span>
                   인벤토리
                 </span>
-                <ArrowRight className="h-4 w-4 opacity-40" />
+                <ArrowRight className="h-4 w-4 opacity-40 transition-all group-hover:opacity-70 group-hover:translate-x-0.5" />
               </Link>
             </m.div>
 
+            {/* 뽑기 — featured */}
             <m.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }}>
               <Link
-                className="inline-flex w-full items-center justify-between rounded-2xl btn-bangul px-4 py-4 text-sm font-semibold shadow-lg"
+                className="group inline-flex w-full items-center justify-between rounded-2xl btn-bangul px-4 py-4 text-sm font-semibold shadow-lg"
                 href="/draw"
               >
                 <span className="inline-flex items-center gap-3">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/20 text-white">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/20 text-white transition-transform group-hover:scale-110">
                     <Dices className="h-4 w-4" />
                   </span>
                   뽑기
                 </span>
-                <ArrowRight className="h-4 w-4 opacity-80" />
+                <ArrowRight className="h-4 w-4 opacity-80 transition-transform group-hover:translate-x-0.5" />
               </Link>
             </m.div>
 
+            {/* 강화 */}
             <m.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }}>
               <Link
-                className="inline-flex w-full items-center justify-between rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] px-4 py-4 text-sm font-semibold shadow-sm transition-colors hover:bg-[color:var(--bg)]"
+                className="group inline-flex w-full items-center justify-between rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] px-4 py-4 text-sm font-semibold shadow-sm transition-all hover:border-[color:color-mix(in_srgb,var(--accent-pink)_30%,var(--border))] hover:bg-[color:var(--bg)] hover:shadow-md"
                 href="/forge"
               >
                 <span className="inline-flex items-center gap-3">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[color:var(--accent-pink)]/20 text-[color:var(--accent-pink)]">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[color:var(--accent-pink)]/20 text-[color:var(--accent-pink)] transition-transform group-hover:scale-110">
                     <Sparkles className="h-4 w-4" />
                   </span>
                   강화
                 </span>
-                <ArrowRight className="h-4 w-4 opacity-40" />
+                <ArrowRight className="h-4 w-4 opacity-40 transition-all group-hover:opacity-70 group-hover:translate-x-0.5" />
               </Link>
             </m.div>
 
+            {/* 복권 현황 */}
             <m.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }}>
               <Link
-                className="inline-flex w-full items-center justify-between rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] px-4 py-4 text-sm font-semibold shadow-sm transition-colors hover:bg-[color:var(--bg)]"
+                className="group inline-flex w-full items-center justify-between rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] px-4 py-4 text-sm font-semibold shadow-sm transition-all hover:border-[color:color-mix(in_srgb,var(--accent-sky)_30%,var(--border))] hover:bg-[color:var(--bg)] hover:shadow-md"
                 href="/lotto"
               >
                 <span className="inline-flex items-center gap-3">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[color:var(--accent-sky)]/20 text-[color:var(--accent-sky)]">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[color:var(--accent-sky)]/20 text-[color:var(--accent-sky)] transition-transform group-hover:scale-110">
                     <Ticket className="h-4 w-4" />
                   </span>
                   복권 현황
                 </span>
-                <ArrowRight className="h-4 w-4 opacity-40" />
+                <ArrowRight className="h-4 w-4 opacity-40 transition-all group-hover:opacity-70 group-hover:translate-x-0.5" />
               </Link>
             </m.div>
 
+            {/* 알림 */}
             <m.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }}>
               <Link
-                className="inline-flex w-full items-center justify-between rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] px-4 py-4 text-sm font-semibold shadow-sm transition-colors hover:bg-[color:var(--bg)]"
+                className="group inline-flex w-full items-center justify-between rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] px-4 py-4 text-sm font-semibold shadow-sm transition-all hover:border-[color:color-mix(in_srgb,var(--accent-mint)_30%,var(--border))] hover:bg-[color:var(--bg)] hover:shadow-md"
                 href="/notifications"
               >
                 <span className="inline-flex items-center gap-3">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[color:var(--accent-lime)]/20 text-[color:var(--accent-lime)]">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[color:var(--accent-mint)]/20 text-[color:var(--accent-mint)] transition-transform group-hover:scale-110">
                     <Bell className="h-4 w-4" />
                   </span>
                   알림
                 </span>
-                <ArrowRight className="h-4 w-4 opacity-40" />
+                <ArrowRight className="h-4 w-4 opacity-40 transition-all group-hover:opacity-70 group-hover:translate-x-0.5" />
               </Link>
             </m.div>
           </div>

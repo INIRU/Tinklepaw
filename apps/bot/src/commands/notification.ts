@@ -1,7 +1,8 @@
-import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageActionRowComponentBuilder } from 'discord.js';
+import { SlashCommandBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageActionRowComponentBuilder } from 'discord.js';
 import type { ChatInputCommandInteraction } from 'discord.js';
 import type { SlashCommand } from './types.js';
 import { getBotContext } from '../context.js';
+import { brandEmbed, infoEmbed } from '../lib/embed.js';
 import type { Database } from '@nyaru/core';
 
 type Notification = Database['nyang']['Tables']['notifications']['Row'];
@@ -33,10 +34,8 @@ export const notificationCommand: SlashCommand = {
       if (!notifications || notifications.length === 0) {
         await interaction.editReply({
           embeds: [
-            new EmbedBuilder()
-              .setTitle('📭 알림이 없어요')
-              .setDescription('아직 받은 알림이 없습니다.')
-              .setColor(0x95a5a6)
+            infoEmbed('📭 알림이 없어요', '아직 받은 알림이 없습니다.\n새로운 알림이 오면 여기서 확인할 수 있어!')
+              .setAuthor({ name: interaction.user.displayName, iconURL: interaction.user.displayAvatarURL() })
           ]
         });
         return;
@@ -65,12 +64,14 @@ export const notificationCommand: SlashCommand = {
       const hasRewardItem = firstNotification.reward_item_id && firstNotification.reward_item_qty && firstNotification.reward_item_qty > 0;
       const hasReward = hasRewardPoints || hasRewardItem;
 
-      const embed = new EmbedBuilder()
+      const unreadCount = notifications.filter(n => !n.is_read).length;
+      const embed = brandEmbed()
         .setTitle(`${typeEmojis[firstNotification.type] || '📢'} ${firstNotification.title}`)
         .setDescription(firstNotification.content)
         .setColor(typeColors[firstNotification.type] || 0x3498db)
+        .setAuthor({ name: interaction.user.displayName, iconURL: interaction.user.displayAvatarURL() })
         .setTimestamp(new Date(firstNotification.created_at))
-        .setFooter({ text: `1 / ${notifications.length}` });
+        .setFooter({ text: `📬 1 / ${notifications.length}${unreadCount > 0 ? ` · 읽지 않은 알림 ${unreadCount}개` : ''}` });
 
       if (hasRewardPoints || hasRewardItem) {
         const rewardText = [];

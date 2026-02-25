@@ -1,5 +1,6 @@
-import { EmbedBuilder, type User } from 'discord.js';
+import { type User } from 'discord.js';
 import type { BotContext } from '../context.js';
+import { brandEmbed, RarityLabel, RarityEmoji, LINE, parseHexColor, formatPoints } from '../lib/embed.js';
 
 type InventoryRow = {
   qty: number;
@@ -11,17 +12,10 @@ type InventoryRow = {
 
 const RARITY_ORDER = ['SSS', 'SS', 'S', 'R'] as const;
 
-const RARITY_LABEL: Record<string, string> = {
-  SSS: '🌈 SSS',
-  SS: '💎 SS',
-  S: '✨ S',
-  R: '🟦 R'
-};
-
 function normalizeRarity(rarity: string | null | undefined): string {
   if (!rarity) return 'R';
   const upper = rarity.toUpperCase();
-  return RARITY_LABEL[upper] ? upper : 'R';
+  return RarityLabel[upper] ? upper : 'R';
 }
 
 export async function generateInventoryEmbed(ctx: BotContext, user: User) {
@@ -53,7 +47,8 @@ export async function generateInventoryEmbed(ctx: BotContext, user: User) {
   for (const row of items) {
     if (!row.items) continue;
     const rarity = normalizeRarity(row.items.rarity);
-    grouped[rarity].push(`• ${row.items.name} ×${row.qty}`);
+    const emoji = RarityEmoji[rarity] || '▫️';
+    grouped[rarity].push(`${emoji} ${row.items.name} ×${row.qty}`);
   }
 
   type AppConfigRow = {
@@ -63,41 +58,44 @@ export async function generateInventoryEmbed(ctx: BotContext, user: User) {
   };
   const config = cfg as AppConfigRow | null;
   const embedTitle = config?.inventory_embed_title || '🎒 인벤토리';
-  const embedColor = config?.inventory_embed_color || '#5865F2';
-  const embedDescTemplate = config?.inventory_embed_description || '{user}님의 인벤토리입니다.\n현재 포인트: **{points}p**';
+  const embedColor = config?.inventory_embed_color || '#FF69B4';
+  const balance = balanceData?.balance ?? 0;
+  const embedDescTemplate = config?.inventory_embed_description || '{user}님의 인벤토리입니다.\n💰 보유 포인트: {points}';
 
   const description = embedDescTemplate
     .replace('{user}', user.username)
-    .replace('{points}', (balanceData?.balance ?? 0).toLocaleString())
+    .replace('{points}', formatPoints(balance))
     .replace('{itemCount}', totalQty.toLocaleString());
 
-  const embed = new EmbedBuilder()
+  const embed = brandEmbed()
     .setTitle(embedTitle)
-    .setColor(embedColor as `#${string}`)
+    .setColor(parseHexColor(embedColor))
+    .setAuthor({ name: user.displayName, iconURL: user.displayAvatarURL() })
     .setDescription(description)
     .setThumbnail(user.displayAvatarURL())
-    .setFooter({ text: '장착: /장착 이름 • 해제: /해제' })
-    .setTimestamp();
+    .setFooter({ text: '장착: /장착 이름 · 해제: /해제 · 뽑기: /뽑기' });
 
   if (items.length === 0) {
     embed.addFields(
-      { name: '요약', value: '총 0종 / 0개', inline: true },
-      { name: '보유 아이템', value: '비어있음. /뽑기 로 아이템을 획득해보세요.' }
+      { name: '📦 요약', value: '총 0종 / 0개', inline: true },
+      { name: '보유 아이템', value: '비어있음. `/뽑기` 로 아이템을 획득해보세요!' }
     );
     return embed;
   }
 
   embed.addFields({
-    name: '요약',
+    name: '📦 요약',
     value: `총 **${items.length.toLocaleString()}종** / **${totalQty.toLocaleString()}개**`,
     inline: true
   });
+
+  embed.addFields({ name: LINE, value: '\u200b' });
 
   for (const rarity of RARITY_ORDER) {
     const lines = grouped[rarity];
     if (lines.length === 0) continue;
     embed.addFields({
-      name: RARITY_LABEL[rarity],
+      name: RarityLabel[rarity] || `${RarityEmoji[rarity] || '▫️'} ${rarity}`,
       value: lines.join('\n').slice(0, 1000)
     });
   }

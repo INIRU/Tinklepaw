@@ -190,18 +190,27 @@ export default function HomeStory(props: {
         </div>
       </section>
 
-      <section className="mx-auto mt-6 grid max-w-5xl gap-6 border-t border-[color:color-mix(in_srgb,var(--fg)_10%,transparent)] pt-8 sm:grid-cols-3">
-        <article data-home-soft>
+      <section className="mx-auto mt-6 grid max-w-5xl gap-4 border-t border-[color:color-mix(in_srgb,var(--fg)_10%,transparent)] pt-8 sm:grid-cols-3">
+        <article data-home-soft className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] p-4 transition-colors hover:border-[color:color-mix(in_srgb,var(--accent-pink)_25%,var(--border))]">
+          <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-[color:var(--accent-pink)]/15 text-[color:var(--accent-pink)]">
+            <span className="text-base">🌙</span>
+          </div>
           <h2 className="text-sm font-bold font-bangul text-[color:var(--fg)]">잠수 환영</h2>
-          <p className="mt-2 text-sm text-[color:var(--muted)]">눈팅만 해도 충분해요.</p>
+          <p className="mt-1.5 text-sm text-[color:var(--muted)] leading-relaxed">눈팅만 해도 충분해요.</p>
         </article>
-        <article data-home-soft>
+        <article data-home-soft className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] p-4 transition-colors hover:border-[color:color-mix(in_srgb,var(--accent-sky)_25%,var(--border))]">
+          <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-[color:var(--accent-sky)]/15 text-[color:var(--accent-sky)]">
+            <span className="text-base">☁️</span>
+          </div>
           <h2 className="text-sm font-bold font-bangul text-[color:var(--fg)]">가벼운 참여</h2>
-          <p className="mt-2 text-sm text-[color:var(--muted)]">하고 싶은 날만 천천히.</p>
+          <p className="mt-1.5 text-sm text-[color:var(--muted)] leading-relaxed">하고 싶은 날만 천천히.</p>
         </article>
-        <article data-home-soft>
+        <article data-home-soft className="rounded-2xl border border-[color:var(--border)] bg-[color:color-mix(in_srgb,var(--card)_88%,transparent)] p-4 transition-colors hover:border-[color:color-mix(in_srgb,var(--accent-lavender)_25%,var(--border))]">
+          <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-[color:var(--accent-lavender)]/15 text-[color:var(--accent-lavender)]">
+            <span className="text-base">🍵</span>
+          </div>
           <h2 className="text-sm font-bold font-bangul text-[color:var(--fg)]">편한 무드</h2>
-          <p className="mt-2 text-sm text-[color:var(--muted)]">부담 없이 오래 머무는 공간.</p>
+          <p className="mt-1.5 text-sm text-[color:var(--muted)] leading-relaxed">부담 없이 오래 머무는 공간.</p>
         </article>
       </section>
 

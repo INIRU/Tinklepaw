@@ -4,6 +4,7 @@ import type { ChatInputCommandInteraction } from 'discord.js';
 
 import type { SlashCommand } from './types.js';
 import { getBotContext } from '../context.js';
+import { successEmbed, errorEmbed, infoEmbed } from '../lib/embed.js';
 
 type EquipCandidate = {
   item_id: string;
@@ -126,7 +127,7 @@ export const equipCommand: SlashCommand = {
         .map((candidate) => `• ${candidate.name}`)
         .join('\n');
       await interaction.reply({
-        content: `아이템을 찾을 수 없습니다. 아래 이름으로 다시 시도해보세요.\n${suggestions}`,
+        embeds: [infoEmbed('🔍 아이템을 찾을 수 없어요', `아래 이름으로 다시 시도해보세요.\n\n${suggestions}`)],
         ephemeral: true
       });
       return;
@@ -140,7 +141,7 @@ export const equipCommand: SlashCommand = {
         .map(({ candidate }) => `• ${candidate.name}`)
         .join('\n');
       await interaction.reply({
-        content: `비슷한 아이템이 여러 개 있어요. 조금 더 정확히 입력해주세요.\n${nearby}`,
+        embeds: [infoEmbed('🔍 비슷한 아이템이 여러 개 있어요', `조금 더 정확히 입력해주세요.\n\n${nearby}`)],
         ephemeral: true
       });
       return;
@@ -154,18 +155,22 @@ export const equipCommand: SlashCommand = {
     if (error) {
       console.error('[Equip] set_equipped_item failed:', error);
       const msg = error.message === 'ITEM_NOT_OWNED' ? '보유하지 않은 아이템입니다.' : '장착 처리 중 오류가 발생했어요. 잠시 후 다시 시도해 주세요.';
-      await interaction.reply({ content: msg, ephemeral: true });
+      await interaction.reply({ embeds: [errorEmbed('장착 실패', msg)], ephemeral: true });
       return;
     }
 
     const row = Array.isArray(data) ? data[0] : null;
     const fuzzyMatched = normalizeForMatch(name) !== normalizeForMatch(matchedItem.name);
     const equippedLabel = fuzzyMatched ? `${matchedItem.name} (입력값: ${name})` : matchedItem.name;
+    const roleUpdating = row?.previous_role_id && row?.new_role_id && row.previous_role_id !== row.new_role_id;
 
     await interaction.reply({
-      content: row?.previous_role_id && row?.new_role_id && row.previous_role_id !== row.new_role_id
-        ? `**${equippedLabel}** 장착 완료. 역할을 업데이트합니다...`
-        : `**${equippedLabel}** 장착 완료.`
+      embeds: [
+        successEmbed(
+          '장착 완료',
+          `🛡️ **${equippedLabel}** 장착!${roleUpdating ? '\n역할을 업데이트합니다...' : ''}`,
+        )
+      ]
     });
   }
 };

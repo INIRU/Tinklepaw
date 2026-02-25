@@ -2,7 +2,6 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder,
   ModalBuilder,
   SlashCommandBuilder,
   TextInputBuilder,
@@ -16,6 +15,7 @@ import {
 import type { SlashCommand } from './types.js';
 import { getBotContext } from '../context.js';
 import { generateStockChartImage } from '../lib/stockChartImage.js';
+import { brandEmbed, errorEmbed, Colors, LINE, formatPoints, signedPoints, signedPct as signedPctFmt } from '../lib/embed.js';
 
 type StockCandle = {
   t: string;
@@ -63,8 +63,7 @@ const toNumber = (value: unknown): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const signed = (value: number) => `${value >= 0 ? '+' : ''}${value.toLocaleString()}`;
-const signedPct = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+// signedPoints / signedPctFmt imported from embed.js
 
 function parseCandles(raw: unknown): StockCandle[] {
   if (!Array.isArray(raw)) return [];
@@ -174,25 +173,27 @@ function tradeResultEmbed(row: StockTradeRow) {
   const newBalance = toNumber(row.out_new_balance);
   const unrealizedPnl = toNumber(row.out_unrealized_pnl);
 
-  return new EmbedBuilder()
-    .setTitle(`${isBuy ? '🟢' : '🟠'} 주식 ${sideLabel} 체결 완료`)
-    .setColor(isBuy ? 0x22c55e : 0xf97316)
+  return brandEmbed()
+    .setTitle(`${isBuy ? '🟢' : '🔴'} 주식 ${sideLabel} 체결 완료`)
+    .setColor(isBuy ? Colors.SUCCESS : Colors.WARNING)
     .setDescription(
-      `**체결 요약**\n` +
-      `- 수량: \`${qty.toLocaleString()}주\`\n` +
-      `- 체결 단가: \`${price.toLocaleString()}P\`\n` +
-      `- ${totalLabel}: \`${settlement.toLocaleString()}P\``,
+      [
+        `**체결 요약**`,
+        `> 수량: **${qty.toLocaleString()}주**`,
+        `> 체결 단가: **${price.toLocaleString()}P**`,
+        `> ${totalLabel}: **${settlement.toLocaleString()}P**`,
+      ].join('\n'),
     )
     .addFields(
-      { name: '💸 거래 금액', value: `\`${gross.toLocaleString()}P\``, inline: true },
-      { name: '🧾 거래 수수료', value: `\`${fee.toLocaleString()}P\``, inline: true },
-      { name: '💳 남은 포인트', value: `\`${newBalance.toLocaleString()}P\``, inline: true },
+      { name: '💸 거래 금액', value: formatPoints(gross), inline: true },
+      { name: '🧾 수수료', value: formatPoints(fee), inline: true },
+      { name: '💳 남은 포인트', value: formatPoints(newBalance), inline: true },
+      { name: LINE, value: '\u200b' },
       { name: '📦 보유 수량', value: `\`${holdingQty.toLocaleString()}주\``, inline: true },
-      { name: '📌 평균 단가', value: `\`${holdingAvg.toLocaleString()}P\``, inline: true },
-      { name: '📊 평가손익', value: `\`${signed(unrealizedPnl)}P\``, inline: true },
+      { name: '📌 평균 단가', value: formatPoints(holdingAvg), inline: true },
+      { name: '📊 평가손익', value: `\`${signedPoints(unrealizedPnl)}\``, inline: true },
     )
-    .setFooter({ text: '패널은 자동으로 새로고침됩니다 · 보유 수수료는 일 단위로 반영됩니다' })
-    .setTimestamp();
+    .setFooter({ text: '패널 자동 새로고침 · 보유 수수료 일 단위 반영' });
 }
 
 export const stockCommand: SlashCommand = {
@@ -226,33 +227,36 @@ export const stockCommand: SlashCommand = {
         holdingAvgPrice: board.holdingQty > 0 ? board.holdingAvgPrice : undefined,
       });
 
-      const embed = new EmbedBuilder()
-        .setColor(board.changePct >= 0 ? 0x60a5fa : 0xf87171)
+      const pctDisplay = signedPctFmt(board.changePct);
+      const embed = brandEmbed()
+        .setColor(board.changePct >= 0 ? Colors.STOCK_UP : Colors.STOCK_DOWN)
         .setTitle(`📊 ${board.name} · ${board.symbol}`)
         .setDescription(
-          `📍 현재가 **${board.price.toLocaleString()}P**  (${signedPct(board.changePct)})\n` +
-          `📈 보유 평가손익 **${signed(board.unrealizedPnl)}P**\n` +
-          `🤖 자동매매 + 뉴스 신호 기반 가격 형성`,
+          [
+            `📍 현재가  **${board.price.toLocaleString()}P**  (${pctDisplay})`,
+            `📈 평가손익  **${signedPoints(board.unrealizedPnl)}**`,
+            `🤖 자동매매 + 뉴스 신호 기반 가격 형성`,
+          ].join('\n'),
         )
         .addFields(
           {
             name: '💼 보유 포지션',
-            value: `수량 \`${board.holdingQty.toLocaleString()}주\`\n평단 \`${board.holdingAvgPrice.toLocaleString()}P\``,
+            value: `수량 **${board.holdingQty.toLocaleString()}주**\n평단 ${formatPoints(board.holdingAvgPrice)}`,
             inline: true,
           },
-          { name: '💰 평가 금액', value: `\`${board.holdingValue.toLocaleString()}P\``, inline: true },
-          { name: '💳 보유 포인트', value: `\`${board.balance.toLocaleString()}P\``, inline: true },
+          { name: '💰 평가 금액', value: formatPoints(board.holdingValue), inline: true },
+          { name: '💳 보유 포인트', value: formatPoints(board.balance), inline: true },
+          { name: LINE, value: '\u200b' },
           {
-            name: '🧾 수수료 정책',
-            value: `거래 ${(board.feeBps / 100).toFixed(2)}%\n보유 수수료 일 0.08% (상한 0.20%)`,
+            name: '🧾 수수료',
+            value: `거래 ${(board.feeBps / 100).toFixed(2)}%\n보유 일 0.08% (상한 0.20%)`,
             inline: true,
           },
-          { name: '⚡ 거래 방식', value: '버튼 클릭 -> 수량 입력 -> 즉시 체결', inline: true },
-          { name: '🕒 갱신 기준', value: '5분 봉 · 패널 15초 자동 갱신', inline: true },
+          { name: '⚡ 거래', value: '버튼 → 수량 입력 → 즉시 체결', inline: true },
+          { name: '🕒 갱신', value: '5분 봉 · 15초 자동 갱신', inline: true },
         )
         .setImage('attachment://stock-chart.png')
-        .setFooter({ text: '버튼으로 즉시 거래 가능' })
-        .setTimestamp();
+        .setFooter({ text: '📊 버튼으로 즉시 거래 가능' });
 
       await interaction.editReply({
         embeds: [embed],
@@ -354,10 +358,7 @@ export const stockCommand: SlashCommand = {
       if (error) {
         await modalSubmit.editReply({
           embeds: [
-            new EmbedBuilder()
-              .setTitle('❌ 거래 실패')
-              .setDescription(error.message || '거래를 처리하지 못했습니다.')
-              .setColor(0xef4444),
+            errorEmbed('거래 실패', error.message || '거래를 처리하지 못했습니다.'),
           ],
         });
         return;
@@ -367,10 +368,7 @@ export const stockCommand: SlashCommand = {
       if (!trade || !trade.out_success) {
         await modalSubmit.editReply({
           embeds: [
-            new EmbedBuilder()
-              .setTitle('❌ 거래 실패')
-              .setDescription(mapTradeError(trade?.out_error_code ?? null))
-              .setColor(0xef4444),
+            errorEmbed('거래 실패', mapTradeError(trade?.out_error_code ?? null)),
           ],
         });
         await renderPanel(false).catch(() => {});

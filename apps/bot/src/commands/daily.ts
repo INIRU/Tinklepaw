@@ -1,8 +1,9 @@
-import { EmbedBuilder, SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder } from 'discord.js';
 import type { ChatInputCommandInteraction } from 'discord.js';
 
 import { getBotContext } from '../context.js';
 import { generateDailyChestGif } from '../lib/dailyChestGif.js';
+import { LINE, brandEmbed, cooldownEmbed, statBlock } from '../lib/embed.js';
 import type { SlashCommand } from './types.js';
 
 type DailyChestTier = 'common' | 'rare' | 'epic' | 'legendary';
@@ -105,13 +106,22 @@ export const dailyCommand: SlashCommand = {
         const nextAt = formatNextAvailable(row.out_next_available_at);
         const nextAtRelative = toDiscordRelativeTime(row.out_next_available_at);
         const nextLine = nextAtRelative
-          ? `다음 보물상자 오픈 가능 시간: **${nextAt} (KST)** (${nextAtRelative})`
-          : `다음 보물상자 오픈 가능 시간: **${nextAt} (KST)**`;
-        const alreadyEmbed = new EmbedBuilder()
-          .setColor(0x64748b)
-          .setTitle('🕒 오늘의 보물상자는 이미 열었어!')
-          .setDescription(nextLine)
-          .addFields({ name: '현재 포인트', value: `${row.out_new_balance.toLocaleString('ko-KR')} p`, inline: true });
+          ? `**${nextAt} (KST)** (${nextAtRelative})`
+          : `**${nextAt} (KST)**`;
+        const alreadyEmbed = cooldownEmbed(
+          '오늘의 보물상자는 이미 열었어!',
+          [
+            `⏰ 다음 오픈 가능: ${nextLine}`,
+            '',
+            LINE,
+            '',
+            statBlock([
+              { emoji: '💳', label: '현재 포인트', value: row.out_new_balance.toLocaleString('ko-KR') + 'P' },
+            ]),
+          ].join('\n'),
+        )
+          .setAuthor({ name: interaction.user.displayName, iconURL: interaction.user.displayAvatarURL() })
+          .setFooter({ text: '내일 다시 /daily 로 보물상자를 열어봐!' });
 
         await interaction.editReply({ embeds: [alreadyEmbed] });
         return;
@@ -125,15 +135,22 @@ export const dailyCommand: SlashCommand = {
 
       const nextAtRelative = toDiscordRelativeTime(row.out_next_available_at);
 
-      const rewardEmbed = new EmbedBuilder()
+      const rewardEmbed = brandEmbed()
         .setColor(TIER_COLORS[tier])
+        .setAuthor({ name: interaction.user.displayName, iconURL: interaction.user.displayAvatarURL() })
         .setTitle('🎉 일일 보물상자 OPEN!')
         .setDescription(
           [
             `⭐ 등급: **${TIER_LABELS[tier]}**`,
-            `💰 포인트: **+${row.out_reward_points.toLocaleString('ko-KR')} p**`,
-            `🪙 현재 잔액: **${row.out_new_balance.toLocaleString('ko-KR')} p**`,
-            nextAtRelative ? `⏱️ 다음 상자: ${nextAtRelative}` : '⏱️ 다음 상자: 내일'
+            '',
+            LINE,
+            '',
+            statBlock([
+              { emoji: '💰', label: '획득 포인트', value: `+${row.out_reward_points.toLocaleString('ko-KR')}P` },
+              { emoji: '💳', label: '현재 잔액', value: `${row.out_new_balance.toLocaleString('ko-KR')}P` },
+            ]),
+            '',
+            nextAtRelative ? `⏰ 다음 상자: ${nextAtRelative}` : '⏰ 다음 상자: 내일',
           ].join('\n')
         )
         .setImage('attachment://treasure-open.gif')

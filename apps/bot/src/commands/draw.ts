@@ -15,6 +15,7 @@ import type { SlashCommand } from './types.js';
 import { getBotContext } from '../context.js';
 import { generateGachaResultImage } from '../lib/gachaImage.js';
 import { getAppConfig, type AppConfig } from '../services/config.js';
+import { brandEmbed, parseHexColor, RarityEmoji, LINE, progressBar } from '../lib/embed.js';
 
 type GachaDrawResult = {
   out_item_id: string;
@@ -174,14 +175,7 @@ export async function triggerGachaUI(
 
   let currentIndex = 0;
 
-  // 색상 문자열을 숫자로 변환하는 헬퍼 함수
-  const parseColor = (color: string | undefined): number => {
-    if (!color) return 0x5865f2;
-    if (color.startsWith('#')) {
-      return parseInt(color.slice(1), 16);
-    }
-    return parseInt(color, 16) || 0x5865f2;
-  };
+  const parseColor = parseHexColor;
 
   const showPool = async (
     index: number,
@@ -220,10 +214,10 @@ export async function triggerGachaUI(
     });
 
     const rarityDisplay = [
-      `**SSS (${pool.rate_sss}%)**: ${itemsByRarity.SSS.join(', ') || '없음'}`,
-      `**SS (${pool.rate_ss}%)**: ${itemsByRarity.SS.join(', ') || '없음'}`,
-      `**S (${pool.rate_s}%)**: ${itemsByRarity.S.join(', ') || '없음'}`,
-      `**R (${pool.rate_r}%)**: ${itemsByRarity.R.join(', ') || '없음'}`,
+      `${RarityEmoji.SSS} **SSS** (${pool.rate_sss}%)  ${itemsByRarity.SSS.join(', ') || '없음'}`,
+      `${RarityEmoji.SS} **SS** (${pool.rate_ss}%)  ${itemsByRarity.SS.join(', ') || '없음'}`,
+      `${RarityEmoji.S} **S** (${pool.rate_s}%)  ${itemsByRarity.S.join(', ') || '없음'}`,
+      `${RarityEmoji.R} **R** (${pool.rate_r}%)  ${itemsByRarity.R.join(', ') || '없음'}`,
     ].join('\n\n');
 
     const { data: balanceData } = await ctx.supabase
@@ -246,7 +240,8 @@ export async function triggerGachaUI(
     let pityInfo = '';
     if (pool.pity_threshold && pool.pity_rarity) {
       const remaining = pool.pity_threshold - pityCounter;
-      pityInfo = `\n천장: **${pityCounter}/${pool.pity_threshold}** (${remaining}회 남음, ${pool.pity_rarity} 확정)`;
+      const pityBar = progressBar(pityCounter, pool.pity_threshold, 12);
+      pityInfo = `\n🎯 천장: ${pityBar} **${pityCounter}/${pool.pity_threshold}** (${remaining}회 남음 → ${pool.pity_rarity} 확정)`;
     }
 
     const startAtIso = (pool as { start_at?: string | null }).start_at ?? null;
@@ -280,17 +275,18 @@ export async function triggerGachaUI(
       embedDescription += periodInfo;
     }
 
-    const embed = new EmbedBuilder()
-      .setTitle(botConfig.gacha_embed_title || `🎰 ${pool.name}`)
+    const kindBadge = pool.kind === 'limited' ? '【한정】' : '【상시】';
+    const embed = brandEmbed()
+      .setTitle(botConfig.gacha_embed_title || `🎰 ${pool.name} ${kindBadge}`)
       .setDescription(
-        `${embedDescription}\n\n💡 **더 멋진 연출과 편리한 조작은 [웹사이트](https://tinklepaw.vercel.app/draw)에서!**`,
+        `${embedDescription}\n\n${LINE}\n💡 **더 멋진 연출과 편리한 조작은 [웹사이트](https://tinklepaw.vercel.app/draw)에서!**`,
       )
       .setImage(
         pool.banner_image_url ||
           'https://via.placeholder.com/800x300?text=Gacha+Banner',
       )
       .setColor(parseColor(botConfig.gacha_embed_color))
-      .setFooter({ text: `풀 ${index + 1} / ${activePools.length}` });
+      .setFooter({ text: `🎰 풀 ${index + 1} / ${activePools.length} · ${pool.name}` });
 
     const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
@@ -497,6 +493,7 @@ export async function triggerGachaUI(
         (['SSS', 'SS', 'S', 'R'] as const).forEach((rarity) => {
           const items = resultsByRarity[rarity];
           if (items.length > 0) {
+            const emoji = RarityEmoji[rarity] || '▫️';
             const itemNames = items
               .map((item) => {
                 const displayName = item.discord_role_id
@@ -505,15 +502,15 @@ export async function triggerGachaUI(
                 const variantText = item.is_variant ? ' ✨변동' : '';
                 const rewardText =
                   !item.discord_role_id && (item.reward_points ?? 0) > 0
-                    ? ` (포인트 +${item.reward_points}p)`
+                    ? ` (+${item.reward_points}P)`
                     : !item.discord_role_id
                       ? ' (꽝)'
                       : '';
-                const refundText = item.refund_points ? ` (중복 +${item.refund_points}p)` : '';
+                const refundText = item.refund_points ? ` (중복 +${item.refund_points}P)` : '';
                 return `${displayName}${variantText}${rewardText}${refundText}`;
               })
               .join(', ');
-            resultLines.push(`**${rarity}**: ${itemNames}`);
+            resultLines.push(`${emoji} **${rarity}**: ${itemNames}`);
           }
         });
 
@@ -525,13 +522,14 @@ export async function triggerGachaUI(
           '{drawCount}',
           results.length.toString(),
         );
-        const resultEmbed = new EmbedBuilder()
+        const resultEmbed = brandEmbed()
           .setTitle(resultTitle)
           .setDescription(
-            `${resultLines.join('\n\n') || '결과 없음'}${errors.length > 0 ? `\n\n⚠️ 일부 회차 실패: ${errors.join(', ')}` : ''}`,
+            `${resultLines.join('\n\n') || '결과 없음'}${errors.length > 0 ? `\n\n${LINE}\n⚠️ 일부 회차 실패: ${errors.join(', ')}` : ''}`,
           )
           .setImage('attachment://gacha-result.png')
-          .setColor(parseColor(botConfig.gacha_embed_color));
+          .setColor(parseColor(botConfig.gacha_embed_color))
+          .setFooter({ text: `🎰 ${selectedPool.name} · ${results.length}회 뽑기 완료` });
 
         await buttonInteraction.editReply({
           embeds: [resultEmbed],
