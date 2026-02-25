@@ -202,7 +202,7 @@ const ServiceStatusCard = ({ title, samples }: { title: string; samples: Monitor
   const bars = samples.slice(-24);
 
   return (
-    <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/50 p-4 space-y-3 relative overflow-hidden">
+    <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)]/50 p-4 space-y-3 relative overflow-visible">
       {/* Subtle top gradient accent */}
       <div className={`absolute top-0 left-0 right-0 h-px ${
         status === 'operational' ? 'bg-gradient-to-r from-transparent via-emerald-400/50 to-transparent' :

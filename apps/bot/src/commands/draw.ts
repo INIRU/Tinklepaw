@@ -15,7 +15,7 @@ import type { SlashCommand } from './types.js';
 import { getBotContext } from '../context.js';
 import { generateGachaResultImage } from '../lib/gachaImage.js';
 import { getAppConfig, type AppConfig } from '../services/config.js';
-import { brandEmbed, parseHexColor, RarityEmoji, LINE, progressBar } from '../lib/embed.js';
+import { brandEmbed, parseHexColor, RarityEmoji, LINE } from '../lib/embed.js';
 
 type GachaDrawResult = {
   out_item_id: string;
@@ -240,8 +240,7 @@ export async function triggerGachaUI(
     let pityInfo = '';
     if (pool.pity_threshold && pool.pity_rarity) {
       const remaining = pool.pity_threshold - pityCounter;
-      const pityBar = progressBar(pityCounter, pool.pity_threshold, 12);
-      pityInfo = `\n🎯 천장: ${pityBar} **${pityCounter}/${pool.pity_threshold}** (${remaining}회 남음 → ${pool.pity_rarity} 확정)`;
+      pityInfo = `\n🎯 천장: **${pityCounter}/${pool.pity_threshold}** (${remaining}회 남음 → ${pool.pity_rarity} 확정)`;
     }
 
     const startAtIso = (pool as { start_at?: string | null }).start_at ?? null;

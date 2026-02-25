@@ -57,7 +57,7 @@ export const DOT_LINE = '· · · · · · · · · · · ·';
 export function progressBar(current: number, max: number, length = 10): string {
   const ratio = Math.max(0, Math.min(1, current / max));
   const filled = Math.round(ratio * length);
-  return '▰'.repeat(filled) + '▱'.repeat(length - filled);
+  return '█'.repeat(filled) + '░'.repeat(length - filled);
 }
 
 export function formatPoints(points: number): string {
