@@ -14,6 +14,7 @@ import {
 
 import type { SlashCommand } from './types.js';
 import { getBotContext } from '../context.js';
+import { getAppConfig } from '../services/config.js';
 import { generateStockChartImage } from '../lib/stockChartImage.js';
 import { brandEmbed, errorEmbed, Colors, LINE, formatPoints, signedPoints, signedPct as signedPctFmt } from '../lib/embed.js';
 
@@ -225,7 +226,7 @@ export const stockCommand: SlashCommand = {
     } | null = null;
 
     const renderPanel = async (disabled = false) => {
-      const board = await fetchDashboard(userId);
+      const [board, appCfg] = await Promise.all([fetchDashboard(userId), getAppConfig()]);
       cachedBoard = {
         price: board.price,
         feeBps: board.feeBps,
@@ -263,7 +264,7 @@ export const stockCommand: SlashCommand = {
           { name: LINE, value: '\u200b' },
           {
             name: '🧾 수수료',
-            value: `거래 ${(board.feeBps / 100).toFixed(2)}%\n보유 일 0.08% (상한 0.20%)`,
+            value: `거래 ${(board.feeBps / 100).toFixed(2)}%\n보유 일 ${(appCfg.stock_holding_fee_daily_bps / 100).toFixed(2)}% (상한 ${(appCfg.stock_holding_fee_daily_cap_bps / 100).toFixed(2)}%)`,
             inline: true,
           },
           { name: '⚡ 거래', value: '버튼 → 수량 입력 → 즉시 체결', inline: true },

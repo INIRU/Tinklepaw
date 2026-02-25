@@ -71,7 +71,7 @@ client.once('ready', () => {
   startMusicControlWorker();
   startVoiceRewardWorker(client);
   startStockNewsWorker(client);
-  startStockMarketMakerWorker();
+  startStockMarketMakerWorker(client);
   startPersonalRoleWorker(client);
 });
 
