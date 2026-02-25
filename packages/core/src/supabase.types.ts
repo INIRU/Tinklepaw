@@ -88,6 +88,11 @@ export type Database = {
           icon_image_url: string | null;
           last_heartbeat_at: string | null;
           error_log_channel_id: string | null;
+          stock_holding_fee_enabled: boolean;
+          stock_holding_fee_daily_bps: number;
+          stock_holding_fee_daily_cap_bps: number;
+          stock_holding_fee_last_applied_on: string | null;
+          stock_holding_fee_timezone: string;
           show_traceback_to_user: boolean;
           created_at: string;
           updated_at: string;
