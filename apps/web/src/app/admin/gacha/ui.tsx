@@ -544,8 +544,8 @@ export default function GachaAdminClient() {
   return (
     <main className="flex h-[calc(100dvh-64px)] overflow-hidden">
       <aside className="w-80 flex-shrink-0 border-r border-[color:var(--border)] bg-[color:var(--card)] p-4 overflow-y-auto">
-        <div className="text-[11px] tracking-[0.28em] muted-2">BANGULNYANG</div>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight font-bangul">가챠 관리</h1>
+        <div className="text-[11px] font-bold tracking-[0.3em] text-[color:var(--accent-sky)] opacity-80">GACHA MANAGER</div>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight font-bangul">가챠 관리</h1>
         <p className="mt-1 text-xs muted">풀 선택 후 설정하세요.</p>
 
         <button

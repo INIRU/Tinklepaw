@@ -368,22 +368,22 @@ export default function UsersAdminClient() {
   return (
     <main className="p-6 pb-24">
       <div className="mx-auto max-w-6xl">
-        <div className="text-[11px] tracking-[0.28em] muted-2">BANGULNYANG</div>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight font-bangul">유저 관리</h1>
+        <div className="text-[11px] font-bold tracking-[0.3em] text-[color:var(--accent-lavender)] opacity-80">USER MANAGEMENT</div>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight font-bangul">유저 관리</h1>
         <p className="mt-1 text-sm muted">유저별 포인트·장착·역할·인벤토리를 빠르게 조정할 수 있습니다.</p>
 
         <div className="mt-5 grid gap-3 text-xs sm:grid-cols-3">
-          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2">
-            <div className="muted-2">전체 유저</div>
-            <div className="mt-1 text-sm font-semibold">{userStats.total.toLocaleString()}명</div>
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)]/88 px-4 py-3">
+            <div className="text-[11px] font-semibold tracking-[0.18em] muted-2">전체 유저</div>
+            <div className="mt-1.5 text-lg font-bold text-[color:var(--fg)]">{userStats.total.toLocaleString()}명</div>
           </div>
-          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2">
-            <div className="muted-2">최근 24시간 활성</div>
-            <div className="mt-1 text-sm font-semibold">{userStats.active24h.toLocaleString()}명</div>
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)]/88 px-4 py-3">
+            <div className="text-[11px] font-semibold tracking-[0.18em] muted-2">최근 24시간 활성</div>
+            <div className="mt-1.5 text-lg font-bold text-[color:var(--accent-pink)]">{userStats.active24h.toLocaleString()}명</div>
           </div>
-          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--chip)] px-3 py-2">
-            <div className="muted-2">최근 7일 활성</div>
-            <div className="mt-1 text-sm font-semibold">{userStats.active7d.toLocaleString()}명</div>
+          <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)]/88 px-4 py-3">
+            <div className="text-[11px] font-semibold tracking-[0.18em] muted-2">최근 7일 활성</div>
+            <div className="mt-1.5 text-lg font-bold text-[color:var(--accent-sky)]">{userStats.active7d.toLocaleString()}명</div>
           </div>
         </div>
 

@@ -191,11 +191,12 @@ export function AdminNotificationPageClient() {
   return (
     <div className='space-y-6'>
       <div className='flex items-center gap-4'>
-        <div className='p-2.5 rounded-xl bg-[color:var(--card)] border border-[color:var(--border)] shadow-sm'>
-          <Mail className='w-5 h-5 text-[color:var(--accent-pink)]' />
+        <div className='flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-yellow-500/20 to-orange-500/10 text-yellow-600 dark:text-yellow-400 border border-[color:var(--border)]'>
+          <Mail className='w-5 h-5' />
         </div>
         <div>
-          <h1 className='text-2xl md:text-3xl font-bold font-bangul tracking-tight'>
+          <div className='text-[11px] font-bold tracking-[0.3em] text-yellow-600 dark:text-yellow-400 opacity-80'>NOTIFICATIONS</div>
+          <h1 className='mt-1 text-2xl md:text-3xl font-bold font-bangul tracking-tight'>
             알림 관리
           </h1>
           <p className='text-sm text-[color:var(--muted)] mt-0.5'>

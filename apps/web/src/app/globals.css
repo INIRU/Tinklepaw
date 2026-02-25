@@ -16,6 +16,8 @@
   --accent-sky: #78b7ff;
   --accent-lemon: #ffd36a;
   --accent-mint: #39d3b3;
+
+  --surface: rgba(255, 255, 255, 0.52);
 }
 
 html[data-theme='dark'] {
@@ -34,6 +36,8 @@ html[data-theme='dark'] {
   --accent-sky: #7dc7ff;
   --accent-lemon: #ffd67a;
   --accent-mint: #47d8ba;
+
+  --surface: rgba(16, 24, 44, 0.52);
 }
 
 @theme inline {

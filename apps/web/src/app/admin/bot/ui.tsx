@@ -350,14 +350,13 @@ export default function BotSettingsClient() {
       <div className="mx-auto max-w-4xl">
         <div className="flex flex-wrap items-end justify-between gap-3 mb-8">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 text-indigo-500 border border-indigo-500/20">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[color:var(--accent-mint)]/20 to-[color:var(--accent-sky)]/10 text-[color:var(--accent-mint)] border border-[color:var(--border)]">
               <Bot className="h-6 w-6" strokeWidth={2} />
             </div>
             <div>
-              <h1 className="text-3xl font-semibold tracking-tight font-bangul">봇 설정</h1>
-              <div className="flex items-center gap-2 mt-1">
-                <p className="text-sm muted">쿠로봇의 상태와 행동 방식을 설정합니다.</p>
-              </div>
+              <div className="text-[11px] font-bold tracking-[0.3em] text-[color:var(--accent-mint)] opacity-80">BOT SETTINGS</div>
+              <h1 className="mt-1 text-3xl font-semibold tracking-tight font-bangul">봇 설정</h1>
+              <p className="mt-1 text-sm muted">쿠로봇의 상태와 행동 방식을 설정합니다.</p>
             </div>
           </div>
           <button
@@ -376,7 +375,7 @@ export default function BotSettingsClient() {
             onClick={() => setCurrentTab('general')}
             className={`px-4 py-2 text-sm font-semibold rounded-t-lg border-b-2 transition-colors ${
               currentTab === 'general'
-                ? 'border-indigo-500 text-indigo-500'
+                ? 'border-[color:var(--accent-mint)] text-[color:var(--accent-mint)]'
                 : 'border-transparent text-[color:var(--muted)] hover:text-[color:var(--fg)]'
             }`}
           >
@@ -387,7 +386,7 @@ export default function BotSettingsClient() {
             onClick={() => setCurrentTab('embed')}
             className={`px-4 py-2 text-sm font-semibold rounded-t-lg border-b-2 transition-colors ${
               currentTab === 'embed'
-                ? 'border-indigo-500 text-indigo-500'
+                ? 'border-[color:var(--accent-mint)] text-[color:var(--accent-mint)]'
                 : 'border-transparent text-[color:var(--muted)] hover:text-[color:var(--fg)]'
             }`}
           >
@@ -398,7 +397,7 @@ export default function BotSettingsClient() {
             onClick={() => setCurrentTab('log')}
             className={`px-4 py-2 text-sm font-semibold rounded-t-lg border-b-2 transition-colors ${
               currentTab === 'log'
-                ? 'border-indigo-500 text-indigo-500'
+                ? 'border-[color:var(--accent-mint)] text-[color:var(--accent-mint)]'
                 : 'border-transparent text-[color:var(--muted)] hover:text-[color:var(--fg)]'
             }`}
           >

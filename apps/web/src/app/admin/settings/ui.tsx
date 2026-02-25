@@ -1247,14 +1247,18 @@ export default function SettingsClient() {
     <main className="p-6">
       <div className="mx-auto max-w-4xl">
         <div className="flex flex-wrap items-end justify-between gap-3">
-          <h1 className="text-3xl font-semibold tracking-tight font-bangul">설정</h1>
+          <div>
+            <div className="text-[11px] font-bold tracking-[0.3em] text-[color:var(--accent-pink)] opacity-80">APP SETTINGS</div>
+            <h1 className="mt-1 text-3xl font-semibold tracking-tight font-bangul">설정</h1>
+            <p className="mt-1 text-sm muted">입장 메시지, 채팅 보상, 채널 설정 등을 관리합니다.</p>
+          </div>
           <button
             type="button"
             className="inline-flex items-center gap-2 rounded-xl btn-soft px-3 py-2 text-xs font-semibold"
             onClick={() => router.back()}
           >
             <ChevronLeft className="h-4 w-4" aria-hidden="true" strokeWidth={2} />
-            <span>이전 페이지로 돌아가기</span>
+            <span>돌아가기</span>
           </button>
         </div>
 

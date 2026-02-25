@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { ArrowLeft, ChartColumnBig, Clock3, Database, MessageCircle, Phone, RefreshCw, Sparkles, UserMinus, UserPlus } from 'lucide-react';
+import { ArrowLeft, ChartColumnBig, Clock3, Database, MessageCircle, Phone, RefreshCw, UserMinus, UserPlus } from 'lucide-react';
 
 import { CustomSelect } from '@/components/ui/CustomSelect';
 
@@ -551,19 +551,16 @@ export default function AdminAnalyticsClient() {
 
   return (
     <main className="relative overflow-hidden px-4 pb-20 pt-6 sm:px-6">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_top,rgba(45,212,191,0.18),transparent_62%)]" />
-      <div className="pointer-events-none absolute -right-20 top-28 h-72 w-72 rounded-full bg-sky-400/12 blur-3xl" />
-      <div className="pointer-events-none absolute -left-20 bottom-20 h-72 w-72 rounded-full bg-cyan-400/10 blur-3xl" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_top,rgba(45,212,191,0.14),transparent_62%)]" />
+      <div className="pointer-events-none absolute -right-20 top-28 h-72 w-72 rounded-full bg-[color:var(--accent-sky)]/8 blur-3xl" />
+      <div className="pointer-events-none absolute -left-20 bottom-20 h-72 w-72 rounded-full bg-[color:var(--accent-mint)]/6 blur-3xl" />
 
       <div className="relative mx-auto max-w-6xl space-y-6">
         <section className="rounded-[30px] border border-[color:var(--border)]/80 bg-[linear-gradient(145deg,var(--surface),var(--chip))] p-6 shadow-[0_20px_45px_rgba(15,23,42,0.12)]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-[color:var(--border)]/70 bg-[color:var(--surface)]/75 px-3 py-1 text-[11px] font-bold tracking-[0.18em] text-[color:var(--accent-mint)]">
-                <Sparkles className="h-3.5 w-3.5" />
-                ADMIN ANALYTICS
-              </div>
-              <h1 className="mt-4 text-3xl font-bold tracking-tight font-bangul text-[color:var(--fg)]">활동 통계</h1>
+              <div className="text-[11px] font-bold tracking-[0.3em] text-[color:var(--accent-mint)] opacity-80">ANALYTICS</div>
+              <h1 className="mt-3 text-3xl font-bold tracking-tight font-bangul text-[color:var(--fg)]">활동 통계</h1>
               <p className="mt-2 text-sm muted">10분 간격 DB 스냅샷 기반으로 로딩을 줄이고, 기간별 활동/경제 흐름을 한눈에 확인합니다.</p>
             </div>
             <Link href="/admin" className="inline-flex items-center gap-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--surface)]/75 px-3 py-2 text-sm font-semibold hover:bg-[color:var(--chip)]/80">
@@ -607,7 +604,7 @@ export default function AdminAnalyticsClient() {
                 onClick={() => setPeriod(item)}
                 className={`rounded-xl border px-4 py-2 text-sm font-semibold transition ${
                   period === item
-                    ? 'border-[color:var(--accent-mint)] bg-[color:var(--accent-mint)]/18 text-[color:var(--accent-mint)] shadow-[0_0_0_1px_rgba(45,212,191,0.35)]'
+                    ? 'border-[color:var(--accent-pink)] bg-[color:var(--accent-pink)]/16 text-[color:var(--accent-pink)] shadow-[0_0_0_1px_rgba(255,95,162,0.30)]'
                     : 'border-[color:var(--border)] bg-[color:var(--surface)]/70 hover:bg-[color:var(--chip)]/80'
                 }`}
               >
