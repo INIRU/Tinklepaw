@@ -1,0 +1,11 @@
+# Nyaru Minecraft Plugin Config
+api:
+  url: "https://tinklepaw.vercel.app"
+  key: ""  # 환경변수 MINECRAFT_API_KEY 권장
+supabase:
+  url: ""
+  key: ""
+discord:
+  invite_url: "discord.gg/tinklepaw"
+  token: ""
+  guild_id: ""
