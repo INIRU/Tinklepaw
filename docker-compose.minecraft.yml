@@ -15,7 +15,7 @@ services:
       MEMORY: "8G"
       SPIGET_RESOURCES: "81534"
       # 81534 = Chunky
-      PLUGINS: "https://github.com/INIRU/Tinklepaw/releases/download/minecraft-v1.0.7/nyaru-plugin.jar,https://cdn.modrinth.com/data/EeyAn23L/versions/8AIsBJk2/FancyNpcs-2.9.2.338.jar"
+      PLUGINS: "https://github.com/INIRU/Tinklepaw/releases/download/minecraft-v1.0.8/nyaru-plugin.jar,https://cdn.modrinth.com/data/EeyAn23L/versions/8AIsBJk2/FancyNpcs-2.9.2.338.jar"
       ENABLE_RCON: "true"
       RCON_PASSWORD: "${MINECRAFT_RCON_PASSWORD}"
       RCON_PORT: "25575"
