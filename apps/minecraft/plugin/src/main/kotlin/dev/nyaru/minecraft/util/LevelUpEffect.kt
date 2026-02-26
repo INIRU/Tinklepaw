@@ -18,7 +18,7 @@ fun triggerLevelUp(plugin: NyaruPlugin, player: Player, newLevel: Int, newSkillP
     player.showTitle(
         Title.title(
             legacy.deserialize("§6§l⬆ LEVEL UP!"),
-            legacy.deserialize("§eレベル §6$newLevel §e달성!"),
+            legacy.deserialize("§eLv.§6$newLevel §e달성!"),
             Title.Times.times(
                 Duration.ofMillis(200),
                 Duration.ofMillis(3000),
@@ -32,7 +32,7 @@ fun triggerLevelUp(plugin: NyaruPlugin, player: Player, newLevel: Int, newSkillP
 
     // Firework at player feet
     @Suppress("DEPRECATION")
-    val fw = player.world.spawnEntity(player.location, EntityType.FIREWORK_ROCKET) as Firework
+    val fw = player.world.spawnEntity(player.location.add(0.0, 3.0, 0.0), EntityType.FIREWORK_ROCKET) as Firework
     val fwMeta = fw.fireworkMeta
     fwMeta.addEffect(
         FireworkEffect.builder()
