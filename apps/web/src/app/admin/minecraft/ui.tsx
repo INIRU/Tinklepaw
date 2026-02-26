@@ -275,10 +275,17 @@ function MarketTab() {
       max_price: String(item.max_price),
     };
 
-  const setEdit = (symbol: string, field: keyof MarketRowEdit, value: string) => {
+  const setEdit = (item: MarketItem, field: keyof MarketRowEdit, value: string) => {
     setEdits((prev) => ({
       ...prev,
-      [symbol]: { ...(prev[symbol] ?? { base_price: '', min_price: '', max_price: '' }), [field]: value },
+      [item.symbol]: {
+        ...(prev[item.symbol] ?? {
+          base_price: String(item.base_price),
+          min_price: String(item.min_price),
+          max_price: String(item.max_price),
+        }),
+        [field]: value,
+      },
     }));
   };
 
@@ -425,7 +432,7 @@ function MarketTab() {
                           <input
                             type="number"
                             value={e.base_price}
-                            onChange={(ev) => setEdit(item.symbol, 'base_price', ev.target.value)}
+                            onChange={(ev) => setEdit(item, 'base_price', ev.target.value)}
                             className="w-24 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-1.5 text-sm"
                           />
                         </td>
@@ -433,7 +440,7 @@ function MarketTab() {
                           <input
                             type="number"
                             value={e.min_price}
-                            onChange={(ev) => setEdit(item.symbol, 'min_price', ev.target.value)}
+                            onChange={(ev) => setEdit(item, 'min_price', ev.target.value)}
                             className="w-24 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-1.5 text-sm"
                           />
                         </td>
@@ -441,7 +448,7 @@ function MarketTab() {
                           <input
                             type="number"
                             value={e.max_price}
-                            onChange={(ev) => setEdit(item.symbol, 'max_price', ev.target.value)}
+                            onChange={(ev) => setEdit(item, 'max_price', ev.target.value)}
                             className="w-24 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface)] px-3 py-1.5 text-sm"
                           />
                         </td>
