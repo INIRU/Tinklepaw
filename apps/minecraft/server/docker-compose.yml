@@ -1,9 +1,15 @@
 services:
+  fix-permissions:
+    image: busybox
+    user: "0:0"
+    command: sh -c "mkdir -p /data/plugins && rm -f /data/plugins/nyaru-plugin-*.jar && chown -R 1000:1000 /data"
+    volumes:
+      - mc_data:/data
+
   minecraft:
     build:
       context: ..
       dockerfile: server/Dockerfile
-    user: "0:0"
     ports:
       - "25565:25565"
     volumes:
@@ -11,7 +17,9 @@ services:
     environment:
       - MINECRAFT_API_KEY=${MINECRAFT_API_KEY}
       - SERVER_PORT=25565
-      - RUN_AS_ROOT=true
+    depends_on:
+      fix-permissions:
+        condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:
