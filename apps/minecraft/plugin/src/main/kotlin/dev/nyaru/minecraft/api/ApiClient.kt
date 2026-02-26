@@ -53,7 +53,8 @@ class ApiClient(private val baseUrl: String, private val apiKey: String) {
             balance = data.get("balance")?.asInt ?: 0,
             job = data.get("job")?.asString ?: "miner",
             level = data.get("level")?.asInt ?: 1,
-            xp = data.get("xp")?.asInt ?: 0
+            xp = data.get("xp")?.asInt ?: 0,
+            title = data.get("title")?.takeIf { !it.isJsonNull }?.asString
         )
     }
 

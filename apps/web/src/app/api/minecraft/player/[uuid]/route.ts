@@ -22,7 +22,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ uuid: st
     return NextResponse.json({ linked: false });
   }
 
-  const [{ data: balance }, { data: job }] = await Promise.all([
+  const [{ data: balance }, { data: job }, { data: equippedItem }, { data: personalRole }] = await Promise.all([
     supabase
       .schema('nyang')
       .from('point_balances')
@@ -35,7 +35,22 @@ export async function GET(req: Request, { params }: { params: Promise<{ uuid: st
       .select('job, level, xp')
       .eq('minecraft_uuid', uuid)
       .maybeSingle(),
+    supabase
+      .schema('nyang')
+      .from('equipped')
+      .select('items(item_name)')
+      .eq('discord_user_id', player.discord_user_id)
+      .maybeSingle(),
+    supabase
+      .schema('nyang')
+      .from('personal_roles')
+      .select('discord_user_id')
+      .eq('discord_user_id', player.discord_user_id)
+      .maybeSingle(),
   ]);
+
+  const equippedItemName = (equippedItem as { items?: { item_name?: string } | null } | null)?.items?.item_name ?? null;
+  const title = equippedItemName ?? (personalRole ? '부스터' : null);
 
   return NextResponse.json({
     linked: true,
@@ -45,5 +60,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ uuid: st
     job: job?.job ?? 'miner',
     level: job?.level ?? 1,
     xp: job?.xp ?? 0,
+    title,
   });
 }

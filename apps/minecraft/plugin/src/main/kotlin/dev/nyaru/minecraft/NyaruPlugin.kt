@@ -8,6 +8,7 @@ import dev.nyaru.minecraft.commands.MarketCommand
 import dev.nyaru.minecraft.commands.QuestCommand
 import dev.nyaru.minecraft.commands.ShopCommand
 import dev.nyaru.minecraft.commands.TradeCommand
+import dev.nyaru.minecraft.listeners.ActionBarManager
 import dev.nyaru.minecraft.listeners.BlockBreakListener
 import dev.nyaru.minecraft.listeners.BlockDropListener
 import dev.nyaru.minecraft.listeners.PlayerJoinListener
@@ -36,9 +37,11 @@ class NyaruPlugin : JavaPlugin() {
 
         apiClient = ApiClient(apiUrl, apiKey)
 
+        val actionBarManager = ActionBarManager(this)
+        server.pluginManager.registerEvents(actionBarManager, this)
         server.pluginManager.registerEvents(BlockBreakListener(this), this)
         server.pluginManager.registerEvents(BlockDropListener(this), this)
-        server.pluginManager.registerEvents(PlayerJoinListener(this), this)
+        server.pluginManager.registerEvents(PlayerJoinListener(this, actionBarManager), this)
 
         getCommand("연동")?.setExecutor(LinkCommand(this))
         getCommand("잔고")?.setExecutor(BalanceCommand(this))

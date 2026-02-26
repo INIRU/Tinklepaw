@@ -15,7 +15,7 @@ import org.bukkit.event.player.PlayerQuitEvent
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-class PlayerJoinListener(private val plugin: NyaruPlugin) : Listener {
+class PlayerJoinListener(private val plugin: NyaruPlugin, private val actionBarManager: ActionBarManager) : Listener {
 
     private val frozenPlayers = ConcurrentHashMap.newKeySet<UUID>()
     private val discordInvite = plugin.config.getString("discord.invite_url") ?: "discord.gg/tinklepaw"
@@ -102,6 +102,7 @@ class PlayerJoinListener(private val plugin: NyaruPlugin) : Listener {
                             frozenPlayers.remove(uuid)
                             player.sendMessage("§a§l✓ Discord 연동 완료! 이동이 허용됩니다.")
                         })
+                        actionBarManager.refresh(uuid)
                     }
                 }
             }

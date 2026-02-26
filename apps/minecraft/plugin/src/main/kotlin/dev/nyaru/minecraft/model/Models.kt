@@ -7,7 +7,8 @@ data class PlayerInfo(
     val balance: Int = 0,
     val job: String = "miner",
     val level: Int = 1,
-    val xp: Int = 0
+    val xp: Int = 0,
+    val title: String? = null
 )
 
 data class MarketItem(
