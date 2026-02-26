@@ -31,11 +31,14 @@ class PlayerJoinListener(private val plugin: NyaruPlugin) : Listener {
 
         plugin.pluginScope.launch {
             val info = plugin.apiClient.getPlayer(uuid)
-            Bukkit.getScheduler().runTask(plugin, Runnable {
-                if (info?.linked == true) return@Runnable
+            if (info?.linked == true) return@launch
 
+            // Auto-generate OTP for the player
+            val result = plugin.apiClient.requestLink(uuid, player.name)
+
+            Bukkit.getScheduler().runTask(plugin, Runnable {
                 frozenPlayers.add(player.uniqueId)
-                sendWelcomeMessage(player)
+                sendWelcomeMessage(player, result?.otp)
             })
         }
     }
@@ -56,20 +59,26 @@ class PlayerJoinListener(private val plugin: NyaruPlugin) : Listener {
         frozenPlayers.remove(event.player.uniqueId)
     }
 
-    private fun sendWelcomeMessage(player: org.bukkit.entity.Player) {
+    private fun sendWelcomeMessage(player: org.bukkit.entity.Player, otp: String?) {
         player.sendMessage("§8§m                                        ")
         player.sendMessage("§r")
         player.sendMessage("§d§l[ 방울냥 Minecraft ]")
         player.sendMessage("§r")
         player.sendMessage("§f이 서버는 Discord 계정 연동이 필요합니다.")
         player.sendMessage("§r")
-        player.sendMessage("§e연동 방법:")
-        player.sendMessage("§71. §fMinecraft Discord에 참여하세요")
-        player.sendMessage("§7   §b$discordInvite")
-        player.sendMessage("§72. §f아래 명령어로 연동 코드를 받으세요:")
-        player.sendMessage("§7   §a/nyaru 연동 <Discord ID>")
-        player.sendMessage("§73. §fDiscord에서 코드를 입력하세요:")
-        player.sendMessage("§7   §a/연동확인 <코드>")
+        if (otp != null) {
+            player.sendMessage("§e연동 코드: §f§l$otp")
+            player.sendMessage("§r")
+            player.sendMessage("§71. §fDiscord 서버에 참여하세요")
+            player.sendMessage("§7   §b$discordInvite")
+            player.sendMessage("§72. §fDiscord에서 아래 명령어를 입력하세요:")
+            player.sendMessage("§7   §a/연동확인 $otp")
+        } else {
+            player.sendMessage("§71. §fDiscord 서버에 참여하세요")
+            player.sendMessage("§7   §b$discordInvite")
+            player.sendMessage("§72. §fMinecraft에서 §a/연동§f 을 입력해 코드를 받으세요")
+            player.sendMessage("§73. §fDiscord에서 §a/연동확인 <코드>§f 입력")
+        }
         player.sendMessage("§r")
         player.sendMessage("§c연동 전까지 이동이 제한됩니다.")
         player.sendMessage("§r")

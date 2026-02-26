@@ -1,7 +1,13 @@
 package dev.nyaru.minecraft
 
 import dev.nyaru.minecraft.api.ApiClient
-import dev.nyaru.minecraft.commands.NyaruCommand
+import dev.nyaru.minecraft.commands.BalanceCommand
+import dev.nyaru.minecraft.commands.JobCommand
+import dev.nyaru.minecraft.commands.LinkCommand
+import dev.nyaru.minecraft.commands.MarketCommand
+import dev.nyaru.minecraft.commands.QuestCommand
+import dev.nyaru.minecraft.commands.ShopCommand
+import dev.nyaru.minecraft.commands.TradeCommand
 import dev.nyaru.minecraft.listeners.BlockBreakListener
 import dev.nyaru.minecraft.listeners.BlockDropListener
 import dev.nyaru.minecraft.listeners.PlayerJoinListener
@@ -34,8 +40,15 @@ class NyaruPlugin : JavaPlugin() {
         server.pluginManager.registerEvents(BlockDropListener(this), this)
         server.pluginManager.registerEvents(PlayerJoinListener(this), this)
 
-        getCommand("nyaru")?.setExecutor(NyaruCommand(this))
-        getCommand("nyaru")?.tabCompleter = NyaruCommand(this)
+        getCommand("연동")?.setExecutor(LinkCommand(this))
+        getCommand("잔고")?.setExecutor(BalanceCommand(this))
+        val jobCmd = JobCommand(this)
+        getCommand("직업")?.setExecutor(jobCmd)
+        getCommand("직업")?.tabCompleter = jobCmd
+        getCommand("상점")?.setExecutor(ShopCommand(this))
+        getCommand("시세")?.setExecutor(MarketCommand(this))
+        getCommand("퀘스트")?.setExecutor(QuestCommand(this))
+        getCommand("거래소")?.setExecutor(TradeCommand(this))
 
         logger.info("NyaruPlugin enabled!")
     }

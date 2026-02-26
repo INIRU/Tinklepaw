@@ -5,7 +5,24 @@ api-version: "1.21"
 authors: [Nyaru]
 description: Nyaru Discord economy integration for Minecraft
 commands:
-  nyaru:
-    description: Nyaru plugin main command
-    usage: /nyaru <subcommand>
-    aliases: [냐루]
+  연동:
+    description: Discord 계정 연동 코드 발급
+    usage: /연동
+  잔고:
+    description: 포인트 잔고 확인
+    usage: /잔고
+  직업:
+    description: 직업 정보 및 변경
+    usage: /직업 [변경 <광부|농부>]
+  상점:
+    description: 마켓 상점 GUI
+    usage: /상점
+  시세:
+    description: 현재 아이템 시세
+    usage: /시세
+  퀘스트:
+    description: 오늘의 퀘스트 GUI
+    usage: /퀘스트
+  거래소:
+    description: P2P 거래소 GUI
+    usage: /거래소

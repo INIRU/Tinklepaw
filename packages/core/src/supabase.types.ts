@@ -513,27 +513,27 @@ export type Database = {
       };
       minecraft_link_requests: {
         Row: {
-          discord_user_id: string;
+          minecraft_uuid: string;
           otp: string;
           expires_at: string;
           created_at: string;
-          minecraft_uuid: string | null;
+          discord_user_id: string | null;
           minecraft_name: string | null;
         };
         Insert: {
-          discord_user_id: string;
+          minecraft_uuid: string;
           otp: string;
           expires_at: string;
           created_at?: string;
-          minecraft_uuid?: string | null;
+          discord_user_id?: string | null;
           minecraft_name?: string | null;
         };
         Update: Partial<{
-          discord_user_id: string;
+          minecraft_uuid: string;
           otp: string;
           expires_at: string;
           created_at: string;
-          minecraft_uuid: string | null;
+          discord_user_id: string | null;
           minecraft_name: string | null;
         }>;
         Relationships: [];

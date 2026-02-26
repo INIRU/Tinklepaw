@@ -26,25 +26,21 @@ export const minecraftLinkCommand: SlashCommand = {
 
     const ctx = getBotContext();
 
+    // Look up by OTP (generated at join time, before Discord ID was known)
     const { data: request } = await ctx.supabase
       .schema('nyang')
       .from('minecraft_link_requests')
       .select('otp, expires_at, minecraft_uuid, minecraft_name')
-      .eq('discord_user_id', discordUserId)
+      .eq('otp', otp)
       .maybeSingle();
 
     if (!request) {
-      await interaction.editReply('❌ 연동 요청을 찾을 수 없습니다. Minecraft에서 `/nyaru 연동 <Discord ID>`를 먼저 실행하세요.');
+      await interaction.editReply('❌ 연동 코드를 찾을 수 없습니다. Minecraft에 다시 접속하거나 `/연동`으로 새 코드를 받으세요.');
       return;
     }
 
     if (new Date(request.expires_at) < new Date()) {
-      await interaction.editReply('❌ 연동 코드가 만료되었습니다. Minecraft에서 다시 시도하세요.');
-      return;
-    }
-
-    if (request.otp !== otp) {
-      await interaction.editReply('❌ 잘못된 연동 코드입니다.');
+      await interaction.editReply('❌ 연동 코드가 만료되었습니다. Minecraft에서 `/연동`으로 새 코드를 받으세요.');
       return;
     }
 
@@ -53,16 +49,42 @@ export const minecraftLinkCommand: SlashCommand = {
       return;
     }
 
-    // Check if already linked
-    const { data: existing } = await ctx.supabase
+    // Check if Discord user already linked
+    const { data: existingByDiscord } = await ctx.supabase
       .schema('nyang')
       .from('minecraft_players')
       .select('minecraft_uuid')
       .eq('discord_user_id', discordUserId)
       .maybeSingle();
 
-    if (existing) {
-      await interaction.editReply(`ℹ️ 이미 Minecraft 계정이 연동되어 있습니다. (UUID: \`${existing.minecraft_uuid}\`)`);
+    if (existingByDiscord) {
+      await interaction.editReply(`ℹ️ 이미 Minecraft 계정이 연동되어 있습니다. (UUID: \`${existingByDiscord.minecraft_uuid}\`)`);
+      return;
+    }
+
+    // Check if this Minecraft UUID is already linked to another Discord account
+    const { data: existingByUuid } = await ctx.supabase
+      .schema('nyang')
+      .from('minecraft_players')
+      .select('discord_user_id')
+      .eq('minecraft_uuid', request.minecraft_uuid)
+      .maybeSingle();
+
+    if (existingByUuid) {
+      await interaction.editReply('❌ 이미 다른 Discord 계정과 연동된 Minecraft 계정입니다.');
+      return;
+    }
+
+    // Check that the Discord user exists in the system
+    const { data: user } = await ctx.supabase
+      .schema('nyang')
+      .from('users')
+      .select('discord_user_id')
+      .eq('discord_user_id', discordUserId)
+      .maybeSingle();
+
+    if (!user) {
+      await interaction.editReply('❌ Discord 계정이 방울냥 서버에 등록되어 있지 않습니다. 서버에 참여 후 다시 시도하세요.');
       return;
     }
 
@@ -98,10 +120,10 @@ export const minecraftLinkCommand: SlashCommand = {
       .schema('nyang')
       .from('minecraft_link_requests')
       .delete()
-      .eq('discord_user_id', discordUserId);
+      .eq('minecraft_uuid', request.minecraft_uuid);
 
     await interaction.editReply(
-      `✅ **${request.minecraft_name}** 계정 연동 완료!\nMinecraft에서 \`/nyaru 잔고\`로 포인트를 확인하세요.`
+      `✅ **${request.minecraft_name}** 계정 연동 완료!\nMinecraft에서 이동이 허용됩니다.`
     );
   }
 };

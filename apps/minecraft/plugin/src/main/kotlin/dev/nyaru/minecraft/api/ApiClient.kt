@@ -57,9 +57,8 @@ class ApiClient(private val baseUrl: String, private val apiKey: String) {
         )
     }
 
-    suspend fun requestLink(discordId: String, uuid: String, minecraftName: String): LinkRequestResult? {
+    suspend fun requestLink(uuid: String, minecraftName: String): LinkRequestResult? {
         val data = post("/link/request", mapOf(
-            "discordId" to discordId,
             "uuid" to uuid,
             "minecraftName" to minecraftName
         )) ?: return null
