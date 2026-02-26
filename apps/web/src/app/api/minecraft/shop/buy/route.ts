@@ -4,17 +4,6 @@ import { requireMinecraftApiKey, isResponse } from '@/lib/server/guards-api';
 
 export const runtime = 'nodejs';
 
-const SEED_SHOP: Record<string, { price: number; displayName: string }> = {
-  wheat_seeds:    { price: 5,  displayName: '밀 씨앗' },
-  potato:         { price: 7,  displayName: '감자' },
-  carrot:         { price: 8,  displayName: '당근' },
-  sugar_cane:     { price: 6,  displayName: '사탕수수' },
-  beetroot_seeds: { price: 10, displayName: '비트루트 씨앗' },
-  melon_seeds:    { price: 12, displayName: '수박 씨앗' },
-  pumpkin_seeds:  { price: 12, displayName: '호박 씨앗' },
-  cocoa_beans:    { price: 15, displayName: '코코아 씨앗' },
-};
-
 export async function POST(req: Request) {
   const guard = await requireMinecraftApiKey(req);
   if (isResponse(guard)) return guard;
@@ -24,13 +13,34 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'MISSING_FIELDS' }, { status: 400 });
   }
 
-  const shopItem = SEED_SHOP[body.symbol];
-  if (!shopItem) {
+  const supabase = createSupabaseAdminClient();
+
+  // Look up item from market (must be category=seed and enabled)
+  const { data: item } = await supabase
+    .schema('nyang')
+    .from('mc_market_items')
+    .select('symbol, display_name, category, enabled, mc_market_prices(current_price)')
+    .eq('symbol', body.symbol)
+    .eq('enabled', true)
+    .maybeSingle();
+
+  if (!item) {
     return NextResponse.json({ error: 'INVALID_ITEM' }, { status: 400 });
   }
 
-  const totalCost = shopItem.price * body.qty;
-  const supabase = createSupabaseAdminClient();
+  if (item.category !== 'seed') {
+    return NextResponse.json({ error: 'NOT_A_SEED' }, { status: 400 });
+  }
+
+  const priceRow = Array.isArray(item.mc_market_prices)
+    ? item.mc_market_prices[0]
+    : item.mc_market_prices;
+  const unitPrice: number = priceRow?.current_price ?? 0;
+  if (unitPrice <= 0) {
+    return NextResponse.json({ error: 'PRICE_UNAVAILABLE' }, { status: 400 });
+  }
+
+  const totalCost = unitPrice * body.qty;
 
   // Get discord_user_id from minecraft_players
   const { data: mcPlayer } = await supabase
@@ -79,8 +89,9 @@ export async function POST(req: Request) {
 
   return NextResponse.json({
     success: true,
-    displayName: shopItem.displayName,
+    displayName: item.display_name,
     qty: body.qty,
+    unitPrice,
     totalCost,
     newBalance: bal.balance - totalCost,
   });

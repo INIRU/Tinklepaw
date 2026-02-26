@@ -28,18 +28,6 @@ class ShopGui(private val plugin: NyaruPlugin, private val player: Player) {
 
     enum class Page { MAIN, MINERAL, CROP, SEED }
 
-    data class SeedItem(val symbol: String, val displayName: String, val material: Material, val price: Int)
-
-    val SEED_ITEMS = listOf(
-        SeedItem("wheat_seeds",    "밀 씨앗",       Material.WHEAT_SEEDS,    5),
-        SeedItem("potato",         "감자",           Material.POTATO,          7),
-        SeedItem("carrot",         "당근",           Material.CARROT,          8),
-        SeedItem("sugar_cane",     "사탕수수",       Material.SUGAR_CANE,      6),
-        SeedItem("beetroot_seeds", "비트루트 씨앗",  Material.BEETROOT_SEEDS,  10),
-        SeedItem("melon_seeds",    "수박 씨앗",      Material.MELON_SEEDS,     12),
-        SeedItem("pumpkin_seeds",  "호박 씨앗",      Material.PUMPKIN_SEEDS,   12),
-        SeedItem("cocoa_beans",    "코코아 씨앗",    Material.COCOA_BEANS,     15),
-    )
 
     private val legacy = LegacyComponentSerializer.legacySection()
     private var currentPage = Page.MAIN
@@ -218,6 +206,13 @@ class ShopGui(private val plugin: NyaruPlugin, private val player: Player) {
             Page.SEED -> {
                 when (slot) {
                     45 -> showMain()
+                    53 -> {
+                        player.playSound(player.location, Sound.UI_BUTTON_CLICK, 0.6f, 1.2f)
+                        plugin.pluginScope.launch {
+                            marketItems = plugin.apiClient.getMarket()
+                            Bukkit.getScheduler().runTask(plugin, Runnable { showSeed() })
+                        }
+                    }
                     else -> handleBuy(slot, isRightClick)
                 }
             }
@@ -328,6 +323,7 @@ class ShopGui(private val plugin: NyaruPlugin, private val player: Player) {
 
     private fun showSeed() {
         currentPage = Page.SEED
+        filteredItems = marketItems.filter { it.category == "seed" }
         activeInventories.remove(inventory)
         inventory = Bukkit.createInventory(null, 54, legacy.deserialize("\u00A7e\u00A7l\uD83C\uDF31 \uC528\uC558 \uC0C1\uC810"))
 
@@ -338,14 +334,20 @@ class ShopGui(private val plugin: NyaruPlugin, private val player: Player) {
         for (i in 45..53) inventory.setItem(i, yellowGlass)
 
         val itemSlots = listOf(10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22, 23, 24, 25)
-        SEED_ITEMS.forEachIndexed { idx, seed ->
+        filteredItems.forEachIndexed { idx, item ->
             if (idx >= itemSlots.size) return@forEachIndexed
-            val stack = ItemStack(seed.material)
+            val mat = runCatching { Material.valueOf(item.mcMaterial) }.getOrNull() ?: return@forEachIndexed
+            val stack = ItemStack(mat)
             stack.editMeta { meta ->
-                meta.displayName(legacy.deserialize("\u00A7e\u00A7l${seed.displayName}"))
+                val priceDiff = item.currentPrice - item.basePrice
+                val pctChange = if (item.basePrice > 0) (priceDiff * 100.0 / item.basePrice) else 0.0
+                val trendColor = if (priceDiff >= 0) "\u00A7a" else "\u00A7c"
+                val trendSign = if (priceDiff >= 0) "\u25B2 +${String.format("%.1f", pctChange)}%" else "\u25BC ${String.format("%.1f", pctChange)}%"
+                meta.displayName(legacy.deserialize("\u00A7e\u00A7l${item.displayName}"))
                 meta.lore(listOf(
-                    legacy.deserialize("\u00A77\uAC00\uACA9: \u00A7e${seed.price}P \u00A77/ 1\uAC1C"),
-                    legacy.deserialize("\u00A77\uAC00\uACA9: \u00A7e${seed.price * 16}P \u00A77/ 16\uAC1C"),
+                    legacy.deserialize("\u00A77\uD604\uC7AC\uAC00: \u00A7e${item.currentPrice}P \u00A77(\uAE30\uC900\uAC00 ${item.basePrice}P)"),
+                    legacy.deserialize("${trendColor}${trendSign}"),
+                    legacy.deserialize("\u00A77\uAC00\uACA9: \u00A7e${item.currentPrice * 16}P \u00A77/ 16\uAC1C"),
                     Component.empty(),
                     legacy.deserialize("\u00A7f\uC88C\uD074\uB9AD: \u00A771\uAC1C \uAD6C\uB9E4  \u00A7f\uC6B0\uD074\uB9AD: \u00A7716\uAC1C \uAD6C\uB9E4")
                 ))
@@ -357,6 +359,11 @@ class ShopGui(private val plugin: NyaruPlugin, private val player: Player) {
         back.editMeta { meta -> meta.displayName(legacy.deserialize("\u00A7f\u2190 \uB4A4\uB85C")) }
         inventory.setItem(45, back)
 
+        // Slot 53: Refresh
+        val refresh = ItemStack(Material.COMPASS)
+        refresh.editMeta { meta -> meta.displayName(legacy.deserialize("\u00A77\uC0C8\uB85C\uACE0\uCE68")) }
+        inventory.setItem(53, refresh)
+
         activeInventories[inventory] = this
         player.openInventory(inventory)
         player.playSound(player.location, Sound.BLOCK_CHEST_OPEN, 0.8f, 1.3f)
@@ -365,20 +372,21 @@ class ShopGui(private val plugin: NyaruPlugin, private val player: Player) {
     private fun handleBuy(slot: Int, isRightClick: Boolean) {
         val itemSlots = listOf(10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22, 23, 24, 25)
         val idx = itemSlots.indexOf(slot)
-        if (idx < 0 || idx >= SEED_ITEMS.size) return
+        if (idx < 0 || idx >= filteredItems.size) return
 
-        val seed = SEED_ITEMS[idx]
+        val item = filteredItems[idx]
         val qty = if (isRightClick) 16 else 1
         val uuid = player.uniqueId.toString()
+        val mat = runCatching { Material.valueOf(item.mcMaterial) }.getOrNull() ?: return
 
         player.sendMessage("\u00A7a\uAD6C\uB9E4 \uC911...")
         plugin.pluginScope.launch {
-            val success = plugin.apiClient.buySeed(uuid, seed.symbol, qty)
+            val success = plugin.apiClient.buySeed(uuid, item.symbol, qty)
             Bukkit.getScheduler().runTask(plugin, Runnable {
                 if (success) {
-                    player.inventory.addItem(ItemStack(seed.material, qty))
+                    player.inventory.addItem(ItemStack(mat, qty))
                     player.playSound(player.location, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.2f)
-                    player.sendMessage("\u00A7a${seed.displayName} \u00A7f${qty}\uAC1C \uAD6C\uB9E4 \uC644\uB8CC!")
+                    player.sendMessage("\u00A7a${item.displayName} \u00A7f${qty}\uAC1C \uAD6C\uB9E4 \uC644\uB8CC! \u00A7c-${item.currentPrice * qty}P")
                 } else {
                     player.playSound(player.location, Sound.ENTITY_VILLAGER_NO, 0.8f, 1.0f)
                     player.sendMessage("\u00A7c\uAD6C\uB9E4 \uC2E4\uD328. \uD3EC\uC778\uD2B8\uAC00 \uBD80\uC871\uD558\uAC70\uB098 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.")
