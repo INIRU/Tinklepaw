@@ -40,7 +40,10 @@ commands:
   도움말:
     description: 명령어 도움말 GUI
     usage: /도움말
+  보호:
+    description: 블럭 보호 모드 ON/OFF 토글
+    usage: /보호
   로그:
-    description: 블럭 설치/파괴 로그 조회
-    usage: /로그 [플레이어] [페이지]
+    description: 블럭 로그 조사 모드 토글 (좌클릭으로 블럭 기록 조회)
+    usage: /로그
     permission: nyaru.admin

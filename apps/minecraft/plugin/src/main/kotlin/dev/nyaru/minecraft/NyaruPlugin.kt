@@ -9,6 +9,7 @@ import dev.nyaru.minecraft.commands.JobCommand
 import dev.nyaru.minecraft.commands.LinkCommand
 import dev.nyaru.minecraft.commands.LogCommand
 import dev.nyaru.minecraft.commands.MarketCommand
+import dev.nyaru.minecraft.commands.ProtectCommand
 import dev.nyaru.minecraft.commands.QuestCommand
 import dev.nyaru.minecraft.commands.SkillCommand
 import dev.nyaru.minecraft.commands.TeamCommand
@@ -87,7 +88,7 @@ class NyaruPlugin : JavaPlugin() {
         server.pluginManager.registerEvents(HelpGui.HelpGuiListener(), this)
 
         val skillManager = SkillManager(this)
-        actionBarManager = ActionBarManager(this)
+        actionBarManager = ActionBarManager(this, protectionManager)
         val chatTabListener = ChatTabListener(actionBarManager)
         actionBarManager.chatTabListener = chatTabListener
 
@@ -136,9 +137,10 @@ class NyaruPlugin : JavaPlugin() {
         getCommand("팀")?.setExecutor(teamCmd)
         getCommand("팀")?.tabCompleter = teamCmd
         getCommand("도움말")?.setExecutor(HelpCommand())
-        val logCmd = LogCommand(blockLogger)
+        val logCmd = LogCommand(blockLogger, pluginScope)
         getCommand("로그")?.setExecutor(logCmd)
-        getCommand("로그")?.tabCompleter = logCmd
+        server.pluginManager.registerEvents(logCmd, this)
+        getCommand("보호")?.setExecutor(ProtectCommand(protectionManager))
 
         logger.info("NyaruPlugin enabled!")
     }

@@ -2,6 +2,7 @@ package dev.nyaru.minecraft.listeners
 
 import dev.nyaru.minecraft.NyaruPlugin
 import dev.nyaru.minecraft.model.PlayerInfo
+import dev.nyaru.minecraft.protection.ProtectionManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -16,7 +17,7 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-class ActionBarManager(private val plugin: NyaruPlugin) : Listener {
+class ActionBarManager(private val plugin: NyaruPlugin, private val pm: ProtectionManager? = null) : Listener {
 
     private val cache = ConcurrentHashMap<UUID, PlayerInfo>()
     var chatTabListener: ChatTabListener? = null
@@ -71,7 +72,7 @@ class ActionBarManager(private val plugin: NyaruPlugin) : Listener {
         }
     }
 
-    private fun buildActionBarText(info: PlayerInfo): net.kyori.adventure.text.Component {
+    private fun buildActionBarText(info: PlayerInfo, uuid: java.util.UUID): net.kyori.adventure.text.Component {
         val jobKr = when (info.job) {
             "miner" -> "§9광부"
             "farmer" -> "§a농부"
@@ -81,7 +82,8 @@ class ActionBarManager(private val plugin: NyaruPlugin) : Listener {
         val xpNeeded = (100 * Math.pow(info.level.toDouble(), 1.6)).toInt().coerceAtLeast(1)
         val filledBars = (info.xp.toDouble() / xpNeeded * 8).toInt().coerceIn(0, 8)
         val xpBar = "§a" + "▌".repeat(filledBars) + "§8" + "▌".repeat(8 - filledBars)
-        val text = "$jobKr §7Lv.${info.level} $xpBar §8| §e${points}P"
+        val protectIcon = if (pm?.isProtectionEnabled(uuid.toString()) == true) "§a🔒" else "§7🔓"
+        val text = "$jobKr §7Lv.${info.level} $xpBar §8| §e${points}P §8| $protectIcon"
         return LegacyComponentSerializer.legacySection().deserialize(text)
     }
 
@@ -89,7 +91,7 @@ class ActionBarManager(private val plugin: NyaruPlugin) : Listener {
         Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, Runnable {
             for (player in Bukkit.getOnlinePlayers()) {
                 val info = cache[player.uniqueId] ?: continue
-                player.sendActionBar(buildActionBarText(info))
+                player.sendActionBar(buildActionBarText(info, player.uniqueId))
             }
         }, 20L, 30L)
     }

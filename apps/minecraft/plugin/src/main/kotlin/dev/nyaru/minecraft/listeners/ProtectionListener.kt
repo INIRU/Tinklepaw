@@ -67,11 +67,12 @@ class ProtectionListener(
     private val legacy = LegacyComponentSerializer.legacySection()
     private val deny get() = legacy.deserialize("§c🔒 보호된 블럭입니다.")
 
-    // ── Place: auto-protect ──────────────────────────────────────────────────
+    // ── Place: protect only if player has protection mode ON ────────────────
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     fun onPlace(event: BlockPlaceEvent) {
         val uuid = event.player.uniqueId.toString()
+        if (!pm.isProtectionEnabled(uuid)) return
         pm.protect(event.block.location, uuid)
         // For tall doors, also protect the upper half
         if (event.block.type in DOOR_MATERIALS) {

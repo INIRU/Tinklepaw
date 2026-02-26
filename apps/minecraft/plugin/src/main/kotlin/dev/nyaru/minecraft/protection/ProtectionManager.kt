@@ -16,6 +16,8 @@ class ProtectionManager(private val dataFolder: File) {
     private val protections = ConcurrentHashMap<String, String>()
     // ownerUuid -> set of member uuids
     private val teams = ConcurrentHashMap<String, MutableSet<String>>()
+    // players with protection mode ON (in-memory only, resets on restart)
+    private val protectionEnabled = ConcurrentHashMap.newKeySet<String>()
 
     init {
         dataFolder.mkdirs()
@@ -62,6 +64,14 @@ class ProtectionManager(private val dataFolder: File) {
     }
 
     fun getTeamMembers(ownerUuid: String): Set<String> = teams[ownerUuid] ?: emptySet()
+
+    fun isProtectionEnabled(uuid: String) = protectionEnabled.contains(uuid)
+
+    /** Returns the new state (true = enabled, false = disabled). */
+    fun toggleProtection(uuid: String): Boolean {
+        return if (protectionEnabled.remove(uuid)) false
+        else { protectionEnabled.add(uuid); true }
+    }
 
     private fun load() {
         if (protectionsFile.exists()) {

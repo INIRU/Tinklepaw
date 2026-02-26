@@ -75,10 +75,27 @@ class BlockLogger(private val dataFolder: File) {
         ))
     }
 
+    /** Read the last [limit] entries at a specific block location (most recent first). */
+    fun readAtLocation(world: String, x: Int, y: Int, z: Int, limit: Int = 50): List<BlockLogEntry> {
+        val results = mutableListOf<BlockLogEntry>()
+        val today = LocalDate.now()
+        for (daysBack in 0..6) {
+            val file = logFile(today.minusDays(daysBack.toLong()))
+            if (!file.exists()) continue
+            file.readLines().asReversed().forEach { line ->
+                if (results.size >= limit) return results
+                if (line.isBlank()) return@forEach
+                val e = BlockLogEntry.fromLine(line) ?: return@forEach
+                if (e.world == world && e.x == x && e.y == y && e.z == z) results.add(e)
+            }
+            if (results.size >= limit) return results
+        }
+        return results
+    }
+
     /** Read the last [limit] entries, optionally filtered by playerName. */
     fun readRecent(limit: Int = 100, playerName: String? = null): List<BlockLogEntry> {
         val results = mutableListOf<BlockLogEntry>()
-        // Read today's log first, then yesterday's if needed
         val today = LocalDate.now()
         for (daysBack in 0..6) {
             val date = today.minusDays(daysBack.toLong())
