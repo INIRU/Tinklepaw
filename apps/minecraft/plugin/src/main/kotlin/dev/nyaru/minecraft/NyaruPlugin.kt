@@ -2,7 +2,9 @@ package dev.nyaru.minecraft
 
 import dev.nyaru.minecraft.api.ApiClient
 import dev.nyaru.minecraft.api.DirectClient
+import dev.nyaru.minecraft.cache.PlayerCache
 import dev.nyaru.minecraft.commands.AdminCommand
+import dev.nyaru.minecraft.commands.SyncCommand
 import dev.nyaru.minecraft.commands.BalanceCommand
 import dev.nyaru.minecraft.commands.HelpCommand
 import dev.nyaru.minecraft.commands.JobCommand
@@ -142,6 +144,7 @@ class NyaruPlugin : JavaPlugin() {
         getCommand("로그")?.setExecutor(logCmd)
         server.pluginManager.registerEvents(logCmd, this)
         getCommand("보호")?.setExecutor(ProtectCommand(protectionManager))
+        getCommand("nyaru-invalidate")?.setExecutor(SyncCommand())
 
         logger.info("NyaruPlugin enabled!")
     }

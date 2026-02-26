@@ -47,3 +47,7 @@ commands:
     description: 블럭 로그 조사 모드 토글 (좌클릭으로 블럭 기록 조회)
     usage: /로그
     permission: nyaru.admin
+  nyaru-invalidate:
+    description: Invalidate player cache (RCON/console only)
+    usage: /nyaru-invalidate <uuid>
+    permission: nyaru.admin

@@ -8,6 +8,7 @@ import { inferIntentFromGemini } from '../services/gemini.js';
 import { triggerGachaUI } from '../commands/draw.js';
 import { handleError } from '../errorHandler.js';
 import { getAppConfig } from '../services/config.js';
+import { invalidateLinkedPlayer } from '../lib/minecraftSync.js';
 import { getMusic, getNodeStatus, updateMusicSetupMessage, updateMusicState } from '../services/music.js';
 import { isSpotifyQuery, normalizeMusicQuery, searchTracksWithFallback } from '../services/musicSearch.js';
 import { recordActivityEvent } from '../services/activityEvents.js';
@@ -75,6 +76,7 @@ export function registerMessageCreate(client: Client) {
       const results = Array.isArray(data) ? data : [data];
       const earned = results.find((r) => r && r.granted_points > 0);
       if (earned) {
+        invalidateLinkedPlayer(message.author.id);
         // 이모지 반응 설정 확인
         const { data: config } = await ctx.supabase
           .from('app_config')

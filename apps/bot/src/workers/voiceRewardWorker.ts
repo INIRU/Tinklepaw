@@ -3,6 +3,7 @@ import type { Client } from 'discord.js';
 import { getBotContext } from '../context.js';
 import { getAppConfig } from '../services/config.js';
 import { recordActivityEvents } from '../services/activityEvents.js';
+import { invalidateLinkedPlayer } from '../lib/minecraftSync.js';
 
 export function startVoiceRewardWorker(client: Client) {
   let isRunning = false;
@@ -72,6 +73,8 @@ export function startVoiceRewardWorker(client: Client) {
             .then(({ error: rpcError }) => {
               if (rpcError) {
                 console.error('[VoicePoints] Failed to grant points:', { userId: member.id, channelId: state.channelId, error: rpcError });
+              } else {
+                invalidateLinkedPlayer(member.id);
               }
             })
         );

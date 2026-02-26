@@ -1,6 +1,7 @@
 package dev.nyaru.minecraft.api
 
 import com.google.gson.JsonParser
+import dev.nyaru.minecraft.cache.PlayerCache
 import dev.nyaru.minecraft.model.MarketItem
 import dev.nyaru.minecraft.model.PlayerInfo
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +44,9 @@ class DirectClient(
             .build()
 
     suspend fun getPlayer(uuid: String): PlayerInfo? = withContext(Dispatchers.IO) {
+        // Return cached entry if still fresh
+        PlayerCache.get(uuid)?.let { return@withContext it.info }
+
         val playerArr = client.newCall(supabaseGet(
             "/minecraft_players?minecraft_uuid=eq.${enc(uuid)}&select=discord_user_id,minecraft_name&limit=1"
         )).execute().use { resp ->
@@ -93,7 +97,7 @@ class DirectClient(
             val roleId = itemsObj?.get("discord_role_id")?.takeIf { !it.isJsonNull }?.asString
             val (titleColor, titleIconUrl) = if (roleId != null) getRoleData(roleId) else Pair(null, null)
 
-            PlayerInfo(
+            val result = PlayerInfo(
                 linked = true,
                 discordUserId = discordId,
                 minecraftName = playerObj.get("minecraft_name")?.takeIf { !it.isJsonNull }?.asString,
@@ -105,6 +109,8 @@ class DirectClient(
                 titleColor = titleColor,
                 titleIconUrl = titleIconUrl
             )
+            PlayerCache.put(uuid, result)
+            result
         }
     }
 

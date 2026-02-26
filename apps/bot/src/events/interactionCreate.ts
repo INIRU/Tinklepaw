@@ -12,6 +12,7 @@ import { applyMusicFilterPreset, clearMusicState, formatDuration, getMusic, getN
 import type { MusicFilterPreset } from '../services/music.js';
 
 import type { SlashCommand } from '../commands/types.js';
+import { invalidateLinkedPlayer } from '../lib/minecraftSync.js';
 
 const commandMap: Map<string, SlashCommand> = new Map(commands.map((c) => [c.name, c] as const));
 const musicCommandActionMap: Partial<Record<string, string>> = {
@@ -1183,6 +1184,7 @@ export function registerInteractionCreate(client: Client) {
           const result = data as { success?: boolean; message?: string; points?: number; item_name?: string } | null;
 
           if (result?.success) {
+            invalidateLinkedPlayer(userId);
             // 알림 정보 가져오기
             const { data: notificationData } = await ctx.supabase
               .from('notifications')

@@ -3,6 +3,7 @@ package dev.nyaru.minecraft.api
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import dev.nyaru.minecraft.cache.PlayerCache
 import dev.nyaru.minecraft.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -103,6 +104,7 @@ class ApiClient(private val baseUrl: String, private val apiKey: String, private
         if (freshnessPct != null) payload["freshnessPct"] = freshnessPct
         if (purityPct != null) payload["purityPct"] = purityPct
         val data = post("/market/sell", payload) ?: return null
+        PlayerCache.invalidate(uuid)
         return SellResult(
             netPoints = data.get("netPoints").asInt,
             unitPrice = data.get("unitPrice").asInt,
@@ -132,6 +134,7 @@ class ApiClient(private val baseUrl: String, private val apiKey: String, private
 
     suspend fun claimQuest(uuid: String, questId: String): Int? {
         val data = post("/quests/claim", mapOf("uuid" to uuid, "questId" to questId)) ?: return null
+        PlayerCache.invalidate(uuid)
         return data.get("rewardPoints")?.asInt
     }
 
@@ -211,7 +214,9 @@ class ApiClient(private val baseUrl: String, private val apiKey: String, private
 
     suspend fun buySeed(uuid: String, symbol: String, qty: Int): Boolean {
         val data = post("/shop/buy", mapOf("uuid" to uuid, "symbol" to symbol, "qty" to qty)) ?: return false
-        return data.get("success")?.asBoolean ?: false
+        val success = data.get("success")?.asBoolean ?: false
+        if (success) PlayerCache.invalidate(uuid)
+        return success
     }
 
     suspend fun upgradeSkill(uuid: String, skill: String): Triple<Boolean, Int, Int>? {
