@@ -21,10 +21,13 @@ import java.util.concurrent.ConcurrentHashMap
 
 class ActionBarManager(private val plugin: NyaruPlugin, private val pm: ProtectionManager? = null) : Listener {
 
+    // Local display cache — always valid for immediate action bar rendering
+    private val cache = ConcurrentHashMap<UUID, PlayerInfo>()
+    // Dedup set: prevents concurrent re-fetches triggered by RCON invalidation
+    private val rconRefetchSet: MutableSet<UUID> = Collections.newSetFromMap(ConcurrentHashMap())
     var chatTabListener: ChatTabListener? = null
-    private val fetchingSet: MutableSet<UUID> = Collections.newSetFromMap(ConcurrentHashMap())
 
-    fun getInfo(uuid: UUID): PlayerInfo? = PlayerCache.get(uuid.toString())?.info
+    fun getInfo(uuid: UUID): PlayerInfo? = cache[uuid]
 
     init {
         startRefreshLoop()
@@ -38,6 +41,7 @@ class ActionBarManager(private val plugin: NyaruPlugin, private val pm: Protecti
             delay(3000)
             val info = plugin.apiClient.getPlayer(player.uniqueId.toString())
             if (info?.linked == true) {
+                cache[player.uniqueId] = info
                 Bukkit.getScheduler().runTask(plugin, Runnable {
                     chatTabListener?.updateTabName(player, info)
                 })
@@ -48,8 +52,9 @@ class ActionBarManager(private val plugin: NyaruPlugin, private val pm: Protecti
     @EventHandler
     fun onQuit(event: PlayerQuitEvent) {
         val uuid = event.player.uniqueId
+        cache.remove(uuid)
         PlayerCache.invalidate(uuid.toString())
-        fetchingSet.remove(uuid)
+        rconRefetchSet.remove(uuid)
     }
 
     fun refresh(uuid: UUID) {
@@ -57,10 +62,20 @@ class ActionBarManager(private val plugin: NyaruPlugin, private val pm: Protecti
             PlayerCache.invalidate(uuid.toString())
             val info = plugin.apiClient.getPlayer(uuid.toString())
             val player = Bukkit.getPlayer(uuid)
-            if (player != null) {
-                Bukkit.getScheduler().runTask(plugin, Runnable {
-                    chatTabListener?.updateTabName(player, if (info?.linked == true) info else null)
-                })
+            if (info?.linked == true) {
+                cache[uuid] = info
+                if (player != null) {
+                    Bukkit.getScheduler().runTask(plugin, Runnable {
+                        chatTabListener?.updateTabName(player, info)
+                    })
+                }
+            } else {
+                cache.remove(uuid)
+                if (player != null) {
+                    Bukkit.getScheduler().runTask(plugin, Runnable {
+                        chatTabListener?.updateTabName(player, null)
+                    })
+                }
             }
         }
     }
@@ -83,24 +98,25 @@ class ActionBarManager(private val plugin: NyaruPlugin, private val pm: Protecti
     private fun startDisplayLoop() {
         Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, Runnable {
             for (player in Bukkit.getOnlinePlayers()) {
-                val cached = PlayerCache.get(player.uniqueId.toString())
-                if (cached != null) {
-                    player.sendActionBar(buildActionBarText(cached.info, player.uniqueId))
-                } else if (fetchingSet.add(player.uniqueId)) {
-                    // Cache miss (expired or RCON-invalidated) → lazy re-fetch
+                val info = cache[player.uniqueId] ?: continue
+                // RCON invalidation: PlayerCache cleared but local cache still has stale data
+                // → trigger background re-fetch to sync fresh balance
+                if (PlayerCache.get(player.uniqueId.toString()) == null && rconRefetchSet.add(player.uniqueId)) {
                     plugin.pluginScope.launch {
                         try {
-                            val info = plugin.apiClient.getPlayer(player.uniqueId.toString())
-                            if (info?.linked == true) {
+                            val fresh = plugin.apiClient.getPlayer(player.uniqueId.toString())
+                            if (fresh?.linked == true) {
+                                cache[player.uniqueId] = fresh
                                 Bukkit.getScheduler().runTask(plugin, Runnable {
-                                    chatTabListener?.updateTabName(player, info)
+                                    chatTabListener?.updateTabName(player, fresh)
                                 })
                             }
                         } finally {
-                            fetchingSet.remove(player.uniqueId)
+                            rconRefetchSet.remove(player.uniqueId)
                         }
                     }
                 }
+                player.sendActionBar(buildActionBarText(info, player.uniqueId))
             }
         }, 20L, 30L)
     }
@@ -110,20 +126,17 @@ class ActionBarManager(private val plugin: NyaruPlugin, private val pm: Protecti
             while (isActive) {
                 delay(30_000)
                 for (player in Bukkit.getOnlinePlayers()) {
-                    if (fetchingSet.add(player.uniqueId)) {
-                        launch {
-                            try {
-                                PlayerCache.invalidate(player.uniqueId.toString())
-                                val info = plugin.apiClient.getPlayer(player.uniqueId.toString())
-                                if (info?.linked == true) {
-                                    Bukkit.getScheduler().runTask(plugin, Runnable {
-                                        chatTabListener?.updateTabName(player, info)
-                                    })
-                                }
-                            } finally {
-                                fetchingSet.remove(player.uniqueId)
-                            }
-                        }
+                    val info = plugin.apiClient.getPlayer(player.uniqueId.toString())
+                    if (info?.linked == true) {
+                        cache[player.uniqueId] = info
+                        Bukkit.getScheduler().runTask(plugin, Runnable {
+                            chatTabListener?.updateTabName(player, info)
+                        })
+                    } else {
+                        cache.remove(player.uniqueId)
+                        Bukkit.getScheduler().runTask(plugin, Runnable {
+                            chatTabListener?.updateTabName(player, null)
+                        })
                     }
                 }
             }
