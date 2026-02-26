@@ -15,7 +15,6 @@ export async function POST(req: Request) {
 
   const supabase = createSupabaseAdminClient();
 
-  // Check player exists
   const { data: player } = await supabase
     .schema('nyang')
     .from('minecraft_players')
@@ -27,11 +26,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'NOT_LINKED' }, { status: 404 });
   }
 
-  // Delete player record and job record
+  // Delete dependent records first to avoid FK constraint violations
   await Promise.all([
-    supabase.schema('nyang').from('minecraft_players').delete().eq('minecraft_uuid', body.uuid),
-    supabase.schema('nyang').from('minecraft_jobs').delete().eq('minecraft_uuid', body.uuid),
+    supabase.schema('nyang').from('mc_market_trades').delete().eq('minecraft_uuid', body.uuid),
+    supabase.schema('nyang').from('mc_daily_quests').delete().eq('minecraft_uuid', body.uuid),
+    supabase.schema('nyang').from('mc_p2p_listings').delete().eq('seller_uuid', body.uuid),
   ]);
+
+  // Delete player (cascades to minecraft_jobs)
+  const { error } = await supabase
+    .schema('nyang')
+    .from('minecraft_players')
+    .delete()
+    .eq('minecraft_uuid', body.uuid);
+
+  if (error) {
+    return NextResponse.json({ error: 'DELETE_FAILED' }, { status: 500 });
+  }
 
   return NextResponse.json({ success: true });
 }

@@ -70,7 +70,7 @@ class NyaruPlugin : JavaPlugin() {
         server.pluginManager.registerEvents(PlayerJoinListener(this, actionBarManager), this)
 
         getCommand("연동")?.setExecutor(LinkCommand(this))
-        getCommand("연동해제")?.setExecutor(UnlinkCommand(this))
+        getCommand("연동해제")?.setExecutor(UnlinkCommand(this, actionBarManager))
         getCommand("잔고")?.setExecutor(BalanceCommand(this, actionBarManager))
         val jobCmd = JobCommand(this, actionBarManager)
         getCommand("직업")?.setExecutor(jobCmd)

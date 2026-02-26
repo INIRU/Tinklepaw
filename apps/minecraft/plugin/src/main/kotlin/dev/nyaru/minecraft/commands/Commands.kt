@@ -68,7 +68,7 @@ class LinkCommand(private val plugin: NyaruPlugin) : CommandExecutor {
     }
 }
 
-class UnlinkCommand(private val plugin: NyaruPlugin) : CommandExecutor {
+class UnlinkCommand(private val plugin: NyaruPlugin, private val actionBarManager: dev.nyaru.minecraft.listeners.ActionBarManager) : CommandExecutor {
     private val pendingConfirm = ConcurrentHashMap<UUID, Long>()
 
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
@@ -87,6 +87,7 @@ class UnlinkCommand(private val plugin: NyaruPlugin) : CommandExecutor {
                 val success = plugin.apiClient.unlinkPlayer(player.uniqueId.toString())
                 Bukkit.getScheduler().runTask(plugin, Runnable {
                     if (success) {
+                        plugin.pluginScope.launch { actionBarManager.refresh(player.uniqueId) }
                         player.sendMessage("§a연동이 해제되었습니다. 재연동하려면 §f/연동§a을 입력하세요.")
                     } else {
                         player.sendMessage("§c연동 해제 실패. 연동된 계정이 없거나 오류가 발생했습니다.")
