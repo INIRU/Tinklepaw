@@ -17,7 +17,7 @@ services:
       # 81534 = Chunky
       PLUGINS: "https://github.com/INIRU/Tinklepaw/releases/download/minecraft-v1.0.4/nyaru-plugin.jar,https://cdn.modrinth.com/data/EeyAn23L/versions/8AIsBJk2/FancyNpcs-2.9.2.338.jar"
       ENABLE_RCON: "true"
-      RCON_PASSWORD: "ponjiz-copfoj-ziTwe9"
+      RCON_PASSWORD: "${MINECRAFT_RCON_PASSWORD}"
       RCON_PORT: "25575"
       MINECRAFT_API_KEY: "${MINECRAFT_API_KEY}"
     volumes:
