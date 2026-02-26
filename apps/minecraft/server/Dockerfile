@@ -15,6 +15,6 @@ ENV EULA=TRUE \
     ONLINE_MODE=TRUE \
     SERVER_PORT=1207
 
-COPY --from=plugin-builder /plugin/build/libs/nyaru-plugin-*.jar /data/plugins/
+COPY --from=plugin-builder /plugin/build/libs/nyaru-plugin-*.jar /plugins/
 
 EXPOSE 1207
