@@ -836,15 +836,15 @@ export function GachaScene({
         : 0.5;
   const bloomIntensity = prefersReducedMotion
     ? isSSS
-      ? 1.15
-      : 0.8
+      ? 0.7
+      : 0.5
     : isDrawing
       ? isSSS
-        ? 2.5
-        : 1.55
+        ? 1.4
+        : 0.9
       : isSSS
-        ? 1.8
-        : 1.0;
+        ? 1.0
+        : 0.6;
   const bloomRadius = prefersReducedMotion
     ? isSSS
       ? 0.58
@@ -862,12 +862,12 @@ export function GachaScene({
       <Canvas dpr={[1, 1.8]}>
         <PerspectiveCamera ref={sceneCameraRef} makeDefault position={[0, 0, 5]} />
         
-        {/* Cinematic Lighting: Bright & Clear */}
-        <ambientLight intensity={1.5} />
+        {/* Cinematic Lighting */}
+        <ambientLight intensity={0.8} />
         {/* Rim Light */}
-        <spotLight position={[-5, 5, 0]} angle={0.5} penumbra={1} intensity={2} color="#fff" />
+        <spotLight position={[-5, 5, 0]} angle={0.5} penumbra={1} intensity={1.0} color="#fff" />
         {/* Key Light */}
-        <directionalLight position={[5, 10, 5]} intensity={1.5} />
+        <directionalLight position={[5, 10, 5]} intensity={0.8} />
         
         {/* Background */}
         <Stars

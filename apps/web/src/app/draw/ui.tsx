@@ -728,10 +728,10 @@ export default function DrawClient() {
       shimmer: 'from-sky-300/10 via-sky-100/4 to-transparent'
     },
     SS: {
-      frame: 'border-rose-400/45 bg-rose-500/12',
-      text: 'text-rose-200',
-      glow: 'shadow-[0_0_24px_rgba(251,113,133,0.3)]',
-      shimmer: 'from-rose-300/12 via-rose-100/5 to-transparent'
+      frame: 'border-purple-400/45 bg-purple-500/12',
+      text: 'text-purple-200',
+      glow: 'shadow-[0_0_24px_rgba(168,85,247,0.3)]',
+      shimmer: 'from-purple-300/12 via-purple-100/5 to-transparent'
     },
     SSS: {
       frame: 'border-amber-300/55 bg-amber-400/12',
@@ -1140,7 +1140,7 @@ export default function DrawClient() {
                   <X className='w-5 h-5 text-[color:var(--muted)]' />
                 </button>
 
-                <div className='relative max-h-[90vh] overflow-y-auto px-3 pb-4 pt-4 sm:px-6 sm:pt-6'>
+                <div className='relative max-h-[90vh] overflow-x-hidden overflow-y-auto px-3 pb-4 pt-4 sm:px-6 sm:pt-6'>
                   <div className='mb-4 text-center'>
                     <p className='text-[11px] tracking-[0.28em] muted-2'>DRAW COMPLETE</p>
                     <h2 className='mt-1 text-xl font-bold font-bangul sm:text-2xl'>뽑기 결과</h2>
