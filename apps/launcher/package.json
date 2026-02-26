@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "PATH=\"$HOME/.cargo/bin:$PATH\" SDKROOT=$(xcrun --show-sdk-path) tauri"
+    "tauri": "tauri"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.2.0",

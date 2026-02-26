@@ -5,6 +5,9 @@ on:
     tags:
       - 'launcher-v*'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
@@ -46,6 +49,10 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+
+      - name: Set macOS SDK root
+        if: runner.os == 'macOS'
+        run: echo "SDKROOT=$(xcrun --show-sdk-path)" >> $GITHUB_ENV
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
