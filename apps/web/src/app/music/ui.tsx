@@ -767,7 +767,7 @@ export default function MusicControlClient() {
   });
 
   return (
-    <div className="min-h-screen bg-[color:var(--bg)] text-[color:var(--fg)] relative">
+    <div className="min-h-screen overflow-x-hidden bg-[color:var(--bg)] text-[color:var(--fg)] relative">
       {/* Subtle ambient background decoration */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true">
         <div className="absolute top-0 left-1/4 w-96 h-96 rounded-full bg-[color:var(--accent-pink)]/5 blur-3xl" />
