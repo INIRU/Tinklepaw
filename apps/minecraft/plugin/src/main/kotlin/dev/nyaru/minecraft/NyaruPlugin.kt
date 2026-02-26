@@ -114,7 +114,8 @@ class NyaruPlugin : JavaPlugin() {
                 val service = dev.nyaru.minecraft.npc.FancyNpcsService(this)
                 server.pluginManager.registerEvents(service, this)
                 logger.info("FancyNpcs detected — NPC support enabled")
-                { loc, type -> service.createNpc(loc, type) }
+                val fn: (org.bukkit.Location, NpcType) -> Unit = { loc, type -> service.createNpc(loc, type) }
+                fn
             } else {
                 logger.info("FancyNpcs not found — NPC commands disabled")
                 null
