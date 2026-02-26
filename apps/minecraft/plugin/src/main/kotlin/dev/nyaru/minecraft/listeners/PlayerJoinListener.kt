@@ -6,9 +6,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.bukkit.Bukkit
 import org.bukkit.Location
+import org.bukkit.Sound
 import org.bukkit.event.EventHandler
 import org.bukkit.event.EventPriority
 import org.bukkit.event.Listener
+import org.bukkit.event.block.BlockBreakEvent
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.event.player.PlayerQuitEvent
@@ -24,6 +26,26 @@ class PlayerJoinListener(private val plugin: NyaruPlugin, private val actionBarM
         startLinkCheckLoop()
     }
 
+    fun freeze(player: org.bukkit.entity.Player) {
+        frozenPlayers.add(player.uniqueId)
+        player.isInvulnerable = true
+    }
+
+    fun unfreeze(player: org.bukkit.entity.Player) {
+        frozenPlayers.remove(player.uniqueId)
+        player.isInvulnerable = false
+    }
+
+    fun refreezeAndRequestLink(player: org.bukkit.entity.Player) {
+        freeze(player)
+        plugin.pluginScope.launch {
+            val result = plugin.apiClient.requestLink(player.uniqueId.toString(), player.name)
+            Bukkit.getScheduler().runTask(plugin, Runnable {
+                sendWelcomeMessage(player, result?.otp)
+            })
+        }
+    }
+
     @EventHandler(priority = EventPriority.MONITOR)
     fun onPlayerJoin(event: PlayerJoinEvent) {
         val player = event.player
@@ -33,11 +55,10 @@ class PlayerJoinListener(private val plugin: NyaruPlugin, private val actionBarM
             val info = plugin.apiClient.getPlayer(uuid)
             if (info?.linked == true) return@launch
 
-            // Auto-generate OTP for the player
             val result = plugin.apiClient.requestLink(uuid, player.name)
 
             Bukkit.getScheduler().runTask(plugin, Runnable {
-                frozenPlayers.add(player.uniqueId)
+                freeze(player)
                 sendWelcomeMessage(player, result?.otp)
             })
         }
@@ -48,9 +69,19 @@ class PlayerJoinListener(private val plugin: NyaruPlugin, private val actionBarM
         if (event.player.uniqueId !in frozenPlayers) return
         val from = event.from
         val to = event.to
-        // Allow head rotation (yaw/pitch changes), block XYZ movement
         if (from.x != to.x || from.y != to.y || from.z != to.z) {
             event.to = Location(from.world, from.x, from.y, from.z, to.yaw, to.pitch)
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    fun onBlockBreak(event: BlockBreakEvent) {
+        if (event.player.uniqueId in frozenPlayers) {
+            event.isCancelled = true
+            event.player.sendActionBar(
+                net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection()
+                    .deserialize("§cDiscord 연동 후 이용 가능합니다.")
+            )
         }
     }
 
@@ -100,7 +131,8 @@ class PlayerJoinListener(private val plugin: NyaruPlugin, private val actionBarM
                     if (info?.linked == true) {
                         val isNewPlayer = info.level == 1 && info.xp == 0
                         Bukkit.getScheduler().runTask(plugin, Runnable {
-                            frozenPlayers.remove(uuid)
+                            unfreeze(player)
+                            player.playSound(player.location, Sound.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.0f)
                             player.sendMessage("§a§l✓ Discord 연동 완료! 이동이 허용됩니다.")
                             if (isNewPlayer) {
                                 dev.nyaru.minecraft.gui.JobSelectGui(plugin, player).open()

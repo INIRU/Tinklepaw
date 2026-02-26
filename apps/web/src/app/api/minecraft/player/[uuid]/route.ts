@@ -78,7 +78,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ uuid: st
     discordUserId: player.discord_user_id,
     minecraftName: player.minecraft_name,
     balance: balance?.balance ?? 0,
-    job: job?.job ?? 'miner',
+    job: job?.job ?? null,
     level: job?.level ?? 1,
     xp: job?.xp ?? 0,
     title,

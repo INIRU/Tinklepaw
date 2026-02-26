@@ -3,7 +3,7 @@ version: 1.0.0
 main: dev.nyaru.minecraft.NyaruPlugin
 api-version: "1.21"
 authors: [Nyaru]
-description: Nyaru Discord economy integration for Minecraft
+description: "\uBC29\uC6B8\uB0E5 \uC11C\uBC84 Minecraft integration"
 soft-depend: [FancyNpcs]
 commands:
   연동:
@@ -13,11 +13,8 @@ commands:
     description: 포인트 잔고 확인
     usage: /잔고
   직업:
-    description: 직업 정보 및 변경
-    usage: /직업 [변경 <광부|농부>]
-  상점:
-    description: 마켓 상점 GUI
-    usage: /상점
+    description: 직업 정보 확인
+    usage: /직업
   시세:
     description: 현재 아이템 시세
     usage: /시세
@@ -31,6 +28,9 @@ commands:
     description: Discord 계정 연동 해제
     usage: /연동해제
   나루관리:
-    description: Nyaru 관리자 명령어
+    description: 방울냥 관리자 명령어
     usage: /나루관리 npc <상점|직업>
     permission: nyaru.admin
+  스킬:
+    description: 스킬 확인 및 업그레이드
+    usage: /스킬

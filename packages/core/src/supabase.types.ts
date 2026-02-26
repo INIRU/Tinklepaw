@@ -784,6 +784,45 @@ export type Database = {
         }>;
         Relationships: [];
       };
+      mc_player_skills: {
+        Row: {
+          minecraft_uuid: string;
+          skill_points: number;
+          mining_speed_lv: number;
+          lucky_strike_lv: number;
+          wide_harvest_lv: number;
+          wide_plant_lv: number;
+          freshness_lv: number;
+          stone_skin_lv: number;
+          harvest_fortune_lv: number;
+          updated_at: string;
+        };
+        Insert: {
+          minecraft_uuid: string;
+          skill_points?: number;
+          mining_speed_lv?: number;
+          lucky_strike_lv?: number;
+          wide_harvest_lv?: number;
+          wide_plant_lv?: number;
+          freshness_lv?: number;
+          stone_skin_lv?: number;
+          harvest_fortune_lv?: number;
+          updated_at?: string;
+        };
+        Update: Partial<{
+          minecraft_uuid: string;
+          skill_points: number;
+          mining_speed_lv: number;
+          lucky_strike_lv: number;
+          wide_harvest_lv: number;
+          wide_plant_lv: number;
+          freshness_lv: number;
+          stone_skin_lv: number;
+          harvest_fortune_lv: number;
+          updated_at: string;
+        }>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {

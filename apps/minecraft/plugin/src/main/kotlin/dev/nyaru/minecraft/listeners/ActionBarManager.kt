@@ -72,7 +72,11 @@ class ActionBarManager(private val plugin: NyaruPlugin) : Listener {
     }
 
     private fun buildActionBarText(info: PlayerInfo): net.kyori.adventure.text.Component {
-        val jobKr = if (info.job == "miner") "§9광부" else "§a농부"
+        val jobKr = when (info.job) {
+            "miner" -> "§9광부"
+            "farmer" -> "§a농부"
+            else -> "§7없음"
+        }
         val points = NumberFormat.getNumberInstance(Locale.US).format(info.balance)
         val xpNeeded = (100 * Math.pow(info.level.toDouble(), 1.6)).toInt().coerceAtLeast(1)
         val filledBars = (info.xp.toDouble() / xpNeeded * 8).toInt().coerceIn(0, 8)

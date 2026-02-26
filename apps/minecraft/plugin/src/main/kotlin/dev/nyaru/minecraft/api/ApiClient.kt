@@ -52,7 +52,7 @@ class ApiClient(private val baseUrl: String, private val apiKey: String, private
             discordUserId = data.get("discordUserId")?.takeIf { !it.isJsonNull }?.asString,
             minecraftName = data.get("minecraftName")?.takeIf { !it.isJsonNull }?.asString,
             balance = data.get("balance")?.asInt ?: 0,
-            job = data.get("job")?.asString ?: "miner",
+            job = data.get("job")?.takeIf { !it.isJsonNull }?.asString,
             level = data.get("level")?.asInt ?: 1,
             xp = data.get("xp")?.asInt ?: 0,
             title = data.get("title")?.takeIf { !it.isJsonNull }?.asString,
@@ -185,12 +185,40 @@ class ApiClient(private val baseUrl: String, private val apiKey: String, private
             level = data.get("level").asInt,
             xp = data.get("xp").asInt,
             leveledUp = data.get("leveledUp").asBoolean,
-            xpToNextLevel = data.get("xpToNextLevel").asInt
+            xpToNextLevel = data.get("xpToNextLevel").asInt,
+            newSkillPoints = data.get("newSkillPoints")?.takeIf { !it.isJsonNull }?.asInt
         )
     }
 
     suspend fun unlinkPlayer(uuid: String): Boolean {
         val data = post("/unlink", mapOf("uuid" to uuid)) ?: return false
         return data.get("success")?.asBoolean ?: false
+    }
+
+    suspend fun getSkills(uuid: String): SkillData {
+        val data = get("/skills/$uuid") ?: return SkillData()
+        return SkillData(
+            skillPoints = data.get("skillPoints")?.asInt ?: 0,
+            miningSpeedLv = data.get("miningSpeedLv")?.asInt ?: 0,
+            luckyStrikeLv = data.get("luckyStrikeLv")?.asInt ?: 0,
+            wideHarvestLv = data.get("wideHarvestLv")?.asInt ?: 0,
+            widePlantLv = data.get("widePlantLv")?.asInt ?: 0,
+            freshnessLv = data.get("freshnessLv")?.asInt ?: 0,
+            stoneSkinLv = data.get("stoneSkinLv")?.asInt ?: 0,
+            harvestFortuneLv = data.get("harvestFortuneLv")?.asInt ?: 0
+        )
+    }
+
+    suspend fun buySeed(uuid: String, symbol: String, qty: Int): Boolean {
+        val data = post("/shop/buy", mapOf("uuid" to uuid, "symbol" to symbol, "qty" to qty)) ?: return false
+        return data.get("success")?.asBoolean ?: false
+    }
+
+    suspend fun upgradeSkill(uuid: String, skill: String): Triple<Boolean, Int, Int>? {
+        val data = post("/skills/upgrade", mapOf("uuid" to uuid, "skill" to skill)) ?: return null
+        val success = data.get("success")?.asBoolean ?: false
+        val newLevel = data.get("newLevel")?.asInt ?: 0
+        val skillPoints = data.get("skillPoints")?.asInt ?: 0
+        return Triple(success, newLevel, skillPoints)
     }
 }

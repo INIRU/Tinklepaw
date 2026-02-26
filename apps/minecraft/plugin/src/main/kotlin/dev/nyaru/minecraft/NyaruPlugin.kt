@@ -8,17 +8,21 @@ import dev.nyaru.minecraft.commands.JobCommand
 import dev.nyaru.minecraft.commands.LinkCommand
 import dev.nyaru.minecraft.commands.MarketCommand
 import dev.nyaru.minecraft.commands.QuestCommand
-import dev.nyaru.minecraft.commands.ShopCommand
+import dev.nyaru.minecraft.commands.SkillCommand
 import dev.nyaru.minecraft.commands.TradeCommand
 import dev.nyaru.minecraft.commands.UnlinkCommand
 import dev.nyaru.minecraft.gui.JobSelectGui
+import dev.nyaru.minecraft.gui.ShopGui
+import dev.nyaru.minecraft.gui.SkillGui
 import dev.nyaru.minecraft.listeners.ActionBarManager
 import dev.nyaru.minecraft.listeners.BlockBreakListener
 import dev.nyaru.minecraft.listeners.BlockDropListener
+import dev.nyaru.minecraft.listeners.BlockPlaceListener
 import dev.nyaru.minecraft.listeners.ChatTabListener
 import dev.nyaru.minecraft.listeners.PlayerJoinListener
 import dev.nyaru.minecraft.listeners.WorldEventListener
 import dev.nyaru.minecraft.npc.NpcType
+import dev.nyaru.minecraft.skills.SkillManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,6 +32,12 @@ import org.bukkit.plugin.java.JavaPlugin
 class NyaruPlugin : JavaPlugin() {
 
     lateinit var apiClient: ApiClient
+        private set
+
+    lateinit var playerJoinListener: PlayerJoinListener
+        private set
+
+    lateinit var actionBarManager: ActionBarManager
         private set
 
     val pluginScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -61,16 +71,22 @@ class NyaruPlugin : JavaPlugin() {
 
         apiClient = ApiClient(apiUrl, apiKey, directClient)
 
-        val actionBarManager = ActionBarManager(this)
+        val skillManager = SkillManager(this)
+        actionBarManager = ActionBarManager(this)
         val chatTabListener = ChatTabListener(actionBarManager)
         actionBarManager.chatTabListener = chatTabListener
 
         server.pluginManager.registerEvents(actionBarManager, this)
         server.pluginManager.registerEvents(chatTabListener, this)
+        server.pluginManager.registerEvents(skillManager, this)
         server.pluginManager.registerEvents(JobSelectGui.JobSelectListener(this), this)
-        server.pluginManager.registerEvents(BlockBreakListener(this), this)
-        server.pluginManager.registerEvents(BlockDropListener(this), this)
-        server.pluginManager.registerEvents(PlayerJoinListener(this, actionBarManager), this)
+        server.pluginManager.registerEvents(ShopGui.ShopGuiListener(this), this)
+        server.pluginManager.registerEvents(SkillGui.SkillGuiListener(this), this)
+        server.pluginManager.registerEvents(BlockBreakListener(this, skillManager), this)
+        server.pluginManager.registerEvents(BlockDropListener(this, skillManager), this)
+        server.pluginManager.registerEvents(BlockPlaceListener(this, skillManager), this)
+        playerJoinListener = PlayerJoinListener(this, actionBarManager)
+        server.pluginManager.registerEvents(playerJoinListener, this)
 
         val worldEventListener = WorldEventListener(this)
         server.pluginManager.registerEvents(worldEventListener, this)
@@ -90,15 +106,14 @@ class NyaruPlugin : JavaPlugin() {
             }
 
         getCommand("연동")?.setExecutor(LinkCommand(this))
-        getCommand("연동해제")?.setExecutor(UnlinkCommand(this, actionBarManager))
+        getCommand("연동해제")?.setExecutor(UnlinkCommand(this, actionBarManager, playerJoinListener))
         getCommand("잔고")?.setExecutor(BalanceCommand(this, actionBarManager))
         val jobCmd = JobCommand(this, actionBarManager)
         getCommand("직업")?.setExecutor(jobCmd)
-        getCommand("직업")?.tabCompleter = jobCmd
-        getCommand("상점")?.setExecutor(ShopCommand(this))
         getCommand("시세")?.setExecutor(MarketCommand(this))
         getCommand("퀘스트")?.setExecutor(QuestCommand(this))
         getCommand("거래소")?.setExecutor(TradeCommand(this))
+        getCommand("스킬")?.setExecutor(SkillCommand(this, skillManager))
         val adminCmd = AdminCommand(this, createNpc)
         getCommand("나루관리")?.setExecutor(adminCmd)
         getCommand("나루관리")?.tabCompleter = adminCmd

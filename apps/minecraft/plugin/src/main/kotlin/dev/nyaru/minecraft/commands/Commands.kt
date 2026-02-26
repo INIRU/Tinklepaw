@@ -5,6 +5,8 @@ import dev.nyaru.minecraft.gui.JobSelectGui
 import dev.nyaru.minecraft.gui.P2PGui
 import dev.nyaru.minecraft.gui.QuestGui
 import dev.nyaru.minecraft.gui.ShopGui
+import dev.nyaru.minecraft.gui.SkillGui
+import dev.nyaru.minecraft.skills.SkillManager
 import kotlinx.coroutines.launch
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.event.ClickEvent
@@ -68,7 +70,11 @@ class LinkCommand(private val plugin: NyaruPlugin) : CommandExecutor {
     }
 }
 
-class UnlinkCommand(private val plugin: NyaruPlugin, private val actionBarManager: dev.nyaru.minecraft.listeners.ActionBarManager) : CommandExecutor {
+class UnlinkCommand(
+    private val plugin: NyaruPlugin,
+    private val actionBarManager: dev.nyaru.minecraft.listeners.ActionBarManager,
+    private val playerJoinListener: dev.nyaru.minecraft.listeners.PlayerJoinListener
+) : CommandExecutor {
     private val pendingConfirm = ConcurrentHashMap<UUID, Long>()
 
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
@@ -87,12 +93,15 @@ class UnlinkCommand(private val plugin: NyaruPlugin, private val actionBarManage
                 val success = plugin.apiClient.unlinkPlayer(player.uniqueId.toString())
                 Bukkit.getScheduler().runTask(plugin, Runnable {
                     if (success) {
-                        plugin.pluginScope.launch { actionBarManager.refresh(player.uniqueId) }
-                        player.sendMessage("§a연동이 해제되었습니다. 재연동하려면 §f/연동§a을 입력하세요.")
+                        playerJoinListener.refreezeAndRequestLink(player)
+                        player.sendMessage("§a연동이 해제되었습니다. 재연동 코드가 발급되었습니다.")
                     } else {
                         player.sendMessage("§c연동 해제 실패. 연동된 계정이 없거나 오류가 발생했습니다.")
                     }
                 })
+                if (success) {
+                    actionBarManager.refresh(player.uniqueId)
+                }
             }
         } else {
             pendingConfirm[player.uniqueId] = System.currentTimeMillis()
@@ -139,69 +148,37 @@ class BalanceCommand(private val plugin: NyaruPlugin, private val actionBarManag
     }
 }
 
-class JobCommand(private val plugin: NyaruPlugin, private val actionBarManager: dev.nyaru.minecraft.listeners.ActionBarManager) : CommandExecutor, TabCompleter {
+class JobCommand(private val plugin: NyaruPlugin, private val actionBarManager: dev.nyaru.minecraft.listeners.ActionBarManager) : CommandExecutor {
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
         if (sender !is Player) { sender.sendMessage("§c플레이어만 사용 가능합니다."); return true }
         val player = sender
         val uuid = player.uniqueId.toString()
-        if (args.getOrNull(0)?.lowercase() == "변경") {
-            val jobName = args.getOrNull(1)
-            val jobKey = when (jobName) {
-                "광부" -> "miner"
-                "농부" -> "farmer"
-                else -> { player.sendMessage("§c사용법: /직업 변경 <광부|농부>"); return true }
-            }
+        val cached = actionBarManager.getInfo(player.uniqueId)
+        if (cached?.linked == true) {
+            val jobKr = when (cached.job) { "miner" -> "광부"; "farmer" -> "농부"; else -> "없음" }
+            val xpNeeded = (100 * Math.pow(cached.level.toDouble(), 1.6)).toInt()
+            val filled = if (xpNeeded > 0) (cached.xp * 20 / xpNeeded).coerceIn(0, 20) else 0
+            val bar = "§a" + "█".repeat(filled) + "§7" + "█".repeat(20 - filled)
+            player.sendMessage("§6직업: §e$jobKr §7(Lv.${cached.level})")
+            player.sendMessage("§7XP: §f${cached.xp}/$xpNeeded $bar")
+            plugin.pluginScope.launch { actionBarManager.refresh(player.uniqueId) }
+        } else {
             plugin.pluginScope.launch {
-                val success = plugin.apiClient.changeJob(uuid, jobKey)
+                val info = plugin.apiClient.getPlayer(uuid)
                 Bukkit.getScheduler().runTask(plugin, Runnable {
-                    if (success) {
-                        player.sendMessage("§a직업이 §e${jobName}§a으로 변경되었습니다.")
-                        plugin.pluginScope.launch { actionBarManager.refresh(player.uniqueId) }
-                    } else player.sendMessage("§c직업 변경 실패. 포인트가 부족하거나 이미 해당 직업입니다.")
+                    if (info?.linked == true) {
+                        val jobKr = when (info.job) { "miner" -> "광부"; "farmer" -> "농부"; else -> "없음" }
+                        val xpNeeded = (100 * Math.pow(info.level.toDouble(), 1.6)).toInt()
+                        val filled = if (xpNeeded > 0) (info.xp * 20 / xpNeeded).coerceIn(0, 20) else 0
+                        val bar = "§a" + "█".repeat(filled) + "§7" + "█".repeat(20 - filled)
+                        player.sendMessage("§6직업: §e$jobKr §7(Lv.${info.level})")
+                        player.sendMessage("§7XP: §f${info.xp}/$xpNeeded $bar")
+                    } else {
+                        player.sendMessage("§c연동이 필요합니다. §f/연동§c을 입력하세요.")
+                    }
                 })
             }
-        } else {
-            val cached = actionBarManager.getInfo(player.uniqueId)
-            if (cached?.linked == true) {
-                val jobKr = if (cached.job == "miner") "광부" else "농부"
-                val xpNeeded = (100 * Math.pow(cached.level.toDouble(), 1.6)).toInt()
-                val filled = if (xpNeeded > 0) (cached.xp * 20 / xpNeeded).coerceIn(0, 20) else 0
-                val bar = "§a" + "█".repeat(filled) + "§7" + "█".repeat(20 - filled)
-                player.sendMessage("§6직업: §e$jobKr §7(Lv.${cached.level})")
-                player.sendMessage("§7XP: §f${cached.xp}/$xpNeeded $bar")
-                plugin.pluginScope.launch { actionBarManager.refresh(player.uniqueId) }
-            } else {
-                plugin.pluginScope.launch {
-                    val info = plugin.apiClient.getPlayer(uuid)
-                    Bukkit.getScheduler().runTask(plugin, Runnable {
-                        if (info?.linked == true) {
-                            val jobKr = if (info.job == "miner") "광부" else "농부"
-                            val xpNeeded = (100 * Math.pow(info.level.toDouble(), 1.6)).toInt()
-                            val filled = if (xpNeeded > 0) (info.xp * 20 / xpNeeded).coerceIn(0, 20) else 0
-                            val bar = "§a" + "█".repeat(filled) + "§7" + "█".repeat(20 - filled)
-                            player.sendMessage("§6직업: §e$jobKr §7(Lv.${info.level})")
-                            player.sendMessage("§7XP: §f${info.xp}/$xpNeeded $bar")
-                        } else {
-                            player.sendMessage("§c연동이 필요합니다. §f/연동§c을 입력하세요.")
-                        }
-                    })
-                }
-            }
         }
-        return true
-    }
-
-    override fun onTabComplete(sender: CommandSender, command: Command, alias: String, args: Array<out String>): List<String> {
-        if (args.size == 1) return listOf("변경").filter { it.startsWith(args[0]) }
-        if (args.size == 2 && args[0] == "변경") return listOf("광부", "농부").filter { it.startsWith(args[1]) }
-        return emptyList()
-    }
-}
-
-class ShopCommand(private val plugin: NyaruPlugin) : CommandExecutor {
-    override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
-        if (sender !is Player) { sender.sendMessage("§c플레이어만 사용 가능합니다."); return true }
-        ShopGui(plugin, sender).open()
         return true
     }
 }
@@ -236,6 +213,14 @@ class TradeCommand(private val plugin: NyaruPlugin) : CommandExecutor {
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
         if (sender !is Player) { sender.sendMessage("§c플레이어만 사용 가능합니다."); return true }
         P2PGui(plugin, sender).open()
+        return true
+    }
+}
+
+class SkillCommand(private val plugin: NyaruPlugin, private val skillManager: SkillManager) : CommandExecutor {
+    override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
+        if (sender !is Player) { sender.sendMessage("§c플레이어만 사용 가능합니다."); return true }
+        SkillGui(plugin, sender, skillManager).open()
         return true
     }
 }

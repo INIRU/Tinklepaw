@@ -1,25 +1,13 @@
 import type { Client } from 'discord.js';
 
 import { getBotContext } from '../context.js';
-import { recordActivityEvent } from '../services/activityEvents.js';
 
-export function registerGuildMemberRemove(client: Client) {
-  client.on('guildMemberRemove', async (member) => {
+export function registerGuildBanAdd(client: Client) {
+  client.on('guildBanAdd', async (ban) => {
     const ctx = getBotContext();
-    if (member.guild.id !== ctx.env.NYARU_GUILD_ID) return;
+    if (ban.guild.id !== ctx.env.NYARU_GUILD_ID) return;
 
-    const userId = ('user' in member && member.user ? member.user.id : member.id) ?? null;
-    if (!userId) return;
-
-    void recordActivityEvent({
-      guildId: member.guild.id,
-      userId,
-      eventType: 'member_leave',
-      value: 1,
-      meta: { source: 'guild_member_remove' }
-    });
-
-    // Minecraft 연동 해제
+    const userId = ban.user.id;
     const { supabase } = ctx;
     try {
       const { data: mcPlayer } = await supabase
@@ -37,10 +25,10 @@ export function registerGuildMemberRemove(client: Client) {
           supabase.schema('nyang').from('mc_p2p_listings').delete().eq('seller_uuid', uuid),
         ]);
         await supabase.schema('nyang').from('minecraft_players').delete().eq('discord_user_id', userId);
-        console.log(`[Minecraft] Unlinked ${userId} (${uuid}) due to guild leave/ban`);
+        console.log(`[Minecraft] Unlinked ${userId} (${uuid}) due to ban`);
       }
     } catch (err) {
-      console.error('[Minecraft] Failed to unlink on member remove:', err);
+      console.error('[Minecraft] Failed to unlink on ban:', err);
     }
   });
 }

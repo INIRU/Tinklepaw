@@ -43,5 +43,30 @@ export async function POST(req: Request) {
     .update({ level, xp, updated_at: new Date().toISOString() })
     .eq('minecraft_uuid', body.uuid);
 
-  return NextResponse.json({ level, xp, leveledUp, xpToNextLevel: xpRequiredForLevel(level) });
+  let newSkillPoints: number | null = null;
+  if (leveledUp) {
+    const { data: existing } = await supabase
+      .schema('nyang')
+      .from('mc_player_skills')
+      .select('skill_points')
+      .eq('minecraft_uuid', body.uuid)
+      .maybeSingle();
+
+    if (existing) {
+      newSkillPoints = existing.skill_points + 1;
+      await supabase
+        .schema('nyang')
+        .from('mc_player_skills')
+        .update({ skill_points: newSkillPoints, updated_at: new Date().toISOString() })
+        .eq('minecraft_uuid', body.uuid);
+    } else {
+      newSkillPoints = 1;
+      await supabase
+        .schema('nyang')
+        .from('mc_player_skills')
+        .insert({ minecraft_uuid: body.uuid, skill_points: 1 });
+    }
+  }
+
+  return NextResponse.json({ level, xp, leveledUp, xpToNextLevel: xpRequiredForLevel(level), newSkillPoints });
 }

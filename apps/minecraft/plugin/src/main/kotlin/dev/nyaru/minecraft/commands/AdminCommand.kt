@@ -24,7 +24,7 @@ class AdminCommand(
             return true
         }
         if (args.getOrNull(0)?.lowercase() != "npc") {
-            sender.sendMessage("§f/나루관리 npc <상점|직업>")
+            sender.sendMessage("§f/방울냥관리 npc <상점|직업>")
             return true
         }
         if (createNpc == null) {
@@ -34,7 +34,7 @@ class AdminCommand(
         val type = when (args.getOrNull(1)) {
             "상점" -> NpcType.SHOP
             "직업" -> NpcType.JOB
-            else -> { sender.sendMessage("§c사용법: /나루관리 npc <상점|직업>"); return true }
+            else -> { sender.sendMessage("§c사용법: /방울냥관리 npc <상점|직업>"); return true }
         }
         createNpc(sender.location, type)
         sender.sendMessage("§aNPC가 현재 위치에 생성되었습니다.")

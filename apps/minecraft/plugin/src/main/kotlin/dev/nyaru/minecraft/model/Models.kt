@@ -5,7 +5,7 @@ data class PlayerInfo(
     val discordUserId: String? = null,
     val minecraftName: String? = null,
     val balance: Int = 0,
-    val job: String = "miner",
+    val job: String? = null,   // null = 직업 없음("없음")
     val level: Int = 1,
     val xp: Int = 0,
     val title: String? = null,
@@ -60,5 +60,17 @@ data class XpResult(
     val level: Int,
     val xp: Int,
     val leveledUp: Boolean,
-    val xpToNextLevel: Int
+    val xpToNextLevel: Int,
+    val newSkillPoints: Int? = null
+)
+
+data class SkillData(
+    val skillPoints: Int = 0,
+    val miningSpeedLv: Int = 0,
+    val luckyStrikeLv: Int = 0,
+    val wideHarvestLv: Int = 0,
+    val widePlantLv: Int = 0,
+    val freshnessLv: Int = 0,
+    val stoneSkinLv: Int = 0,
+    val harvestFortuneLv: Int = 0
 )

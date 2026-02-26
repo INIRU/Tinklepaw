@@ -14,6 +14,7 @@ import { createSupabaseAdminClient } from './lib/supabase.js';
 import { registerInteractionCreate } from './events/interactionCreate.js';
 import { registerGuildMemberAdd } from './events/guildMemberAdd.js';
 import { registerGuildMemberRemove } from './events/guildMemberRemove.js';
+import { registerGuildBanAdd } from './events/guildBanAdd.js';
 import { registerMessageCreate } from './events/messageCreate.js';
 import { registerVoiceStateUpdate } from './events/voiceStateUpdate.js';
 import { startRoleSyncWorker } from './workers/roleSyncWorker.js';
@@ -34,6 +35,7 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildModeration,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.MessageContent
@@ -57,6 +59,7 @@ client.once('ready', async () => {
 registerInteractionCreate(client);
 registerGuildMemberAdd(client);
   registerGuildMemberRemove(client);
+registerGuildBanAdd(client);
   registerMessageCreate(client);
   registerVoiceStateUpdate(client);
 
