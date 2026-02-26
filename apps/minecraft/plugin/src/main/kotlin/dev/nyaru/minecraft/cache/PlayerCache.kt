@@ -28,6 +28,19 @@ object PlayerCache {
         cache[uuid] = CachedPlayer(info = info, skills = skills)
     }
 
+    fun updateBalance(uuid: String, delta: Int): Int? {
+        val entry = cache[uuid] ?: return null
+        if (System.currentTimeMillis() - entry.fetchedAt > TTL_MS) {
+            cache.remove(uuid)
+            return null
+        }
+        val newBalance = (entry.info.balance + delta).coerceAtLeast(0)
+        cache[uuid] = entry.copy(info = entry.info.copy(balance = newBalance))
+        return newBalance
+    }
+
+    fun getBalance(uuid: String): Int? = get(uuid)?.info?.balance
+
     fun invalidate(uuid: String): Boolean = cache.remove(uuid) != null
 
     fun invalidateAll() = cache.clear()

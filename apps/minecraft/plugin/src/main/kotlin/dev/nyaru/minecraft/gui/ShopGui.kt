@@ -2,6 +2,7 @@ package dev.nyaru.minecraft.gui
 
 import dev.nyaru.minecraft.NyaruPlugin
 import dev.nyaru.minecraft.cache.MarketCache
+import dev.nyaru.minecraft.cache.PlayerCache
 import dev.nyaru.minecraft.listeners.HARVEST_TIME_KEY
 import dev.nyaru.minecraft.listeners.PURITY_KEY
 import dev.nyaru.minecraft.model.MarketItem
@@ -19,6 +20,8 @@ import org.bukkit.event.inventory.InventoryCloseEvent
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.ItemStack
 import org.bukkit.persistence.PersistentDataType
+import java.text.NumberFormat
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 class ShopGui(private val plugin: NyaruPlugin, private val player: Player) {
@@ -258,27 +261,23 @@ class ShopGui(private val plugin: NyaruPlugin, private val player: Player) {
         val marketItem = filteredItems[idx]
         val mat = runCatching { Material.valueOf(marketItem.mcMaterial) }.getOrNull() ?: return
 
-        // 인벤토리에서 해당 material 스택 찾기 (PDC 데이터 있는 것 우선)
         val inv = player.inventory
         val matchingStacks = (0 until inv.size)
             .mapNotNull { i -> inv.getItem(i)?.takeIf { it.type == mat && it.amount > 0 }?.let { i to it } }
 
         if (matchingStacks.isEmpty()) {
             player.playSound(player.location, Sound.ENTITY_VILLAGER_NO, 0.8f, 1.0f)
-            player.sendMessage("\u00A7c\uC778\uBCA4\uD1A0\uB9AC\uC5D0 \u00A7e${marketItem.displayName}\u00A7c\uC774/\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.")
+            player.sendMessage("§c인벤토리에 §e${marketItem.displayName}§c이/가 없습니다.")
             return
         }
 
-        // PDC 있는 스택 우선, 없으면 첫 번째
         val (invSlot, stack) = matchingStacks.maxByOrNull { (_, s) ->
             if (s.itemMeta?.persistentDataContainer?.has(HARVEST_TIME_KEY, PersistentDataType.LONG) == true ||
                 s.itemMeta?.persistentDataContainer?.has(PURITY_KEY, PersistentDataType.INTEGER) == true) 1 else 0
         } ?: matchingStacks.first()
 
-        // 판매 수량 결정
         val qty = if (isRightClick) stack.amount else 1
 
-        // PDC 추출
         val meta = stack.itemMeta
         val harvTime = meta?.persistentDataContainer?.get(HARVEST_TIME_KEY, PersistentDataType.LONG)
         val purity = meta?.persistentDataContainer?.get(PURITY_KEY, PersistentDataType.INTEGER)
@@ -292,37 +291,46 @@ class ShopGui(private val plugin: NyaruPlugin, private val player: Player) {
             }
         } else null
 
-        // 인벤토리에서 수량 차감
+        // === OPTIMISTIC UPDATE ===
+        // 1. Remove item from inventory immediately
+        val removedStack = ItemStack(mat, qty)
         if (qty >= stack.amount) {
             inv.setItem(invSlot, null)
         } else {
             stack.amount -= qty
         }
 
+        // 2. Estimate points and update cache immediately
         val uuid = player.uniqueId.toString()
-        player.sendMessage("\u00A7a\uD310\uB9E4 \uC911...")
+        val estimatedPoints = marketItem.currentPrice * qty
+        PlayerCache.updateBalance(uuid, estimatedPoints)
 
+        // 3. Show immediate feedback
+        player.playSound(player.location, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.2f)
+        player.sendMessage("§a${marketItem.displayName} §f${qty}개 판매 완료! §6+~${estimatedPoints}P §7(정산 중...)")
+        if (freshnessPct != null) {
+            player.sendMessage("§7신선도: §e${String.format("%.0f", freshnessPct)}%")
+        }
+        if (purity != null) {
+            player.sendMessage("§7순정도: §e${purity}%")
+        }
+
+        // 4. Background: actual API call → sync result
         plugin.pluginScope.launch {
             val result = plugin.apiClient.sellItem(uuid, marketItem.symbol, qty, freshnessPct, purity?.toDouble())
             Bukkit.getScheduler().runTask(plugin, Runnable {
                 if (result != null) {
-                    player.playSound(player.location, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.2f)
-                    player.sendMessage("\u00A7a${marketItem.displayName} \u00A7f${qty}\uAC1C \uD310\uB9E4 \uC644\uB8CC! \u00A76+${result.netPoints}P")
-                    if (freshnessPct != null) {
-                        player.sendMessage("\u00A77\uC2E0\uC120\uB3C4: \u00A7e${String.format("%.0f", freshnessPct)}%")
-                    }
-                    if (purity != null) {
-                        player.sendMessage("\u00A77\uC21C\uC815\uB3C4: \u00A7e${purity}%")
-                    }
+                    // Correct optimistic estimate with actual netPoints
+                    val diff = result.netPoints - estimatedPoints
+                    PlayerCache.updateBalance(uuid, diff) // adjust by the difference
+                    val fmt = NumberFormat.getNumberInstance(Locale.US)
+                    player.sendMessage("§7정산 완료: §6+${fmt.format(result.netPoints)}P §8(단가: ${result.unitPrice}P, 수수료: ${result.feeAmount}P)")
                 } else {
+                    // Rollback: restore item and revert balance
                     player.playSound(player.location, Sound.ENTITY_VILLAGER_NO, 0.8f, 0.8f)
-                    // 실패 시 아이템 반환
-                    if (qty >= stack.amount + qty) {
-                        inv.addItem(ItemStack(mat, qty))
-                    } else {
-                        stack.amount += qty
-                    }
-                    player.sendMessage("\u00A7c\uD310\uB9E4 \uC2E4\uD328. \uB098\uC911\uC5D0 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694.")
+                    inv.addItem(removedStack)
+                    PlayerCache.updateBalance(uuid, -estimatedPoints) // revert
+                    player.sendMessage("§c판매 실패. 아이템이 반환됐어.")
                 }
             })
         }
@@ -384,19 +392,35 @@ class ShopGui(private val plugin: NyaruPlugin, private val player: Player) {
         val item = filteredItems[idx]
         val qty = if (isRightClick) 16 else 1
         val uuid = player.uniqueId.toString()
+        val totalCost = item.currentPrice * qty
         val mat = runCatching { Material.valueOf(item.mcMaterial) }.getOrNull() ?: return
 
-        player.sendMessage("\u00A7a\uAD6C\uB9E4 \uC911...")
+        // === OPTIMISTIC UPDATE ===
+        // 1. Check cached balance first (fast rejection without API call)
+        val cachedBalance = PlayerCache.getBalance(uuid)
+        if (cachedBalance != null && cachedBalance < totalCost) {
+            player.playSound(player.location, Sound.ENTITY_VILLAGER_NO, 0.8f, 1.0f)
+            player.sendMessage("§c포인트가 부족해. 현재: §e${NumberFormat.getNumberInstance(Locale.US).format(cachedBalance)}P §c/ 필요: §e${totalCost}P")
+            return
+        }
+
+        // 2. Deduct balance and give item immediately
+        PlayerCache.updateBalance(uuid, -totalCost)
+        player.inventory.addItem(ItemStack(mat, qty))
+        player.playSound(player.location, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.2f)
+        player.sendMessage("§a${item.displayName} §f${qty}개 구매 완료! §c-${NumberFormat.getNumberInstance(Locale.US).format(totalCost)}P")
+
+        // 3. Background: actual API call
         plugin.pluginScope.launch {
             val success = plugin.apiClient.buySeed(uuid, item.symbol, qty)
             Bukkit.getScheduler().runTask(plugin, Runnable {
-                if (success) {
-                    player.inventory.addItem(ItemStack(mat, qty))
-                    player.playSound(player.location, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.2f)
-                    player.sendMessage("\u00A7a${item.displayName} \u00A7f${qty}\uAC1C \uAD6C\uB9E4 \uC644\uB8CC! \u00A7c-${item.currentPrice * qty}P")
-                } else {
+                if (!success) {
+                    // Rollback: remove item and restore balance
                     player.playSound(player.location, Sound.ENTITY_VILLAGER_NO, 0.8f, 1.0f)
-                    player.sendMessage("\u00A7c\uAD6C\uB9E4 \uC2E4\uD328. \uD3EC\uC778\uD2B8\uAC00 \uBD80\uC871\uD558\uAC70\uB098 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.")
+                    val toRemove = ItemStack(mat, qty)
+                    player.inventory.removeItem(toRemove)
+                    PlayerCache.updateBalance(uuid, totalCost) // restore
+                    player.sendMessage("§c구매 실패. 포인트가 반환됐어.")
                 }
             })
         }
