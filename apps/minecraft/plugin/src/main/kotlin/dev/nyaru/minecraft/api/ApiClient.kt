@@ -55,7 +55,8 @@ class ApiClient(private val baseUrl: String, private val apiKey: String) {
             level = data.get("level")?.asInt ?: 1,
             xp = data.get("xp")?.asInt ?: 0,
             title = data.get("title")?.takeIf { !it.isJsonNull }?.asString,
-            titleColor = data.get("titleColor")?.takeIf { !it.isJsonNull }?.asString
+            titleColor = data.get("titleColor")?.takeIf { !it.isJsonNull }?.asString,
+            titleIconUrl = data.get("titleIconUrl")?.takeIf { !it.isJsonNull }?.asString
         )
     }
 

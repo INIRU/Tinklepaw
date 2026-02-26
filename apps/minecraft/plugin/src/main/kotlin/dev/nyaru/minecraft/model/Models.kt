@@ -9,7 +9,8 @@ data class PlayerInfo(
     val level: Int = 1,
     val xp: Int = 0,
     val title: String? = null,
-    val titleColor: String? = null
+    val titleColor: String? = null,
+    val titleIconUrl: String? = null
 )
 
 data class MarketItem(
