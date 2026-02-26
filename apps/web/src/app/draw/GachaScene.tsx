@@ -858,16 +858,16 @@ export function GachaScene({
         : 0.5;
 
   return (
-    <div className="w-full h-full relative">
+    <div className="w-full h-full relative" style={{ filter: 'saturate(0.65) brightness(0.78)' }}>
       <Canvas dpr={[1, 1.8]}>
         <PerspectiveCamera ref={sceneCameraRef} makeDefault position={[0, 0, 5]} />
         
         {/* Cinematic Lighting */}
-        <ambientLight intensity={0.8} />
+        <ambientLight intensity={0.5} />
         {/* Rim Light */}
-        <spotLight position={[-5, 5, 0]} angle={0.5} penumbra={1} intensity={1.0} color="#fff" />
+        <spotLight position={[-5, 5, 0]} angle={0.5} penumbra={1} intensity={0.6} color="#fff" />
         {/* Key Light */}
-        <directionalLight position={[5, 10, 5]} intensity={0.8} />
+        <directionalLight position={[5, 10, 5]} intensity={0.5} />
         
         {/* Background */}
         <Stars
