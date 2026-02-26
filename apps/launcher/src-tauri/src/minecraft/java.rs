@@ -1,6 +1,11 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 /// Detect Java installation. Returns the path to the java binary.
 pub fn detect_java() -> Option<PathBuf> {
     // Check JAVA_HOME first
@@ -13,7 +18,11 @@ pub fn detect_java() -> Option<PathBuf> {
 
     // Check if java is in PATH
     let which_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
-    if let Ok(output) = Command::new(which_cmd).arg("java").output() {
+    let mut which_cmd_proc = Command::new(which_cmd);
+    which_cmd_proc.arg("java");
+    #[cfg(target_os = "windows")]
+    which_cmd_proc.creation_flags(CREATE_NO_WINDOW);
+    if let Ok(output) = which_cmd_proc.output() {
         if output.status.success() {
             let raw = String::from_utf8_lossy(&output.stdout);
             // `where` on Windows may return multiple lines; take the first
@@ -90,7 +99,11 @@ pub fn detect_java() -> Option<PathBuf> {
 
 /// Get Java version string from a java binary path.
 pub fn get_java_version(java_path: &PathBuf) -> Option<String> {
-    let output = Command::new(java_path).arg("-version").output().ok()?;
+    let mut cmd = Command::new(java_path);
+    cmd.arg("-version");
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd.output().ok()?;
 
     // Java prints version to stderr
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -192,24 +205,28 @@ pub async fn install_java_auto(app: &tauri::AppHandle) -> Result<String, String>
     let _ = app.emit("java_install_progress", serde_json::json!({"stage": "Java 21 설치 중...", "percent": 95.0}));
 
     if ext == "tar.gz" {
-        let output = std::process::Command::new("tar")
-            .args(["-xzf", archive_path.to_str().unwrap(), "-C", java_dir.to_str().unwrap()])
-            .output()
+        let mut cmd = std::process::Command::new("tar");
+        cmd.args(["-xzf", archive_path.to_str().unwrap(), "-C", java_dir.to_str().unwrap()]);
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let output = cmd.output()
             .map_err(|e| format!("Extract failed: {}", e))?;
         if !output.status.success() {
             return Err(format!("tar failed: {}", String::from_utf8_lossy(&output.stderr)));
         }
     } else if ext == "zip" {
-        let output = std::process::Command::new("powershell")
-            .args([
-                "-NoProfile", "-NonInteractive", "-Command",
-                &format!(
-                    "Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
-                    archive_path.to_str().unwrap().replace('\'', "''"),
-                    java_dir.to_str().unwrap().replace('\'', "''")
-                ),
-            ])
-            .output()
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.args([
+            "-NoProfile", "-NonInteractive", "-Command",
+            &format!(
+                "Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
+                archive_path.to_str().unwrap().replace('\'', "''"),
+                java_dir.to_str().unwrap().replace('\'', "''")
+            ),
+        ]);
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let output = cmd.output()
             .map_err(|e| format!("Extract failed: {}", e))?;
         if !output.status.success() {
             return Err(format!("Expand-Archive failed: {}", String::from_utf8_lossy(&output.stderr)));

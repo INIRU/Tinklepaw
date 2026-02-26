@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::process::Stdio;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
@@ -133,6 +133,10 @@ pub async fn launch(app: &AppHandle, config: LaunchConfig) -> Result<(), String>
                 let _ = app_clone.emit("game-log", format!("[런처] 오류: {}", e));
                 let _ = app_clone.emit("game-exited", -1);
             }
+        }
+        // Reset running flag so user can relaunch
+        if let Ok(mut running) = app_clone.state::<crate::AppState>().minecraft_running.lock() {
+            *running = false;
         }
     });
 
