@@ -8,9 +8,12 @@ import dev.nyaru.minecraft.commands.MarketCommand
 import dev.nyaru.minecraft.commands.QuestCommand
 import dev.nyaru.minecraft.commands.ShopCommand
 import dev.nyaru.minecraft.commands.TradeCommand
+import dev.nyaru.minecraft.commands.UnlinkCommand
+import dev.nyaru.minecraft.gui.JobSelectGui
 import dev.nyaru.minecraft.listeners.ActionBarManager
 import dev.nyaru.minecraft.listeners.BlockBreakListener
 import dev.nyaru.minecraft.listeners.BlockDropListener
+import dev.nyaru.minecraft.listeners.ChatTabListener
 import dev.nyaru.minecraft.listeners.PlayerJoinListener
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,12 +41,18 @@ class NyaruPlugin : JavaPlugin() {
         apiClient = ApiClient(apiUrl, apiKey)
 
         val actionBarManager = ActionBarManager(this)
+        val chatTabListener = ChatTabListener(actionBarManager)
+        actionBarManager.chatTabListener = chatTabListener
+
         server.pluginManager.registerEvents(actionBarManager, this)
+        server.pluginManager.registerEvents(chatTabListener, this)
+        server.pluginManager.registerEvents(JobSelectGui.JobSelectListener(this), this)
         server.pluginManager.registerEvents(BlockBreakListener(this), this)
         server.pluginManager.registerEvents(BlockDropListener(this), this)
         server.pluginManager.registerEvents(PlayerJoinListener(this, actionBarManager), this)
 
         getCommand("연동")?.setExecutor(LinkCommand(this))
+        getCommand("연동해제")?.setExecutor(UnlinkCommand(this))
         getCommand("잔고")?.setExecutor(BalanceCommand(this))
         val jobCmd = JobCommand(this)
         getCommand("직업")?.setExecutor(jobCmd)

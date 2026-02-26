@@ -26,3 +26,6 @@ commands:
   거래소:
     description: P2P 거래소 GUI
     usage: /거래소
+  연동해제:
+    description: Discord 계정 연동 해제
+    usage: /연동해제

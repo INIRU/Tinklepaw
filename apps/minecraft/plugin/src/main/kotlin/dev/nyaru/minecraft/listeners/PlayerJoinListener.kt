@@ -98,9 +98,13 @@ class PlayerJoinListener(private val plugin: NyaruPlugin, private val actionBarM
                     }
                     val info = plugin.apiClient.getPlayer(uuid.toString())
                     if (info?.linked == true) {
+                        val isNewPlayer = info.level == 1 && info.xp == 0
                         Bukkit.getScheduler().runTask(plugin, Runnable {
                             frozenPlayers.remove(uuid)
                             player.sendMessage("§a§l✓ Discord 연동 완료! 이동이 허용됩니다.")
+                            if (isNewPlayer) {
+                                dev.nyaru.minecraft.gui.JobSelectGui(plugin, player).open()
+                            }
                         })
                         actionBarManager.refresh(uuid)
                     }

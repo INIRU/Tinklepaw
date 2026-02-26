@@ -22,7 +22,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ uuid: st
     return NextResponse.json({ linked: false });
   }
 
-  const [{ data: balance }, { data: job }, { data: equippedItem }, { data: personalRole }] = await Promise.all([
+  const rarityColors: Record<string, string> = {
+    SSS: '#fbbf24',
+    SS:  '#a855f7',
+    S:   '#3b82f6',
+    R:   '#94a3b8',
+  };
+
+  const [{ data: balance }, { data: job }, { data: equippedItem }] = await Promise.all([
     supabase
       .schema('nyang')
       .from('point_balances')
@@ -38,19 +45,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ uuid: st
     supabase
       .schema('nyang')
       .from('equipped')
-      .select('items(item_name)')
-      .eq('discord_user_id', player.discord_user_id)
-      .maybeSingle(),
-    supabase
-      .schema('nyang')
-      .from('personal_roles')
-      .select('discord_user_id')
+      .select('items(name, rarity)')
       .eq('discord_user_id', player.discord_user_id)
       .maybeSingle(),
   ]);
 
-  const equippedItemName = (equippedItem as { items?: { item_name?: string } | null } | null)?.items?.item_name ?? null;
-  const title = equippedItemName ?? (personalRole ? '부스터' : null);
+  const itemData = (equippedItem as { items?: { name?: string; rarity?: string } | null } | null)?.items;
+  const title = itemData?.name ?? null;
+  const titleColor = itemData?.rarity ? (rarityColors[itemData.rarity] ?? '#ffffff') : null;
 
   return NextResponse.json({
     linked: true,
@@ -61,5 +63,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ uuid: st
     level: job?.level ?? 1,
     xp: job?.xp ?? 0,
     title,
+    titleColor,
   });
 }

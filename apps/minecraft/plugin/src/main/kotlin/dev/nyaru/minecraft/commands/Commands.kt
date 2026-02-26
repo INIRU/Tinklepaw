@@ -1,16 +1,25 @@
 package dev.nyaru.minecraft.commands
 
 import dev.nyaru.minecraft.NyaruPlugin
+import dev.nyaru.minecraft.gui.JobSelectGui
 import dev.nyaru.minecraft.gui.P2PGui
 import dev.nyaru.minecraft.gui.QuestGui
 import dev.nyaru.minecraft.gui.ShopGui
 import kotlinx.coroutines.launch
+import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.event.ClickEvent
+import net.kyori.adventure.text.event.HoverEvent
+import net.kyori.adventure.text.format.NamedTextColor
+import net.kyori.adventure.text.format.TextDecoration
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import org.bukkit.Bukkit
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor
 import org.bukkit.command.CommandSender
 import org.bukkit.command.TabCompleter
 import org.bukkit.entity.Player
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 class LinkCommand(private val plugin: NyaruPlugin) : CommandExecutor {
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
@@ -28,20 +37,76 @@ class LinkCommand(private val plugin: NyaruPlugin) : CommandExecutor {
             val result = plugin.apiClient.requestLink(uuid, player.name)
             Bukkit.getScheduler().runTask(plugin, Runnable {
                 if (result != null) {
-                    player.sendMessage("§8§m                                        ")
-                    player.sendMessage("§r")
-                    player.sendMessage("§d§l연동 코드")
-                    player.sendMessage("§r")
-                    player.sendMessage("§e§l${result.otp}")
-                    player.sendMessage("§r")
-                    player.sendMessage("§fDiscord에서 §a/연동확인 ${result.otp} §f입력")
-                    player.sendMessage("§75분 내 유효합니다.")
-                    player.sendMessage("§r")
-                    player.sendMessage("§8§m                                        ")
+                    val otp = result.otp
+                    val otpComponent = Component.text(otp)
+                        .color(NamedTextColor.YELLOW)
+                        .decoration(TextDecoration.BOLD, true)
+                        .clickEvent(ClickEvent.copyToClipboard(otp))
+                        .hoverEvent(HoverEvent.showText(Component.text("클릭하여 복사", NamedTextColor.GRAY)))
+                    player.sendMessage(LegacyComponentSerializer.legacySection().deserialize("§8§m                                        "))
+                    player.sendMessage(Component.empty())
+                    player.sendMessage(LegacyComponentSerializer.legacySection().deserialize("§d§l연동 코드"))
+                    player.sendMessage(Component.empty())
+                    player.sendMessage(
+                        Component.text()
+                            .append(LegacyComponentSerializer.legacySection().deserialize("§f코드: "))
+                            .append(otpComponent)
+                            .append(LegacyComponentSerializer.legacySection().deserialize(" §7(클릭하여 복사)"))
+                            .build()
+                    )
+                    player.sendMessage(Component.empty())
+                    player.sendMessage(LegacyComponentSerializer.legacySection().deserialize("§fDiscord에서 §a/연동확인 $otp §f입력"))
+                    player.sendMessage(LegacyComponentSerializer.legacySection().deserialize("§75분 내 유효합니다."))
+                    player.sendMessage(Component.empty())
+                    player.sendMessage(LegacyComponentSerializer.legacySection().deserialize("§8§m                                        "))
                 } else {
                     player.sendMessage("§c연동 코드 발급 실패. 잠시 후 다시 시도하세요.")
                 }
             })
+        }
+        return true
+    }
+}
+
+class UnlinkCommand(private val plugin: NyaruPlugin) : CommandExecutor {
+    private val pendingConfirm = ConcurrentHashMap<UUID, Long>()
+
+    override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
+        if (sender !is Player) { sender.sendMessage("§c플레이어만 사용 가능합니다."); return true }
+        val player = sender
+
+        if (args.getOrNull(0)?.lowercase() == "확인") {
+            val timestamp = pendingConfirm[player.uniqueId]
+            if (timestamp == null || System.currentTimeMillis() - timestamp > 30_000) {
+                player.sendMessage("§c먼저 §f/연동해제§c를 입력하세요.")
+                pendingConfirm.remove(player.uniqueId)
+                return true
+            }
+            pendingConfirm.remove(player.uniqueId)
+            plugin.pluginScope.launch {
+                val success = plugin.apiClient.unlinkPlayer(player.uniqueId.toString())
+                Bukkit.getScheduler().runTask(plugin, Runnable {
+                    if (success) {
+                        player.sendMessage("§a연동이 해제되었습니다. 재연동하려면 §f/연동§a을 입력하세요.")
+                    } else {
+                        player.sendMessage("§c연동 해제 실패. 연동된 계정이 없거나 오류가 발생했습니다.")
+                    }
+                })
+            }
+        } else {
+            pendingConfirm[player.uniqueId] = System.currentTimeMillis()
+            val confirmBtn = Component.text("[확인]")
+                .color(NamedTextColor.RED)
+                .decoration(TextDecoration.BOLD, true)
+                .clickEvent(ClickEvent.runCommand("/연동해제 확인"))
+                .hoverEvent(HoverEvent.showText(Component.text("클릭하여 연동 해제 확인", NamedTextColor.GRAY)))
+            player.sendMessage(
+                Component.text()
+                    .append(LegacyComponentSerializer.legacySection().deserialize("§c Discord 연동을 해제하시겠습니까? "))
+                    .append(confirmBtn)
+                    .append(LegacyComponentSerializer.legacySection().deserialize(" §7(30초 내)"))
+                    .build()
+            )
         }
         return true
     }

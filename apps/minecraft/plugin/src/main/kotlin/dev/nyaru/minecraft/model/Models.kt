@@ -8,7 +8,8 @@ data class PlayerInfo(
     val job: String = "miner",
     val level: Int = 1,
     val xp: Int = 0,
-    val title: String? = null
+    val title: String? = null,
+    val titleColor: String? = null
 )
 
 data class MarketItem(

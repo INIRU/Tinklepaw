@@ -5,7 +5,6 @@ import dev.nyaru.minecraft.model.PlayerInfo
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import org.bukkit.Bukkit
 import org.bukkit.event.EventHandler
@@ -19,8 +18,10 @@ import java.util.concurrent.ConcurrentHashMap
 
 class ActionBarManager(private val plugin: NyaruPlugin) : Listener {
 
-    // Cache of player info (UUID -> PlayerInfo), refreshed every 30s
     private val cache = ConcurrentHashMap<UUID, PlayerInfo>()
+    var chatTabListener: ChatTabListener? = null
+
+    fun getInfo(uuid: UUID): PlayerInfo? = cache[uuid]
 
     init {
         startRefreshLoop()
@@ -31,9 +32,14 @@ class ActionBarManager(private val plugin: NyaruPlugin) : Listener {
     fun onJoin(event: PlayerJoinEvent) {
         val player = event.player
         plugin.pluginScope.launch {
-            delay(3000) // wait for join event processing
+            delay(3000)
             val info = plugin.apiClient.getPlayer(player.uniqueId.toString())
-            if (info?.linked == true) cache[player.uniqueId] = info
+            if (info?.linked == true) {
+                cache[player.uniqueId] = info
+                Bukkit.getScheduler().runTask(plugin, Runnable {
+                    chatTabListener?.updateTabName(player, info)
+                })
+            }
         }
     }
 
@@ -45,44 +51,62 @@ class ActionBarManager(private val plugin: NyaruPlugin) : Listener {
     fun refresh(uuid: UUID) {
         plugin.pluginScope.launch {
             val info = plugin.apiClient.getPlayer(uuid.toString())
-            if (info?.linked == true) cache[uuid] = info
-            else cache.remove(uuid)
+            if (info?.linked == true) {
+                cache[uuid] = info
+                val player = Bukkit.getPlayer(uuid)
+                if (player != null) {
+                    Bukkit.getScheduler().runTask(plugin, Runnable {
+                        chatTabListener?.updateTabName(player, info)
+                    })
+                }
+            } else {
+                cache.remove(uuid)
+                val player = Bukkit.getPlayer(uuid)
+                if (player != null) {
+                    Bukkit.getScheduler().runTask(plugin, Runnable {
+                        chatTabListener?.updateTabName(player, null)
+                    })
+                }
+            }
         }
     }
 
-    private fun buildActionBar(info: PlayerInfo): Component {
+    private fun buildActionBarText(info: PlayerInfo): net.kyori.adventure.text.Component {
         val jobKr = if (info.job == "miner") "§9광부" else "§a농부"
         val points = NumberFormat.getNumberInstance(Locale.US).format(info.balance)
         val xpNeeded = (100 * Math.pow(info.level.toDouble(), 1.6)).toInt().coerceAtLeast(1)
         val filledBars = (info.xp.toDouble() / xpNeeded * 8).toInt().coerceIn(0, 8)
         val xpBar = "§a" + "▌".repeat(filledBars) + "§8" + "▌".repeat(8 - filledBars)
-
-        val text = buildString {
-            if (info.title != null) append("§d§l[${info.title}] §r ")
-            append("$jobKr §7Lv.${info.level} $xpBar §8| §e${points}P")
-        }
+        val text = "$jobKr §7Lv.${info.level} $xpBar §8| §e${points}P"
         return LegacyComponentSerializer.legacySection().deserialize(text)
     }
 
-    // Send action bar every 1.5s to keep it visible (fades after ~3s)
     private fun startDisplayLoop() {
         Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, Runnable {
             for (player in Bukkit.getOnlinePlayers()) {
                 val info = cache[player.uniqueId] ?: continue
-                player.sendActionBar(buildActionBar(info))
+                player.sendActionBar(buildActionBarText(info))
             }
-        }, 20L, 30L) // start after 1s, repeat every 1.5s
+        }, 20L, 30L)
     }
 
-    // Refresh cache every 30s
     private fun startRefreshLoop() {
         plugin.pluginScope.launch {
             while (isActive) {
                 delay(30_000)
                 for (player in Bukkit.getOnlinePlayers()) {
                     val info = plugin.apiClient.getPlayer(player.uniqueId.toString())
-                    if (info?.linked == true) cache[player.uniqueId] = info
-                    else cache.remove(player.uniqueId)
+                    if (info?.linked == true) {
+                        cache[player.uniqueId] = info
+                        Bukkit.getScheduler().runTask(plugin, Runnable {
+                            chatTabListener?.updateTabName(player, info)
+                        })
+                    } else {
+                        cache.remove(player.uniqueId)
+                        Bukkit.getScheduler().runTask(plugin, Runnable {
+                            chatTabListener?.updateTabName(player, null)
+                        })
+                    }
                 }
             }
         }

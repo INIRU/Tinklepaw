@@ -54,7 +54,8 @@ class ApiClient(private val baseUrl: String, private val apiKey: String) {
             job = data.get("job")?.asString ?: "miner",
             level = data.get("level")?.asInt ?: 1,
             xp = data.get("xp")?.asInt ?: 0,
-            title = data.get("title")?.takeIf { !it.isJsonNull }?.asString
+            title = data.get("title")?.takeIf { !it.isJsonNull }?.asString,
+            titleColor = data.get("titleColor")?.takeIf { !it.isJsonNull }?.asString
         )
     }
 
@@ -183,5 +184,10 @@ class ApiClient(private val baseUrl: String, private val apiKey: String) {
             leveledUp = data.get("leveledUp").asBoolean,
             xpToNextLevel = data.get("xpToNextLevel").asInt
         )
+    }
+
+    suspend fun unlinkPlayer(uuid: String): Boolean {
+        val data = post("/unlink", mapOf("uuid" to uuid)) ?: return false
+        return data.get("success")?.asBoolean ?: false
     }
 }
