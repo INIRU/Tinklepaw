@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use tauri::{Emitter, Manager};
 
 const MS_CLIENT_ID: &str = "00000000402b5328";
 const MS_AUTH_URL: &str = "https://login.live.com/oauth20_authorize.srf";
@@ -7,12 +8,6 @@ const XBOX_AUTH_URL: &str = "https://user.auth.xboxlive.com/user/authenticate";
 const XSTS_AUTH_URL: &str = "https://xsts.auth.xboxlive.com/xsts/authorize";
 const MC_AUTH_URL: &str = "https://api.minecraftservices.com/authentication/login_with_xbox";
 const MC_PROFILE_URL: &str = "https://api.minecraftservices.com/minecraft/profile";
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct AuthUrl {
-    pub url: String,
-    pub port: u16,
-}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct MinecraftProfile {
@@ -63,24 +58,47 @@ struct McProfileResponse {
     name: String,
 }
 
-/// Start MS OAuth: returns the URL to open in browser and the port for redirect capture.
-#[tauri::command]
-pub async fn microsoft_auth_start() -> Result<AuthUrl, String> {
-    let port = portpicker::pick_unused_port().ok_or("Failed to find unused port")?;
-    let redirect_uri = format!("http://localhost:{}", port);
+const MS_REDIRECT_URI: &str = "https://login.live.com/oauth20_desktop.srf";
 
-    let url = format!(
+/// Start MS OAuth: opens an in-app WebviewWindow and intercepts the redirect to extract the auth code.
+#[tauri::command]
+pub async fn microsoft_auth_start(app: tauri::AppHandle) -> Result<(), String> {
+    let auth_url = format!(
         "{}?client_id={}&response_type=code&redirect_uri={}&scope=XboxLive.signin%20offline_access",
-        MS_AUTH_URL, MS_CLIENT_ID, redirect_uri
+        MS_AUTH_URL, MS_CLIENT_ID, MS_REDIRECT_URI
     );
 
-    Ok(AuthUrl { url, port })
+    let app_clone = app.clone();
+    tauri::WebviewWindowBuilder::new(&app, "auth", tauri::WebviewUrl::External(auth_url.parse().map_err(|e| format!("Invalid URL: {}", e))?))
+        .title("Microsoft 로그인")
+        .inner_size(500.0, 700.0)
+        .on_navigation(move |url| {
+            if url.as_str().starts_with(MS_REDIRECT_URI) {
+                let code = url
+                    .query_pairs()
+                    .find(|(k, _)| k == "code")
+                    .map(|(_, v)| v.into_owned());
+
+                if let Some(code) = code {
+                    let _ = app_clone.emit("auth_code", code);
+                    if let Some(win) = app_clone.get_webview_window("auth") {
+                        let _ = win.close();
+                    }
+                }
+                return false;
+            }
+            true
+        })
+        .build()
+        .map_err(|e| format!("Failed to open auth window: {}", e))?;
+
+    Ok(())
 }
 
 /// Exchange authorization code for full MC auth tokens.
 #[tauri::command]
 pub async fn exchange_auth_code(code: String, port: u16) -> Result<AuthTokens, String> {
-    let redirect_uri = format!("http://localhost:{}", port);
+    let redirect_uri = MS_REDIRECT_URI.to_string();
     let client = reqwest::Client::new();
 
     // Step 1: Exchange code for MS tokens

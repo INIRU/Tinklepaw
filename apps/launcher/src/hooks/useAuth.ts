@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { getSetting, setSetting, removeSetting } from "../lib/store";
 import { invoke } from "@tauri-apps/api/core";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { listen } from "@tauri-apps/api/event";
 import type { AuthTokens, MinecraftProfile } from "../lib/auth";
 
 interface AuthState {
@@ -57,18 +57,11 @@ export const useAuth = create<AuthState>((set, get) => ({
   login: async () => {
     set({ isAuthenticating: true, error: null });
     try {
-      const result = await invoke<{ url: string; port: number }>(
-        "microsoft_auth_start",
-      );
-      await openUrl(result.url);
-
-      // Store port for the code exchange step
-      await setSetting("auth_port", result.port);
-
-      // The user will be redirected to localhost:{port}?code=xxx
-      // We need to capture this. Since Tauri can't easily run an HTTP server
-      // from the frontend, we'll show a manual code input as fallback.
-      // The auth flow continues in loginWithCode().
+      await invoke<void>("microsoft_auth_start");
+      const unlisten = await listen<string>("auth_code", async (event) => {
+        unlisten();
+        await get().loginWithCode(event.payload, 0);
+      });
     } catch (err) {
       set({
         error: `로그인 시작 실패: ${err}`,

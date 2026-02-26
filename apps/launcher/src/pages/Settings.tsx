@@ -39,12 +39,12 @@ export default function Settings({ onNavigate }: SettingsProps) {
   };
 
   return (
-    <div className="w-full h-full flex flex-col bg-bg">
+    <div className="relative w-full h-full flex flex-col overflow-hidden launcher-bg stars-layer">
       {/* Header */}
       <div className="flex items-center gap-3 p-4 border-b border-border">
         <button
           onClick={() => onNavigate("home")}
-          className="glass glass-hover px-3 py-1.5 text-xs text-text-muted cursor-pointer"
+          className="glass glass-hover px-3 py-1.5 text-xs text-text-muted cursor-pointer flex-shrink-0"
         >
           ← 돌아가기
         </button>
@@ -69,7 +69,7 @@ export default function Settings({ onNavigate }: SettingsProps) {
             <button
               onClick={handleDetectJava}
               disabled={detecting}
-              className="glass glass-hover px-3 py-2 text-xs text-text-muted whitespace-nowrap cursor-pointer"
+              className="glass glass-hover px-3 py-2 text-xs text-text-muted whitespace-nowrap cursor-pointer flex-shrink-0"
             >
               {detecting ? "감지 중..." : "자동 감지"}
             </button>
@@ -130,15 +130,17 @@ export default function Settings({ onNavigate }: SettingsProps) {
         <section className="space-y-3">
           <h2 className="text-sm font-semibold text-text">서버 주소</h2>
           <div className="flex gap-2">
-            <input
-              type="text"
-              value={settings.serverHost}
-              onChange={(e) => updateSettings({ serverHost: e.target.value })}
-              placeholder="meow.minecraft.skyline23.com"
-              className="flex-1 px-3 py-2 rounded-lg bg-surface border border-border
-                text-sm text-text placeholder:text-text-dim
-                focus:outline-none focus:border-pink/40 transition-colors"
-            />
+            <div className="flex-1 min-w-0">
+              <input
+                type="text"
+                value={settings.serverHost}
+                onChange={(e) => updateSettings({ serverHost: e.target.value })}
+                placeholder="meow.minecraft.skyline23.com"
+                className="w-full min-w-0 px-3 py-2 rounded-lg bg-surface border border-border
+                  text-sm text-text placeholder:text-text-dim
+                  focus:outline-none focus:border-pink/40 transition-colors"
+              />
+            </div>
             <input
               type="number"
               value={settings.serverPort}
@@ -157,7 +159,7 @@ export default function Settings({ onNavigate }: SettingsProps) {
         <section className="pt-4 border-t border-border">
           <div className="text-xs text-text-dim space-y-1">
             <p>방울냥 런처 v0.1.0</p>
-            <p>Minecraft 1.21.4</p>
+            <p>Minecraft 1.21.11</p>
           </div>
         </section>
       </div>

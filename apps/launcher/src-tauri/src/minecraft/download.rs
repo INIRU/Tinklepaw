@@ -4,7 +4,7 @@ use tauri::{AppHandle, Emitter};
 
 const VERSION_MANIFEST_URL: &str =
     "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
-const TARGET_VERSION: &str = "1.21.4";
+const TARGET_VERSION: &str = "1.21.11";
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]

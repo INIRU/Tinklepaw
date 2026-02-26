@@ -24,11 +24,14 @@ fn ping_server_sync(host: &str, port: u16) -> Result<ServerStatus, String> {
     let addr = format!("{}:{}", host, port);
     let start = std::time::Instant::now();
 
-    let mut stream = TcpStream::connect_timeout(
-        &addr.parse().map_err(|e| format!("Invalid address: {}", e))?,
-        Duration::from_secs(5),
-    )
-    .map_err(|e| format!("Connection failed: {}", e))?;
+    use std::net::ToSocketAddrs;
+    let socket_addr = addr
+        .to_socket_addrs()
+        .map_err(|e| format!("DNS resolve failed: {}", e))?
+        .next()
+        .ok_or_else(|| "No addresses resolved".to_string())?;
+    let mut stream = TcpStream::connect_timeout(&socket_addr, Duration::from_secs(5))
+        .map_err(|e| format!("Connection failed: {}", e))?;
 
     stream
         .set_read_timeout(Some(Duration::from_secs(5)))

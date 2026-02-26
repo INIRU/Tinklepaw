@@ -4,25 +4,30 @@ interface ProgressBarProps {
   sublabel?: string;
 }
 
-export default function ProgressBar({
-  percent,
-  label,
-  sublabel,
-}: ProgressBarProps) {
+export default function ProgressBar({ percent, label, sublabel }: ProgressBarProps) {
+  const clamped = Math.min(100, Math.max(0, percent));
+
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-text-muted">{label}</span>
-        <span className="text-text-dim">{Math.round(percent)}%</span>
+    <div className="w-full space-y-2.5">
+      {/* Labels */}
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-text-muted">{label}</span>
+        <span className="text-xs font-mono text-lavender tabular-nums">
+          {Math.round(clamped)}%
+        </span>
       </div>
-      <div className="h-1.5 bg-surface rounded-full overflow-hidden">
+
+      {/* Track */}
+      <div className="progress-track h-[5px] w-full">
         <div
-          className="h-full bg-gradient-brand rounded-full transition-all duration-300 ease-out"
-          style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
+          className="progress-fill h-full"
+          style={{ width: `${clamped}%` }}
         />
       </div>
+
+      {/* Sublabel */}
       {sublabel && (
-        <div className="text-xs text-text-dim truncate">{sublabel}</div>
+        <p className="text-[10px] text-text-dim truncate leading-none">{sublabel}</p>
       )}
     </div>
   );

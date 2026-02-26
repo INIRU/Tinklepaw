@@ -36,6 +36,11 @@
     ]
   },
   "plugins": {
-    "store": {}
+    "updater": {
+      "pubkey": "TAURI_UPDATER_PUBKEY_PLACEHOLDER",
+      "endpoints": [
+        "https://github.com/INIRU/Tinklepaw/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

@@ -1,0 +1,65 @@
+name: Release Launcher
+
+on:
+  push:
+    tags:
+      - 'launcher-v*'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            artifact_suffix: aarch64
+          - platform: macos-13
+            target: x86_64-apple-darwin
+            artifact_suffix: x86_64
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_suffix: x86_64-windows
+
+    runs-on: ${{ matrix.platform }}
+    defaults:
+      run:
+        working-directory: apps/launcher
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/launcher/src-tauri -> target
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/launcher
+          tagName: ${{ github.ref_name }}
+          releaseName: '방울냥 런처 ${{ github.ref_name }}'
+          releaseBody: |
+            ## 변경사항
+            ${{ github.event.head_commit.message }}
+          releaseDraft: false
+          prerelease: false
+          args: --target ${{ matrix.target }}

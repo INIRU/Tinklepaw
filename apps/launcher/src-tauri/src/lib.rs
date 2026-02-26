@@ -12,6 +12,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState {
             minecraft_running: Mutex::new(false),
         })
@@ -25,6 +26,7 @@ pub fn run() {
             commands::minecraft::install_minecraft,
             commands::minecraft::launch_minecraft,
             commands::minecraft::detect_java,
+            commands::minecraft::install_java,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -6,7 +6,7 @@ use tokio::process::Command;
 
 use super::download;
 
-const TARGET_VERSION: &str = "1.21.4";
+const TARGET_VERSION: &str = "1.21.11";
 
 pub struct LaunchConfig {
     pub java_path: PathBuf,
@@ -69,14 +69,13 @@ pub async fn launch(app: &AppHandle, config: LaunchConfig) -> Result<(), String>
     args.push("--versionType".to_string());
     args.push("release".to_string());
 
-    // Auto-connect to server
+    // Write servers.dat so server appears in multiplayer list
     if let Some(ref host) = config.server_host {
-        args.push("--server".to_string());
-        args.push(host.clone());
-    }
-    if let Some(port) = config.server_port {
-        args.push("--port".to_string());
-        args.push(port.to_string());
+        let port = config.server_port.unwrap_or(25565);
+        let _ = write_servers_dat(&config.game_dir, "방울냥 서버", &format!("{}:{}", host, port));
+        // quickPlayMultiplayer (MC 1.20+)
+        args.push("--quickPlayMultiplayer".to_string());
+        args.push(format!("{}:{}", host, port));
     }
 
     let _ = app.emit("game-log", "[런처] 마인크래프트 시작 중...");
@@ -138,4 +137,51 @@ pub async fn launch(app: &AppHandle, config: LaunchConfig) -> Result<(), String>
     });
 
     Ok(())
+}
+
+fn write_servers_dat(game_dir: &PathBuf, server_name: &str, server_addr: &str) -> Result<(), String> {
+    let servers_dat = game_dir.join("servers.dat");
+    let mut nbt: Vec<u8> = Vec::new();
+
+    // Root TAG_Compound (id=10), empty name
+    nbt.push(10u8);
+    nbt.extend_from_slice(&0u16.to_be_bytes());
+
+    // TAG_List (id=9), name="servers", element type=TAG_Compound(10), count=1
+    nbt.push(9u8);
+    let key = b"servers";
+    nbt.extend_from_slice(&(key.len() as u16).to_be_bytes());
+    nbt.extend_from_slice(key);
+    nbt.push(10u8); // element type: compound
+    nbt.extend_from_slice(&1i32.to_be_bytes()); // count
+
+    // Server entry: TAG_String "name"
+    nbt.push(8u8);
+    let k = b"name";
+    nbt.extend_from_slice(&(k.len() as u16).to_be_bytes());
+    nbt.extend_from_slice(k);
+    let v = server_name.as_bytes();
+    nbt.extend_from_slice(&(v.len() as u16).to_be_bytes());
+    nbt.extend_from_slice(v);
+
+    // TAG_String "ip"
+    nbt.push(8u8);
+    let k = b"ip";
+    nbt.extend_from_slice(&(k.len() as u16).to_be_bytes());
+    nbt.extend_from_slice(k);
+    let v = server_addr.as_bytes();
+    nbt.extend_from_slice(&(v.len() as u16).to_be_bytes());
+    nbt.extend_from_slice(v);
+
+    // TAG_Byte "acceptTextures" = 1
+    nbt.push(1u8);
+    let k = b"acceptTextures";
+    nbt.extend_from_slice(&(k.len() as u16).to_be_bytes());
+    nbt.extend_from_slice(k);
+    nbt.push(1u8);
+
+    nbt.push(0u8); // End of server compound
+    nbt.push(0u8); // End of root compound
+
+    std::fs::write(&servers_dat, &nbt).map_err(|e| format!("servers.dat write failed: {}", e))
 }

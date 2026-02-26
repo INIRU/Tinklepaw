@@ -108,3 +108,8 @@ pub async fn launch_minecraft(
 
     Ok(())
 }
+
+#[tauri::command]
+pub async fn install_java(app: AppHandle) -> Result<String, String> {
+    crate::minecraft::java::install_java_auto(&app).await
+}

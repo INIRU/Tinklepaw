@@ -13,40 +13,42 @@ export default function ServerStatus({
   latencyMs,
   isLoading,
 }: ServerStatusProps) {
-  return (
-    <div className="glass p-3 space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-text-muted uppercase tracking-wider">
-          서버 상태
-        </span>
-        {isLoading ? (
-          <div className="w-2 h-2 rounded-full bg-lemon animate-pulse" />
-        ) : (
-          <div
-            className={`w-2 h-2 rounded-full ${online ? "bg-mint" : "bg-red-500"}`}
-          />
-        )}
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="w-2 h-2 rounded-full bg-lemon animate-pulse flex-shrink-0" />
+        <span className="text-[11px] text-text-dim">연결 중...</span>
       </div>
+    );
+  }
 
-      {isLoading ? (
-        <div className="text-sm text-text-dim">연결 중...</div>
-      ) : online ? (
-        <>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-2xl font-bold text-text">
-              {playersOnline}
-            </span>
-            <span className="text-sm text-text-muted">/ {playersMax}</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-xs text-text-dim">
-            <span>meow.minecraft.skyline23.com</span>
-            <span>|</span>
-            <span>{latencyMs}ms</span>
-          </div>
-        </>
-      ) : (
-        <div className="text-sm text-red-400">서버 오프라인</div>
-      )}
+  if (!online) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+        <span className="text-[11px] text-text-dim">서버 오프라인</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 whitespace-nowrap">
+      {/* Pulsing dot */}
+      <span className="relative flex-shrink-0 w-2 h-2 self-center">
+        <span className="animate-ping absolute inset-0 rounded-full bg-mint opacity-60" />
+        <span className="absolute inset-0 rounded-full bg-mint" />
+      </span>
+
+      {/* Host */}
+      <span className="text-[11px] text-text-muted font-medium">
+        meow.minecraft.skyline23.com
+      </span>
+
+      {/* Separator */}
+      <span className="text-text-dim text-[11px]">·</span>
+
+      {/* Latency */}
+      <span className="text-[11px] text-text-dim">{latencyMs}ms</span>
     </div>
   );
 }
