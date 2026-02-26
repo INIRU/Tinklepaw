@@ -27,6 +27,8 @@ kotlin {
 }
 
 tasks.withType<ShadowJar> {
+    archiveBaseName.set("nyaru-plugin")
+    archiveVersion.set("")
     archiveClassifier.set("")
     relocate("okhttp3", "dev.nyaru.shade.okhttp3")
     relocate("okio", "dev.nyaru.shade.okio")
