@@ -10,7 +10,7 @@ FROM itzg/minecraft-server:latest
 
 ENV EULA=TRUE \
     TYPE=PAPER \
-    VERSION=1.21.4 \
+    VERSION=1.21.11 \
     MEMORY=4G \
     ONLINE_MODE=TRUE \
     SERVER_PORT=1207

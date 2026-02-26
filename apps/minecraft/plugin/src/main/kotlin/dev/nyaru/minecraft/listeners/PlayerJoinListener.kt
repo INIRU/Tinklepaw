@@ -59,7 +59,7 @@ class PlayerJoinListener(private val plugin: NyaruPlugin) : Listener {
     private fun sendWelcomeMessage(player: org.bukkit.entity.Player) {
         player.sendMessage("§8§m                                        ")
         player.sendMessage("§r")
-        player.sendMessage("§6§l[ Nyaru Minecraft ]")
+        player.sendMessage("§d§l[ 방울냥 Minecraft ]")
         player.sendMessage("§r")
         player.sendMessage("§f이 서버는 Discord 계정 연동이 필요합니다.")
         player.sendMessage("§r")
