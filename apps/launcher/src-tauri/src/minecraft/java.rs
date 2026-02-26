@@ -12,9 +12,12 @@ pub fn detect_java() -> Option<PathBuf> {
     }
 
     // Check if java is in PATH
-    if let Ok(output) = Command::new("which").arg("java").output() {
+    let which_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
+    if let Ok(output) = Command::new(which_cmd).arg("java").output() {
         if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let raw = String::from_utf8_lossy(&output.stdout);
+            // `where` on Windows may return multiple lines; take the first
+            let path = raw.lines().next().unwrap_or("").trim().to_string();
             if !path.is_empty() {
                 return Some(PathBuf::from(path));
             }
@@ -195,6 +198,21 @@ pub async fn install_java_auto(app: &tauri::AppHandle) -> Result<String, String>
             .map_err(|e| format!("Extract failed: {}", e))?;
         if !output.status.success() {
             return Err(format!("tar failed: {}", String::from_utf8_lossy(&output.stderr)));
+        }
+    } else if ext == "zip" {
+        let output = std::process::Command::new("powershell")
+            .args([
+                "-NoProfile", "-NonInteractive", "-Command",
+                &format!(
+                    "Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
+                    archive_path.to_str().unwrap().replace('\'', "''"),
+                    java_dir.to_str().unwrap().replace('\'', "''")
+                ),
+            ])
+            .output()
+            .map_err(|e| format!("Extract failed: {}", e))?;
+        if !output.status.success() {
+            return Err(format!("Expand-Archive failed: {}", String::from_utf8_lossy(&output.stderr)));
         }
     }
 
