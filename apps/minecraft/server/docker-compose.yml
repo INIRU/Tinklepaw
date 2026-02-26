@@ -1,0 +1,15 @@
+services:
+  minecraft:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    ports:
+      - "25565:25565"
+    volumes:
+      - mc_data:/data
+    environment:
+      - MINECRAFT_API_KEY=${MINECRAFT_API_KEY}
+    restart: unless-stopped
+
+volumes:
+  mc_data:

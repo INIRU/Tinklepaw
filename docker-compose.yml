@@ -1,0 +1,23 @@
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    restart: unless-stopped
+
+  minecraft:
+    build:
+      context: apps/minecraft
+      dockerfile: server/Dockerfile
+    ports:
+      - "1207:1207"
+    volumes:
+      - mc_data:/data
+    environment:
+      - MINECRAFT_API_KEY=${MINECRAFT_API_KEY}
+      - MINECRAFT_API_URL=https://tinklepaw.vercel.app
+    restart: unless-stopped
+
+volumes:
+  mc_data:

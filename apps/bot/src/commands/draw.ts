@@ -112,7 +112,13 @@ export async function triggerGachaUI(
     stock_holding_fee_last_applied_on: null,
     stock_holding_fee_timezone: 'Asia/Seoul',
     show_traceback_to_user: true,
-  }));
+    mc_market_fee_bps: 500,
+    mc_market_event_interval_ms: 3600000,
+    mc_market_channel_id: null,
+    mc_job_change_cost_points: 200,
+    mc_freshness_decay_minutes: 30,
+    mc_purity_y_bonus_enabled: true,
+  } as AppConfig));
 
   const userId =
     context instanceof Message ? context.author.id : context.user.id;

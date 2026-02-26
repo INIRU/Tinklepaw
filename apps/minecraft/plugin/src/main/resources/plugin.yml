@@ -1,0 +1,11 @@
+name: NyaruPlugin
+version: 1.0.0
+main: dev.nyaru.minecraft.NyaruPlugin
+api-version: "1.21"
+authors: [Nyaru]
+description: Nyaru Discord economy integration for Minecraft
+commands:
+  nyaru:
+    description: Nyaru plugin main command
+    usage: /nyaru <subcommand>
+    aliases: [냐루]

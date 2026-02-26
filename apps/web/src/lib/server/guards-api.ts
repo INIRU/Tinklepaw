@@ -150,3 +150,11 @@ export async function requireGuildMemberApi(): Promise<AdminContext | NextRespon
     return NextResponse.json({ error: 'DISCORD_API_ERROR' }, { status: 503 });
   }
 }
+
+export async function requireMinecraftApiKey(req: Request): Promise<true | NextResponse> {
+  const apiKey = req.headers.get('x-api-key');
+  if (!apiKey || apiKey !== process.env.MINECRAFT_API_KEY) {
+    return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
+  }
+  return true;
+}

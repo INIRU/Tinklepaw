@@ -97,6 +97,12 @@ export type Database = {
           show_traceback_to_user: boolean;
           created_at: string;
           updated_at: string;
+          mc_market_fee_bps: number;
+          mc_market_event_interval_ms: number;
+          mc_market_channel_id: string | null;
+          mc_job_change_cost_points: number;
+          mc_freshness_decay_minutes: number;
+          mc_purity_y_bonus_enabled: boolean;
         };
         Insert: Partial<Database['nyang']['Tables']['app_config']['Row']> & {
           id: number;
@@ -484,6 +490,300 @@ export type Database = {
         Update: Partial<Database['nyang']['Tables']['personal_roles']['Row']>;
         Relationships: [];
       };
+      minecraft_players: {
+        Row: {
+          minecraft_uuid: string;
+          discord_user_id: string;
+          minecraft_name: string;
+          linked_at: string;
+        };
+        Insert: {
+          minecraft_uuid: string;
+          discord_user_id: string;
+          minecraft_name: string;
+          linked_at?: string;
+        };
+        Update: Partial<{
+          minecraft_uuid: string;
+          discord_user_id: string;
+          minecraft_name: string;
+          linked_at: string;
+        }>;
+        Relationships: [];
+      };
+      minecraft_link_requests: {
+        Row: {
+          discord_user_id: string;
+          otp: string;
+          expires_at: string;
+          created_at: string;
+          minecraft_uuid: string | null;
+          minecraft_name: string | null;
+        };
+        Insert: {
+          discord_user_id: string;
+          otp: string;
+          expires_at: string;
+          created_at?: string;
+          minecraft_uuid?: string | null;
+          minecraft_name?: string | null;
+        };
+        Update: Partial<{
+          discord_user_id: string;
+          otp: string;
+          expires_at: string;
+          created_at: string;
+          minecraft_uuid: string | null;
+          minecraft_name: string | null;
+        }>;
+        Relationships: [];
+      };
+      minecraft_jobs: {
+        Row: {
+          minecraft_uuid: string;
+          job: 'miner' | 'farmer';
+          level: number;
+          xp: number;
+          last_job_change: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          minecraft_uuid: string;
+          job?: 'miner' | 'farmer';
+          level?: number;
+          xp?: number;
+          last_job_change?: string | null;
+          updated_at?: string;
+        };
+        Update: Partial<{
+          minecraft_uuid: string;
+          job: 'miner' | 'farmer';
+          level: number;
+          xp: number;
+          last_job_change: string | null;
+          updated_at: string;
+        }>;
+        Relationships: [];
+      };
+      mc_market_items: {
+        Row: {
+          symbol: string;
+          display_name: string;
+          category: 'crop' | 'mineral';
+          base_price: number;
+          min_price: number;
+          max_price: number;
+          mc_material: string;
+          enabled: boolean;
+        };
+        Insert: {
+          symbol: string;
+          display_name: string;
+          category: 'crop' | 'mineral';
+          base_price: number;
+          min_price: number;
+          max_price: number;
+          mc_material: string;
+          enabled?: boolean;
+        };
+        Update: Partial<{
+          symbol: string;
+          display_name: string;
+          category: 'crop' | 'mineral';
+          base_price: number;
+          min_price: number;
+          max_price: number;
+          mc_material: string;
+          enabled: boolean;
+        }>;
+        Relationships: [];
+      };
+      mc_market_prices: {
+        Row: {
+          symbol: string;
+          current_price: number;
+          change_pct: number;
+          updated_at: string;
+        };
+        Insert: {
+          symbol: string;
+          current_price: number;
+          change_pct?: number;
+          updated_at?: string;
+        };
+        Update: Partial<{
+          symbol: string;
+          current_price: number;
+          change_pct: number;
+          updated_at: string;
+        }>;
+        Relationships: [];
+      };
+      mc_price_history: {
+        Row: {
+          id: number;
+          symbol: string;
+          price: number;
+          recorded_at: string;
+        };
+        Insert: {
+          id?: number;
+          symbol: string;
+          price: number;
+          recorded_at?: string;
+        };
+        Update: Partial<{
+          id: number;
+          symbol: string;
+          price: number;
+          recorded_at: string;
+        }>;
+        Relationships: [];
+      };
+      mc_market_trades: {
+        Row: {
+          id: number;
+          minecraft_uuid: string;
+          symbol: string;
+          qty: number;
+          unit_price: number;
+          base_price: number;
+          freshness_pct: number | null;
+          purity_pct: number | null;
+          fee_amount: number;
+          net_points: number;
+          side: 'sell' | 'buy';
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          minecraft_uuid: string;
+          symbol: string;
+          qty: number;
+          unit_price: number;
+          base_price: number;
+          freshness_pct?: number | null;
+          purity_pct?: number | null;
+          fee_amount?: number;
+          net_points: number;
+          side: 'sell' | 'buy';
+          created_at?: string;
+        };
+        Update: Partial<{
+          id: number;
+          minecraft_uuid: string;
+          symbol: string;
+          qty: number;
+          unit_price: number;
+          base_price: number;
+          freshness_pct: number | null;
+          purity_pct: number | null;
+          fee_amount: number;
+          net_points: number;
+          side: 'sell' | 'buy';
+          created_at: string;
+        }>;
+        Relationships: [];
+      };
+      mc_quest_templates: {
+        Row: {
+          id: string;
+          job_type: 'miner' | 'farmer' | null;
+          description: string;
+          target_type: string;
+          target_material: string | null;
+          target_qty: number;
+          reward_points: number;
+        };
+        Insert: {
+          id: string;
+          job_type?: 'miner' | 'farmer' | null;
+          description: string;
+          target_type: string;
+          target_material?: string | null;
+          target_qty: number;
+          reward_points: number;
+        };
+        Update: Partial<{
+          id: string;
+          job_type: 'miner' | 'farmer' | null;
+          description: string;
+          target_type: string;
+          target_material: string | null;
+          target_qty: number;
+          reward_points: number;
+        }>;
+        Relationships: [];
+      };
+      mc_daily_quests: {
+        Row: {
+          id: number;
+          minecraft_uuid: string;
+          quest_id: string;
+          progress: number;
+          completed: boolean;
+          claimed: boolean;
+          quest_date: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          minecraft_uuid: string;
+          quest_id: string;
+          progress?: number;
+          completed?: boolean;
+          claimed?: boolean;
+          quest_date: string;
+          created_at?: string;
+        };
+        Update: Partial<{
+          id: number;
+          minecraft_uuid: string;
+          quest_id: string;
+          progress: number;
+          completed: boolean;
+          claimed: boolean;
+          quest_date: string;
+          created_at: string;
+        }>;
+        Relationships: [];
+      };
+      mc_p2p_listings: {
+        Row: {
+          id: number;
+          seller_uuid: string;
+          symbol: string;
+          qty: number;
+          price_per_unit: number;
+          status: 'open' | 'sold' | 'cancelled';
+          buyer_uuid: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: number;
+          seller_uuid: string;
+          symbol: string;
+          qty: number;
+          price_per_unit: number;
+          status?: 'open' | 'sold' | 'cancelled';
+          buyer_uuid?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<{
+          id: number;
+          seller_uuid: string;
+          symbol: string;
+          qty: number;
+          price_per_unit: number;
+          status: 'open' | 'sold' | 'cancelled';
+          buyer_uuid: string | null;
+          created_at: string;
+          updated_at: string;
+        }>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -632,6 +932,8 @@ export type Database = {
       role_sync_job_status: 'pending' | 'running' | 'succeeded' | 'failed';
       gacha_pool_kind: 'permanent' | 'limited';
       gacha_rarity: 'R' | 'S' | 'SS' | 'SSS';
+      mc_job_type: 'miner' | 'farmer';
+      mc_item_category: 'crop' | 'mineral';
     };
     CompositeTypes: Record<string, never>;
   };

@@ -7,3 +7,13 @@ screenshots/
 node_modules/
 .next/
 dist/
+.playwright-mcp
+
+
+# Minecraft plugin config (contains API key)
+apps/minecraft/plugin/src/main/resources/config.yml
+
+# Minecraft plugin build artifacts
+apps/minecraft/plugin/build/
+apps/minecraft/plugin/.gradle/
+apps/minecraft/plugin/gradle/wrapper/gradle-wrapper.jar
