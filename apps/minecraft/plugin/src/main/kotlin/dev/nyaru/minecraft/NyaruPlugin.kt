@@ -108,18 +108,18 @@ class NyaruPlugin : JavaPlugin() {
         server.pluginManager.registerEvents(worldEventListener, this)
         worldEventListener.onEnable()
 
-        // FancyNpcs integration (soft-depend — only loaded if plugin is present)
-        val createNpc: ((org.bukkit.Location, NpcType) -> Unit)? =
-            if (server.pluginManager.isPluginEnabled("FancyNpcs")) {
+        // FancyNpcs integration — checked 1 tick later to avoid load-order issues
+        server.scheduler.runTask(this, Runnable {
+            npcCreateFn = if (server.pluginManager.isPluginEnabled("FancyNpcs")) {
                 val service = dev.nyaru.minecraft.npc.FancyNpcsService(this)
                 server.pluginManager.registerEvents(service, this)
                 logger.info("FancyNpcs detected — NPC support enabled")
-                val fn: (org.bukkit.Location, NpcType) -> Unit = { loc, type -> service.createNpc(loc, type) }
-                fn
+                { loc, type -> service.createNpc(loc, type) }
             } else {
                 logger.info("FancyNpcs not found — NPC commands disabled")
                 null
             }
+        })
 
         getCommand("연동")?.setExecutor(LinkCommand(this))
         getCommand("연동해제")?.setExecutor(UnlinkCommand(this, actionBarManager, playerJoinListener))
@@ -130,7 +130,7 @@ class NyaruPlugin : JavaPlugin() {
         getCommand("퀘스트")?.setExecutor(QuestCommand(this))
         getCommand("거래소")?.setExecutor(TradeCommand(this))
         getCommand("스킬")?.setExecutor(SkillCommand(this, skillManager))
-        val adminCmd = AdminCommand(this, createNpc)
+        val adminCmd = AdminCommand(this)
         getCommand("나루관리")?.setExecutor(adminCmd)
         getCommand("나루관리")?.tabCompleter = adminCmd
         val teamCmd = TeamCommand(protectionManager)
@@ -144,6 +144,8 @@ class NyaruPlugin : JavaPlugin() {
 
         logger.info("NyaruPlugin enabled!")
     }
+
+    var npcCreateFn: ((org.bukkit.Location, NpcType) -> Unit)? = null
 
     lateinit var protectionManager: ProtectionManager
         private set

@@ -10,8 +10,7 @@ import org.bukkit.command.TabCompleter
 import org.bukkit.entity.Player
 
 class AdminCommand(
-    private val plugin: NyaruPlugin,
-    private val createNpc: ((Location, NpcType) -> Unit)?
+    private val plugin: NyaruPlugin
 ) : CommandExecutor, TabCompleter {
 
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
@@ -27,6 +26,7 @@ class AdminCommand(
             sender.sendMessage("§f/방울냥관리 npc <상점|직업>")
             return true
         }
+        val createNpc = plugin.npcCreateFn
         if (createNpc == null) {
             sender.sendMessage("§cFancyNpcs 플러그인이 설치되지 않았습니다.")
             return true
