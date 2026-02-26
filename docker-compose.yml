@@ -7,17 +7,29 @@ services:
     restart: unless-stopped
 
   minecraft:
-    build:
-      context: apps/minecraft
-      dockerfile: server/Dockerfile
+    image: itzg/minecraft-server:latest
+    pull_policy: daily
+    tty: true
+    stdin_open: true
     ports:
-      - "1207:1207"
-    volumes:
-      - mc_data:/data
+      - "25565:25565"
+      - "25575:25575"
     environment:
-      - MINECRAFT_API_KEY=${MINECRAFT_API_KEY}
-      - MINECRAFT_API_URL=https://tinklepaw.vercel.app
+      JAVA_OPTS: "-Djava.net.preferIPv4Stack=true"
+      EULA: "TRUE"
+      TYPE: "PAPER"
+      VERSION: "1.21.11"
+      MEMORY: "8G"
+      SPIGET_RESOURCES: "81534"
+      # 81534 = Chunky
+      PLUGINS: "https://github.com/INIRU/Tinklepaw/releases/latest/download/nyaru-plugin.jar"
+      ENABLE_RCON: "true"
+      RCON_PASSWORD: "ponjiz-copfoj-ziTwe9"
+      RCON_PORT: "25575"
+      MINECRAFT_API_KEY: "${MINECRAFT_API_KEY}"
+    volumes:
+      - mc-data:/data
     restart: unless-stopped
 
 volumes:
-  mc_data:
+  mc-data:

@@ -1,0 +1,43 @@
+name: Release Minecraft Plugin
+
+on:
+  push:
+    tags:
+      - 'minecraft-v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/minecraft/plugin
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: temurin
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build plugin
+        run: ./gradlew shadowJar
+
+      - name: Rename JAR
+        run: |
+          cp build/libs/nyaru-plugin-*.jar nyaru-plugin.jar
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: '마인크래프트 플러그인 ${{ github.ref_name }}'
+          body: |
+            ## 변경사항
+            ${{ github.event.head_commit.message }}
+          files: apps/minecraft/plugin/nyaru-plugin.jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
