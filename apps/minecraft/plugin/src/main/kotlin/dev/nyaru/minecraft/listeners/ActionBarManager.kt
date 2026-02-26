@@ -44,6 +44,7 @@ class ActionBarManager(private val plugin: NyaruPlugin, private val pm: Protecti
                 cache[player.uniqueId] = info
                 Bukkit.getScheduler().runTask(plugin, Runnable {
                     chatTabListener?.updateTabName(player, info)
+                    plugin.sidebarManager.update(player, info)
                 })
             }
         }
@@ -66,7 +67,8 @@ class ActionBarManager(private val plugin: NyaruPlugin, private val pm: Protecti
                 cache[uuid] = info
                 if (player != null) {
                     Bukkit.getScheduler().runTask(plugin, Runnable {
-                        chatTabListener?.updateTabName(player, info)
+                        chatTabListener?.updateTabName(player, if (info.linked) info else null)
+                        if (info.linked) plugin.sidebarManager.update(player, info)
                     })
                 }
             } else {
@@ -109,6 +111,7 @@ class ActionBarManager(private val plugin: NyaruPlugin, private val pm: Protecti
                                 cache[player.uniqueId] = fresh
                                 Bukkit.getScheduler().runTask(plugin, Runnable {
                                     chatTabListener?.updateTabName(player, fresh)
+                                    plugin.sidebarManager.update(player, fresh)
                                 })
                             }
                         } finally {
@@ -131,6 +134,7 @@ class ActionBarManager(private val plugin: NyaruPlugin, private val pm: Protecti
                         cache[player.uniqueId] = info
                         Bukkit.getScheduler().runTask(plugin, Runnable {
                             chatTabListener?.updateTabName(player, info)
+                            plugin.sidebarManager.update(player, info)
                         })
                     } else {
                         cache.remove(player.uniqueId)

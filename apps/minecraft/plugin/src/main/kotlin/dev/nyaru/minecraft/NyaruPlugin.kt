@@ -25,6 +25,7 @@ import dev.nyaru.minecraft.gui.JobSelectGui
 import dev.nyaru.minecraft.gui.ShopGui
 import dev.nyaru.minecraft.gui.SkillGui
 import dev.nyaru.minecraft.listeners.ActionBarManager
+import dev.nyaru.minecraft.listeners.SidebarManager
 import dev.nyaru.minecraft.listeners.BlockBreakListener
 import dev.nyaru.minecraft.listeners.BlockDropListener
 import dev.nyaru.minecraft.listeners.BlockPlaceListener
@@ -49,6 +50,9 @@ class NyaruPlugin : JavaPlugin() {
         private set
 
     lateinit var actionBarManager: ActionBarManager
+        private set
+
+    lateinit var sidebarManager: SidebarManager
         private set
 
     val pluginScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -90,6 +94,8 @@ class NyaruPlugin : JavaPlugin() {
         server.pluginManager.registerEvents(HelpGui.HelpGuiListener(), this)
 
         val skillManager = SkillManager(this)
+        sidebarManager = SidebarManager(this, protectionManager)
+        server.pluginManager.registerEvents(sidebarManager, this)
         actionBarManager = ActionBarManager(this, protectionManager)
         val chatTabListener = ChatTabListener(actionBarManager)
         actionBarManager.chatTabListener = chatTabListener
