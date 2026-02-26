@@ -4,6 +4,7 @@ main: dev.nyaru.minecraft.NyaruPlugin
 api-version: "1.21"
 authors: [Nyaru]
 description: Nyaru Discord economy integration for Minecraft
+soft-depend: [FancyNpcs]
 commands:
   연동:
     description: Discord 계정 연동 코드 발급
@@ -29,3 +30,7 @@ commands:
   연동해제:
     description: Discord 계정 연동 해제
     usage: /연동해제
+  나루관리:
+    description: Nyaru 관리자 명령어
+    usage: /나루관리 npc <상점|직업>
+    permission: nyaru.admin

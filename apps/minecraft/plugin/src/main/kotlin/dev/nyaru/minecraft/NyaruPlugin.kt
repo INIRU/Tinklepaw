@@ -2,6 +2,7 @@ package dev.nyaru.minecraft
 
 import dev.nyaru.minecraft.api.ApiClient
 import dev.nyaru.minecraft.api.DirectClient
+import dev.nyaru.minecraft.commands.AdminCommand
 import dev.nyaru.minecraft.commands.BalanceCommand
 import dev.nyaru.minecraft.commands.JobCommand
 import dev.nyaru.minecraft.commands.LinkCommand
@@ -16,6 +17,8 @@ import dev.nyaru.minecraft.listeners.BlockBreakListener
 import dev.nyaru.minecraft.listeners.BlockDropListener
 import dev.nyaru.minecraft.listeners.ChatTabListener
 import dev.nyaru.minecraft.listeners.PlayerJoinListener
+import dev.nyaru.minecraft.listeners.WorldEventListener
+import dev.nyaru.minecraft.npc.NpcType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -69,6 +72,23 @@ class NyaruPlugin : JavaPlugin() {
         server.pluginManager.registerEvents(BlockDropListener(this), this)
         server.pluginManager.registerEvents(PlayerJoinListener(this, actionBarManager), this)
 
+        val worldEventListener = WorldEventListener(this)
+        server.pluginManager.registerEvents(worldEventListener, this)
+        worldEventListener.onEnable()
+
+        // FancyNpcs integration (soft-depend — only loaded if plugin is present)
+        val createNpc: ((org.bukkit.Location, NpcType) -> Unit)? =
+            if (server.pluginManager.isPluginEnabled("FancyNpcs")) {
+                val service = dev.nyaru.minecraft.npc.FancyNpcsService(this)
+                server.pluginManager.registerEvents(service, this)
+                logger.info("FancyNpcs detected — NPC support enabled")
+                val fn: (org.bukkit.Location, NpcType) -> Unit = { loc, type -> service.createNpc(loc, type) }
+                fn
+            } else {
+                logger.info("FancyNpcs not found — NPC commands disabled")
+                null
+            }
+
         getCommand("연동")?.setExecutor(LinkCommand(this))
         getCommand("연동해제")?.setExecutor(UnlinkCommand(this, actionBarManager))
         getCommand("잔고")?.setExecutor(BalanceCommand(this, actionBarManager))
@@ -79,6 +99,9 @@ class NyaruPlugin : JavaPlugin() {
         getCommand("시세")?.setExecutor(MarketCommand(this))
         getCommand("퀘스트")?.setExecutor(QuestCommand(this))
         getCommand("거래소")?.setExecutor(TradeCommand(this))
+        val adminCmd = AdminCommand(this, createNpc)
+        getCommand("나루관리")?.setExecutor(adminCmd)
+        getCommand("나루관리")?.tabCompleter = adminCmd
 
         logger.info("NyaruPlugin enabled!")
     }
