@@ -10,6 +10,7 @@ import {
   ChartColumnBig,
   ChevronRight,
   Dices,
+  Gamepad2,
   RefreshCw,
   Settings,
   ShieldCheck,
@@ -81,6 +82,7 @@ const sections = [
   { title: '유저', desc: '포인트/인벤/장착 상태 조정', href: '/admin/users', icon: Users, color: 'lavender', focus: true },
   { title: '알림 관리', desc: '공지 발송 및 보상 지급', href: '/admin/notifications', icon: Bell, color: 'yellow', focus: false },
   { title: '활동 통계', desc: '입장/이탈, 채팅, 통화 사용량 분석', href: '/admin/analytics', icon: ChartColumnBig, color: 'mint', focus: false },
+  { title: '마인크래프트', desc: '플레이어 연동, 시장, 퀘스트 설정', href: '/admin/minecraft', icon: Gamepad2, color: 'mint', focus: false },
 ] as const;
 
 const COLOR_MAP: Record<string, string> = {
