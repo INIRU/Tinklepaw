@@ -15,6 +15,7 @@ services:
       MEMORY: "8G"
       SPIGET_RESOURCES: "81534"
       # 81534 = Chunky
+      MODRINTH_PROJECTS: "fancynpcs"
       PLUGINS: "https://github.com/INIRU/Tinklepaw/releases/download/minecraft-v1.0.0/nyaru-plugin.jar"
       ENABLE_RCON: "true"
       RCON_PASSWORD: "ponjiz-copfoj-ziTwe9"
