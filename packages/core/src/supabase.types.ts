@@ -569,7 +569,7 @@ export type Database = {
         Row: {
           symbol: string;
           display_name: string;
-          category: 'crop' | 'mineral';
+          category: 'crop' | 'mineral' | 'seed';
           base_price: number;
           min_price: number;
           max_price: number;
@@ -579,7 +579,7 @@ export type Database = {
         Insert: {
           symbol: string;
           display_name: string;
-          category: 'crop' | 'mineral';
+          category: 'crop' | 'mineral' | 'seed';
           base_price: number;
           min_price: number;
           max_price: number;
@@ -589,7 +589,7 @@ export type Database = {
         Update: Partial<{
           symbol: string;
           display_name: string;
-          category: 'crop' | 'mineral';
+          category: 'crop' | 'mineral' | 'seed';
           base_price: number;
           min_price: number;
           max_price: number;
@@ -972,7 +972,7 @@ export type Database = {
       gacha_pool_kind: 'permanent' | 'limited';
       gacha_rarity: 'R' | 'S' | 'SS' | 'SSS';
       mc_job_type: 'miner' | 'farmer';
-      mc_item_category: 'crop' | 'mineral';
+      mc_item_category: 'crop' | 'mineral' | 'seed';
     };
     CompositeTypes: Record<string, never>;
   };

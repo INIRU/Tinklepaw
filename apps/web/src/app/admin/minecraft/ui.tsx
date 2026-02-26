@@ -100,6 +100,7 @@ function jobLabel(job: string | null | undefined): string {
 function categoryLabel(cat: string): string {
   if (cat === 'crop') return '작물';
   if (cat === 'mineral') return '광물';
+  if (cat === 'seed') return '씨앗';
   return cat;
 }
 
@@ -255,7 +256,8 @@ function MarketTab() {
       if (!res.ok) throw new Error('fetch failed');
       const json = await res.json() as { items: MarketItem[] };
       setItems(json.items);
-      setEdits({});
+      // Only reset edits on initial load, not on silent refresh
+      if (!silent) setEdits({});
     } catch {
       toast.error('시장 아이템을 불러오지 못했습니다.');
     } finally {
@@ -282,27 +284,36 @@ function MarketTab() {
 
   const saveRow = async (item: MarketItem) => {
     const e = getEdit(item);
+    const newBase = Number(e.base_price);
+    const newMin = Number(e.min_price);
+    const newMax = Number(e.max_price);
     setSaving((prev) => ({ ...prev, [item.symbol]: true }));
     try {
       const res = await fetch('/api/admin/minecraft/market', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          symbol: item.symbol,
-          base_price: Number(e.base_price),
-          min_price: Number(e.min_price),
-          max_price: Number(e.max_price),
-        }),
+        body: JSON.stringify({ symbol: item.symbol, base_price: newBase, min_price: newMin, max_price: newMax }),
       });
       if (!res.ok) throw new Error('patch failed');
       toast.success(`${item.display_name} 저장 완료`);
+      setItems((prev) => prev.map((it) => it.symbol === item.symbol ? { ...it, base_price: newBase, min_price: newMin, max_price: newMax } : it));
       setEdits((prev) => { const next = { ...prev }; delete next[item.symbol]; return next; });
-      void load(true);
     } catch {
       toast.error('저장에 실패했습니다.');
     } finally {
       setSaving((prev) => ({ ...prev, [item.symbol]: false }));
     }
+  };
+
+  const saveAll = async () => {
+    const dirtyItems = items.filter((item) => {
+      const e = edits[item.symbol];
+      if (!e) return false;
+      return e.base_price !== String(item.base_price) || e.min_price !== String(item.min_price) || e.max_price !== String(item.max_price);
+    });
+    if (dirtyItems.length === 0) return;
+    await Promise.all(dirtyItems.map((item) => saveRow(item)));
+    toast.success(`${dirtyItems.length}개 아이템 저장 완료`);
   };
 
   const toggleEnabled = async (item: MarketItem) => {
@@ -331,7 +342,17 @@ function MarketTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-2">
+        {Object.keys(edits).length > 0 && (
+          <button
+            type="button"
+            onClick={() => void saveAll()}
+            className="inline-flex items-center gap-2 rounded-xl border border-[color:var(--accent-mint)]/60 bg-[color:var(--accent-mint)]/10 px-3 py-2 text-sm font-semibold text-[color:var(--accent-mint)] hover:bg-[color:var(--accent-mint)]/20 disabled:opacity-60"
+          >
+            <Save className="h-4 w-4" />
+            변경사항 전체 저장 ({Object.keys(edits).length}개)
+          </button>
+        )}
         <button
           type="button"
           onClick={() => void load(true)}
