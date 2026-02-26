@@ -11,6 +11,7 @@ services:
     environment:
       - MINECRAFT_API_KEY=${MINECRAFT_API_KEY}
       - SERVER_PORT=25565
+      - RUN_AS_ROOT=true
     restart: unless-stopped
 
 volumes:
