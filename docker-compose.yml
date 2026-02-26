@@ -8,7 +8,7 @@ services:
 
   minecraft:
     image: itzg/minecraft-server:latest
-    pull_policy: daily
+    pull_policy: always
     tty: true
     stdin_open: true
     ports:
