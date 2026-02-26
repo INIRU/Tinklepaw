@@ -12,7 +12,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
-class ApiClient(private val baseUrl: String, private val apiKey: String) {
+class ApiClient(private val baseUrl: String, private val apiKey: String, private val direct: DirectClient? = null) {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -45,6 +45,7 @@ class ApiClient(private val baseUrl: String, private val apiKey: String) {
     }
 
     suspend fun getPlayer(uuid: String): PlayerInfo? {
+        direct?.let { return it.getPlayer(uuid) }
         val data = get("/player/$uuid") ?: return null
         return PlayerInfo(
             linked = data.get("linked")?.asBoolean ?: false,
@@ -72,6 +73,7 @@ class ApiClient(private val baseUrl: String, private val apiKey: String) {
     }
 
     suspend fun getMarket(): List<MarketItem> {
+        direct?.let { return it.getMarket() }
         val data = get("/market") ?: return emptyList()
         val items = mutableListOf<MarketItem>()
         data.getAsJsonArray("items")?.forEach { el ->
