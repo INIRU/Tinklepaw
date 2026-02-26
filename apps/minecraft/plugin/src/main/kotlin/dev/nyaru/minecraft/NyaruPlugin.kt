@@ -4,13 +4,20 @@ import dev.nyaru.minecraft.api.ApiClient
 import dev.nyaru.minecraft.api.DirectClient
 import dev.nyaru.minecraft.commands.AdminCommand
 import dev.nyaru.minecraft.commands.BalanceCommand
+import dev.nyaru.minecraft.commands.HelpCommand
 import dev.nyaru.minecraft.commands.JobCommand
 import dev.nyaru.minecraft.commands.LinkCommand
+import dev.nyaru.minecraft.commands.LogCommand
 import dev.nyaru.minecraft.commands.MarketCommand
 import dev.nyaru.minecraft.commands.QuestCommand
 import dev.nyaru.minecraft.commands.SkillCommand
+import dev.nyaru.minecraft.commands.TeamCommand
 import dev.nyaru.minecraft.commands.TradeCommand
 import dev.nyaru.minecraft.commands.UnlinkCommand
+import dev.nyaru.minecraft.gui.HelpGui
+import dev.nyaru.minecraft.listeners.BlockLogListener
+import dev.nyaru.minecraft.logging.BlockLogger
+import dev.nyaru.minecraft.protection.ProtectionManager
 import dev.nyaru.minecraft.gui.JobSelectGui
 import dev.nyaru.minecraft.gui.ShopGui
 import dev.nyaru.minecraft.gui.SkillGui
@@ -20,6 +27,7 @@ import dev.nyaru.minecraft.listeners.BlockDropListener
 import dev.nyaru.minecraft.listeners.BlockPlaceListener
 import dev.nyaru.minecraft.listeners.ChatTabListener
 import dev.nyaru.minecraft.listeners.PlayerJoinListener
+import dev.nyaru.minecraft.listeners.ProtectionListener
 import dev.nyaru.minecraft.listeners.WorldEventListener
 import dev.nyaru.minecraft.npc.NpcType
 import dev.nyaru.minecraft.skills.SkillManager
@@ -71,6 +79,13 @@ class NyaruPlugin : JavaPlugin() {
 
         apiClient = ApiClient(apiUrl, apiKey, directClient)
 
+        protectionManager = ProtectionManager(dataFolder)
+        server.pluginManager.registerEvents(ProtectionListener(this, protectionManager), this)
+
+        blockLogger = BlockLogger(dataFolder)
+        server.pluginManager.registerEvents(BlockLogListener(blockLogger), this)
+        server.pluginManager.registerEvents(HelpGui.HelpGuiListener(), this)
+
         val skillManager = SkillManager(this)
         actionBarManager = ActionBarManager(this)
         val chatTabListener = ChatTabListener(actionBarManager)
@@ -117,12 +132,27 @@ class NyaruPlugin : JavaPlugin() {
         val adminCmd = AdminCommand(this, createNpc)
         getCommand("나루관리")?.setExecutor(adminCmd)
         getCommand("나루관리")?.tabCompleter = adminCmd
+        val teamCmd = TeamCommand(protectionManager)
+        getCommand("팀")?.setExecutor(teamCmd)
+        getCommand("팀")?.tabCompleter = teamCmd
+        getCommand("도움말")?.setExecutor(HelpCommand())
+        val logCmd = LogCommand(blockLogger)
+        getCommand("로그")?.setExecutor(logCmd)
+        getCommand("로그")?.tabCompleter = logCmd
 
         logger.info("NyaruPlugin enabled!")
     }
 
+    lateinit var protectionManager: ProtectionManager
+        private set
+
+    lateinit var blockLogger: BlockLogger
+        private set
+
     override fun onDisable() {
         pluginScope.cancel()
+        if (::protectionManager.isInitialized) protectionManager.save()
+        if (::blockLogger.isInitialized) blockLogger.shutdown()
         logger.info("NyaruPlugin disabled.")
     }
 }

@@ -34,3 +34,13 @@ commands:
   스킬:
     description: 스킬 확인 및 업그레이드
     usage: /스킬
+  팀:
+    description: 팀 관리 (블럭 보호 공유)
+    usage: /팀 <추가|제거|목록>
+  도움말:
+    description: 명령어 도움말 GUI
+    usage: /도움말
+  로그:
+    description: 블럭 설치/파괴 로그 조회
+    usage: /로그 [플레이어] [페이지]
+    permission: nyaru.admin
