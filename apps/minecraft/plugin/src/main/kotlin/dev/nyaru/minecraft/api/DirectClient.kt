@@ -1,6 +1,7 @@
 package dev.nyaru.minecraft.api
 
 import com.google.gson.JsonParser
+import dev.nyaru.minecraft.cache.MarketCache
 import dev.nyaru.minecraft.cache.PlayerCache
 import dev.nyaru.minecraft.model.MarketItem
 import dev.nyaru.minecraft.model.PlayerInfo
@@ -115,6 +116,8 @@ class DirectClient(
     }
 
     suspend fun getMarket(): List<MarketItem> = withContext(Dispatchers.IO) {
+        MarketCache.get()?.let { return@withContext it }
+
         val arr = client.newCall(supabaseGet(
             "/mc_market_items?enabled=eq.true&select=symbol,display_name,category,base_price,min_price,max_price,mc_material,enabled,mc_market_prices(current_price)"
         )).execute().use { resp ->
@@ -122,7 +125,7 @@ class DirectClient(
             JsonParser.parseString(resp.body?.string() ?: "[]").asJsonArray
         }
 
-        arr.map { el ->
+        val result = arr.map { el ->
             val obj = el.asJsonObject
             val priceObj = obj.getAsJsonObject("mc_market_prices")
             MarketItem(
@@ -137,6 +140,8 @@ class DirectClient(
                 currentPrice = priceObj?.get("current_price")?.asInt ?: obj.get("base_price").asInt
             )
         }
+        MarketCache.put(result)
+        result
     }
 
     private suspend fun getRoleData(roleId: String): Pair<String?, String?> =

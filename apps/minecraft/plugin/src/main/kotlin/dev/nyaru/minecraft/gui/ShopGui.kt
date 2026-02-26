@@ -1,6 +1,7 @@
 package dev.nyaru.minecraft.gui
 
 import dev.nyaru.minecraft.NyaruPlugin
+import dev.nyaru.minecraft.cache.MarketCache
 import dev.nyaru.minecraft.listeners.HARVEST_TIME_KEY
 import dev.nyaru.minecraft.listeners.PURITY_KEY
 import dev.nyaru.minecraft.model.MarketItem
@@ -36,11 +37,15 @@ class ShopGui(private val plugin: NyaruPlugin, private val player: Player) {
     private var filteredItems: List<MarketItem> = emptyList()
 
     fun open() {
-        plugin.pluginScope.launch {
-            marketItems = plugin.apiClient.getMarket()
-            Bukkit.getScheduler().runTask(plugin, Runnable {
-                showMain()
-            })
+        val cached = MarketCache.get()
+        if (cached != null) {
+            marketItems = cached
+            Bukkit.getScheduler().runTask(plugin, Runnable { showMain() })
+        } else {
+            plugin.pluginScope.launch {
+                marketItems = plugin.apiClient.getMarket()
+                Bukkit.getScheduler().runTask(plugin, Runnable { showMain() })
+            }
         }
     }
 
@@ -209,6 +214,7 @@ class ShopGui(private val plugin: NyaruPlugin, private val player: Player) {
                     53 -> {
                         player.playSound(player.location, Sound.UI_BUTTON_CLICK, 0.6f, 1.2f)
                         plugin.pluginScope.launch {
+                            MarketCache.invalidate()
                             marketItems = plugin.apiClient.getMarket()
                             Bukkit.getScheduler().runTask(plugin, Runnable { showSeed() })
                         }
@@ -226,6 +232,7 @@ class ShopGui(private val plugin: NyaruPlugin, private val player: Player) {
                         player.playSound(player.location, Sound.UI_BUTTON_CLICK, 0.6f, 1.2f)
                         // Refresh market data
                         plugin.pluginScope.launch {
+                            MarketCache.invalidate()
                             marketItems = plugin.apiClient.getMarket()
                             Bukkit.getScheduler().runTask(plugin, Runnable {
                                 showCategory(currentPage)
