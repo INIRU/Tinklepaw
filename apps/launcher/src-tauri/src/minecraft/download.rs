@@ -5,6 +5,11 @@ use tauri::{AppHandle, Emitter};
 const VERSION_MANIFEST_URL: &str =
     "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
 const TARGET_VERSION: &str = "1.21.11";
+const FABRIC_META_URL: &str = "https://meta.fabricmc.net";
+const MODRINTH_API: &str = "https://api.modrinth.com/v2";
+const FABRIC_API_PROJECT: &str = "P7dR8mSH";
+const FABRIC_KOTLIN_PROJECT: &str = "Ha28R6CL";
+const NYARU_HUD_URL: &str = "https://github.com/INIRU/Tinklepaw/releases/latest/download/nyaru-hud.jar";
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -96,6 +101,30 @@ struct AssetIndex {
 struct AssetObject {
     hash: String,
     size: u64,
+}
+
+#[derive(Deserialize)]
+struct FabricLoaderEntry {
+    version: String,
+    stable: bool,
+}
+
+#[derive(Deserialize)]
+struct FabricProfileLib {
+    name: String,
+    url: String,
+}
+
+#[derive(Deserialize)]
+struct ModrinthVersionFile {
+    url: String,
+    primary: bool,
+    filename: String,
+}
+
+#[derive(Deserialize)]
+struct ModrinthVersion {
+    files: Vec<ModrinthVersionFile>,
 }
 
 pub fn get_game_dir() -> PathBuf {
@@ -238,6 +267,16 @@ pub async fn install(app: &AppHandle) -> Result<(), String> {
         }
     }
 
+    // Step 7: Install Fabric Loader
+    if let Err(e) = install_fabric(app, &client, &game_dir).await {
+        emit_progress(app, &format!("Fabric 경고: {}", e), "fabric", 0, 1, 0.0);
+    } else {
+        // Step 8: Install mods
+        if let Err(e) = install_mods(app, &client, &game_dir).await {
+            emit_progress(app, &format!("모드 경고: {}", e), "mods", 0, 3, 0.0);
+        }
+    }
+
     emit_progress(app, "설치 완료!", "complete", 1, 1, 100.0);
     Ok(())
 }
@@ -297,6 +336,150 @@ pub fn get_asset_index_id() -> Result<String, String> {
     let meta: VersionMeta =
         serde_json::from_str(&meta_json).map_err(|e| format!("Parse version meta: {}", e))?;
     Ok(meta.asset_index.id)
+}
+
+pub fn maven_name_to_path(name: &str) -> String {
+    let parts: Vec<&str> = name.split(':').collect();
+    if parts.len() >= 3 {
+        let group = parts[0].replace('.', "/");
+        let artifact = parts[1];
+        let version = parts[2];
+        format!("{}/{}/{}/{}-{}.jar", group, artifact, version, artifact, version)
+    } else {
+        format!("{}.jar", name)
+    }
+}
+
+async fn get_fabric_loader_version(client: &reqwest::Client) -> Result<String, String> {
+    let versions: Vec<FabricLoaderEntry> = client
+        .get(format!("{}/v2/versions/loader", FABRIC_META_URL))
+        .send().await.map_err(|e| e.to_string())?
+        .json().await.map_err(|e| e.to_string())?;
+    versions.into_iter()
+        .find(|v| v.stable)
+        .map(|v| v.version)
+        .ok_or("No stable Fabric Loader found".to_string())
+}
+
+async fn install_fabric(app: &AppHandle, client: &reqwest::Client, game_dir: &std::path::Path) -> Result<(), String> {
+    emit_progress(app, "Fabric Loader 버전 확인 중...", "fabric", 0, 1, 0.0);
+    let loader_version = get_fabric_loader_version(client).await?;
+
+    let fabric_id = format!("fabric-loader-{}-{}", loader_version, TARGET_VERSION);
+    let fabric_dir = game_dir.join("versions").join(&fabric_id);
+    let profile_path = fabric_dir.join(format!("{}.json", fabric_id));
+
+    if profile_path.exists() {
+        let _ = std::fs::write(game_dir.join("fabric-version.txt"), &fabric_id);
+        return Ok(());
+    }
+
+    let profile_url = format!(
+        "{}/v2/versions/loader/{}/{}/profile/json",
+        FABRIC_META_URL, TARGET_VERSION, loader_version
+    );
+
+    emit_progress(app, "Fabric Loader 다운로드 중...", "fabric", 0, 1, 30.0);
+    let profile_bytes = client
+        .get(&profile_url)
+        .send().await.map_err(|e| format!("Fabric profile fetch: {}", e))?
+        .bytes().await.map_err(|e| e.to_string())?;
+
+    let profile_val: serde_json::Value = serde_json::from_slice(&profile_bytes)
+        .map_err(|e| format!("Fabric profile parse: {}", e))?;
+
+    std::fs::create_dir_all(&fabric_dir).map_err(|e| e.to_string())?;
+    std::fs::write(&profile_path, &profile_bytes).map_err(|e| e.to_string())?;
+
+    let lib_dir = game_dir.join("libraries");
+    if let Some(libs) = profile_val["libraries"].as_array() {
+        let total = libs.len() as u64;
+        for (i, lib) in libs.iter().enumerate() {
+            if let (Some(name), Some(url)) = (lib["name"].as_str(), lib["url"].as_str()) {
+                let rel_path = maven_name_to_path(name);
+                let lib_path = lib_dir.join(&rel_path);
+                if !lib_path.exists() {
+                    let download_url = format!("{}{}", url, rel_path);
+                    emit_progress(app, &format!("Fabric: {}", short_name(name)), "fabric_libs",
+                        i as u64, total, 40.0 + (50.0 * i as f64 / total as f64));
+                    let _ = download_file(client, &download_url, &lib_path).await;
+                }
+            }
+        }
+    }
+
+    std::fs::write(game_dir.join("fabric-version.txt"), &fabric_id)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+async fn get_modrinth_download_url(client: &reqwest::Client, project_id: &str, mc_version: &str) -> Result<String, String> {
+    let versions: Vec<ModrinthVersion> = client
+        .get(format!("{}/project/{}/version", MODRINTH_API, project_id))
+        .query(&[("loaders", "[\"fabric\"]"), ("game_versions", &format!("[\"{}\"]", mc_version))])
+        .header("User-Agent", "nyaru-launcher/0.1.1 (github.com/INIRU/Tinklepaw)")
+        .send().await.map_err(|e| e.to_string())?
+        .json().await.map_err(|e| e.to_string())?;
+
+    let version = versions.into_iter().next()
+        .ok_or_else(|| format!("No Fabric mod found for MC {}", mc_version))?;
+    let file = version.files.iter().find(|f| f.primary).or_else(|| version.files.first())
+        .ok_or("No files in mod version")?;
+    Ok(file.url.clone())
+}
+
+fn remove_old_mod(mods_dir: &std::path::Path, prefix: &str) {
+    if let Ok(entries) = std::fs::read_dir(mods_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with(prefix) && name.ends_with(".jar") {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+}
+
+async fn install_mods(app: &AppHandle, client: &reqwest::Client, game_dir: &std::path::Path) -> Result<(), String> {
+    let mods_dir = game_dir.join("mods");
+    std::fs::create_dir_all(&mods_dir).map_err(|e| e.to_string())?;
+
+    // Fabric API
+    emit_progress(app, "Fabric API 설치 중...", "mods", 1, 3, 10.0);
+    match get_modrinth_download_url(client, FABRIC_API_PROJECT, TARGET_VERSION).await {
+        Ok(url) => {
+            let filename = url.split('/').last().unwrap_or("fabric-api.jar").to_string();
+            let mod_path = mods_dir.join(&filename);
+            if !mod_path.exists() {
+                remove_old_mod(&mods_dir, "fabric-api");
+                let _ = download_file(client, &url, &mod_path).await;
+            }
+        }
+        Err(e) => emit_progress(app, &format!("Fabric API 건너뜀: {}", e), "mods", 1, 3, 10.0),
+    }
+
+    // fabric-language-kotlin
+    emit_progress(app, "Fabric Language Kotlin 설치 중...", "mods", 2, 3, 50.0);
+    match get_modrinth_download_url(client, FABRIC_KOTLIN_PROJECT, TARGET_VERSION).await {
+        Ok(url) => {
+            let filename = url.split('/').last().unwrap_or("fabric-language-kotlin.jar").to_string();
+            let mod_path = mods_dir.join(&filename);
+            if !mod_path.exists() {
+                remove_old_mod(&mods_dir, "fabric-language-kotlin");
+                let _ = download_file(client, &url, &mod_path).await;
+            }
+        }
+        Err(e) => emit_progress(app, &format!("Kotlin 건너뜀: {}", e), "mods", 2, 3, 50.0),
+    }
+
+    // nyaru-hud
+    emit_progress(app, "Nyaru HUD 모드 설치 중...", "mods", 3, 3, 80.0);
+    let hud_path = mods_dir.join("nyaru-hud.jar");
+    if !hud_path.exists() {
+        let _ = download_file(client, NYARU_HUD_URL, &hud_path).await;
+    }
+
+    Ok(())
 }
 
 fn filter_libraries(libraries: &[Library]) -> Vec<&Library> {

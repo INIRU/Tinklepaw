@@ -36,18 +36,68 @@ pub async fn launch(app: &AppHandle, config: LaunchConfig) -> Result<(), String>
         natives_dir.to_string_lossy()
     ));
     args.push("-Dminecraft.launcher.brand=nyaru-launcher".to_string());
-    args.push("-Dminecraft.launcher.version=0.1.0".to_string());
+    args.push("-Dminecraft.launcher.version=0.1.1".to_string());
 
     // macOS specific
     if cfg!(target_os = "macos") {
         args.push("-XstartOnFirstThread".to_string());
     }
 
+    // Fabric support: check for fabric-version.txt and build combined classpath + main class
+    let fabric_version_path = config.game_dir.join("fabric-version.txt");
+    let (final_classpath, main_class) = if fabric_version_path.exists() {
+        match std::fs::read_to_string(&fabric_version_path) {
+            Ok(fabric_id) => {
+                let fabric_id = fabric_id.trim().to_string();
+                let profile_path = config.game_dir
+                    .join("versions")
+                    .join(&fabric_id)
+                    .join(format!("{}.json", fabric_id));
+                match std::fs::read_to_string(&profile_path) {
+                    Ok(profile_json) => {
+                        match serde_json::from_str::<serde_json::Value>(&profile_json) {
+                            Ok(profile) => {
+                                let mc = profile["mainClass"]
+                                    .as_str()
+                                    .unwrap_or("net.minecraft.client.main.Main")
+                                    .to_string();
+                                let sep = if cfg!(windows) { ";" } else { ":" };
+                                let lib_dir = config.game_dir.join("libraries");
+                                let mut fabric_paths: Vec<String> = Vec::new();
+                                if let Some(libs) = profile["libraries"].as_array() {
+                                    for lib in libs {
+                                        if let Some(name) = lib["name"].as_str() {
+                                            let rel = download::maven_name_to_path(name);
+                                            fabric_paths.push(
+                                                lib_dir.join(&rel).to_string_lossy().to_string()
+                                            );
+                                        }
+                                    }
+                                }
+                                let combined = if fabric_paths.is_empty() {
+                                    classpath
+                                } else {
+                                    format!("{}{}{}", fabric_paths.join(sep), sep, classpath)
+                                };
+                                (combined, mc)
+                            }
+                            Err(_) => (classpath, "net.minecraft.client.main.Main".to_string()),
+                        }
+                    }
+                    Err(_) => (classpath, "net.minecraft.client.main.Main".to_string()),
+                }
+            }
+            Err(_) => (classpath, "net.minecraft.client.main.Main".to_string()),
+        }
+    } else {
+        (classpath, "net.minecraft.client.main.Main".to_string())
+    };
+
     args.push("-cp".to_string());
-    args.push(classpath);
+    args.push(final_classpath);
 
     // Main class
-    args.push("net.minecraft.client.main.Main".to_string());
+    args.push(main_class);
 
     // Game args
     args.push("--username".to_string());
