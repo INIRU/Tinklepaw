@@ -1,7 +1,7 @@
 import java.util.zip.ZipFile
 
 plugins {
-    id("fabric-loom") version "1.8.12"
+    id("fabric-loom") version "1.15.4"
 }
 
 version = project.property("mod_version") as String
@@ -63,17 +63,22 @@ tasks.remapJar {
         val cp = configurations["compileClasspath"].resolvedConfiguration.resolvedArtifacts
             .map { it.file.absolutePath }
 
-        javaexec {
-            classpath = tinyRemapperFat
-            mainClass.set("net.fabricmc.tinyremapper.Main")
-            args = buildList {
-                add(devJar.absolutePath)
-                add(outputJar.absolutePath)
-                add(mappingsFile.absolutePath)
-                add("named")
-                add("intermediary")
-                addAll(cp)
-            }
+        val javaExec = "${System.getProperty("java.home")}/bin/java"
+        val cmd = buildList {
+            add(javaExec)
+            add("-cp")
+            add(tinyRemapperFat.asPath)
+            add("net.fabricmc.tinyremapper.Main")
+            add(devJar.absolutePath)
+            add(outputJar.absolutePath)
+            add(mappingsFile.absolutePath)
+            add("named")
+            add("intermediary")
+            addAll(cp)
         }
+        val proc = ProcessBuilder(cmd).redirectErrorStream(true).start()
+        proc.inputStream.bufferedReader().forEachLine { println(it) }
+        val exit = proc.waitFor()
+        if (exit != 0) error("TinyRemapper failed with exit code $exit")
     }
 }
