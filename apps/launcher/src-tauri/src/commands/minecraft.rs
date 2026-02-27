@@ -121,7 +121,7 @@ pub async fn check_mods_update() -> Result<bool, String> {
     let client = reqwest::Client::new();
     let release: serde_json::Value = client
         .get("https://api.github.com/repos/INIRU/Tinklepaw/releases/latest")
-        .header("User-Agent", "nyaru-launcher/0.1.1")
+        .header("User-Agent", "nyaru-launcher/0.1.2")
         .send()
         .await
         .map_err(|e| e.to_string())?
@@ -162,7 +162,7 @@ pub async fn update_mods(app: AppHandle) -> Result<(), String> {
     let client = reqwest::Client::new();
     if let Ok(release) = client
         .get("https://api.github.com/repos/INIRU/Tinklepaw/releases/latest")
-        .header("User-Agent", "nyaru-launcher/0.1.1")
+        .header("User-Agent", "nyaru-launcher/0.1.2")
         .send()
         .await
     {
