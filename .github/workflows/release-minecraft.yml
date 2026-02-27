@@ -31,8 +31,7 @@ jobs:
         run: ./gradlew shadowJar
 
       - name: Rename JAR
-        run: |
-          cp build/libs/nyaru-plugin-*.jar nyaru-plugin.jar
+        run: cp build/libs/nyaru-plugin.jar nyaru-plugin.jar
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
