@@ -14,7 +14,6 @@ object HudRenderer {
     private const val PADDING = 4
 
     fun render(context: DrawContext, tickCounter: RenderTickCounter) {
-        if (!HudState.active) return
         val client = MinecraftClient.getInstance()
         if (client.debugHud.shouldShowDebugHud()) return  // hide in F3 mode
         val tr = client.textRenderer
