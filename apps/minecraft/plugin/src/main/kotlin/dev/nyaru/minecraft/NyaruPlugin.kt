@@ -169,8 +169,7 @@ class NyaruPlugin : JavaPlugin() {
 
     override fun onDisable() {
         pluginScope.cancel()
-        fancyNpcsService?.cancelAllWaveTasks()
-        if (::protectionManager.isInitialized) protectionManager.save()
+if (::protectionManager.isInitialized) protectionManager.save()
         if (::blockLogger.isInitialized) blockLogger.shutdown()
         logger.info("NyaruPlugin disabled.")
     }
