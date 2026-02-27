@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "dev.nyaru"
-version = "1.0.0"
+version = (project.findProperty("pluginVersion") as String?) ?: "1.0.11"
 
 repositories {
     mavenCentral()
@@ -34,6 +34,12 @@ tasks.withType<ShadowJar> {
     relocate("okio", "dev.nyaru.shade.okio")
     relocate("kotlinx.coroutines", "dev.nyaru.shade.kotlinx.coroutines")
     relocate("com.google.gson", "dev.nyaru.shade.gson")
+}
+
+tasks.processResources {
+    filesMatching("plugin.yml") {
+        expand("pluginVersion" to project.version.toString())
+    }
 }
 
 tasks.build {

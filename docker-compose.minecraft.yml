@@ -1,7 +1,8 @@
 services:
   minecraft:
-    image: itzg/minecraft-server:latest
-    pull_policy: always
+    build:
+      context: .
+      dockerfile: Dockerfile.minecraft
     tty: true
     stdin_open: true
     ports:
@@ -15,7 +16,8 @@ services:
       MEMORY: "8G"
       SPIGET_RESOURCES: "81534"
       # 81534 = Chunky
-      PLUGINS: "https://github.com/INIRU/Tinklepaw/releases/download/minecraft-v1.0.8/nyaru-plugin.jar,https://cdn.modrinth.com/data/EeyAn23L/versions/8AIsBJk2/FancyNpcs-2.9.2.338.jar"
+      # nyaru-plugin은 Dockerfile 빌드 시 포함됨 (/local-plugin → /data/plugins)
+      PLUGINS: "https://cdn.modrinth.com/data/EeyAn23L/versions/8AIsBJk2/FancyNpcs-2.9.2.338.jar"
       ENABLE_RCON: "true"
       RCON_PASSWORD: "${MINECRAFT_RCON_PASSWORD}"
       RCON_PORT: "25575"

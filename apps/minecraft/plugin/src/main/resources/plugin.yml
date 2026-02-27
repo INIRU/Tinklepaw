@@ -1,5 +1,5 @@
 name: NyaruPlugin
-version: 1.0.0
+version: "${pluginVersion}"
 main: dev.nyaru.minecraft.NyaruPlugin
 api-version: "1.21"
 authors: [Nyaru]
