@@ -8,8 +8,8 @@ const TARGET_VERSION: &str = "1.21.11";
 const FABRIC_META_URL: &str = "https://meta.fabricmc.net";
 const MODRINTH_API: &str = "https://api.modrinth.com/v2";
 const FABRIC_API_PROJECT: &str = "P7dR8mSH";
-const FABRIC_KOTLIN_PROJECT: &str = "Ha28R6CL";
-const NYARU_HUD_URL: &str = "https://github.com/INIRU/Tinklepaw/releases/latest/download/nyaru-hud.jar";
+
+
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -458,97 +458,7 @@ async fn install_mods(app: &AppHandle, client: &reqwest::Client, game_dir: &std:
         Err(e) => emit_progress(app, &format!("Fabric API 건너뜀: {}", e), "mods", 1, 3, 10.0),
     }
 
-    // fabric-language-kotlin
-    emit_progress(app, "Fabric Language Kotlin 설치 중...", "mods", 2, 3, 50.0);
-    match get_modrinth_download_url(client, FABRIC_KOTLIN_PROJECT, TARGET_VERSION).await {
-        Ok(url) => {
-            let filename = url.split('/').last().unwrap_or("fabric-language-kotlin.jar").to_string();
-            let mod_path = mods_dir.join(&filename);
-            if !mod_path.exists() {
-                remove_old_mod(&mods_dir, "fabric-language-kotlin");
-                let _ = download_file(client, &url, &mod_path).await;
-            }
-        }
-        Err(e) => emit_progress(app, &format!("Kotlin 건너뜀: {}", e), "mods", 2, 3, 50.0),
-    }
-
-    // nyaru-hud
-    emit_progress(app, "Nyaru HUD 모드 설치 중...", "mods", 3, 3, 80.0);
-    let hud_path = mods_dir.join("nyaru-hud.jar");
-    if !hud_path.exists() {
-        let hud_url = if let Some((_updated_at, url)) = find_hud_asset(client).await {
-            url
-        } else {
-            NYARU_HUD_URL.to_string()
-        };
-        let _ = download_file(client, &hud_url, &hud_path).await;
-    }
-
     Ok(())
-}
-
-pub async fn find_hud_asset(client: &reqwest::Client) -> Option<(String, String)> {
-    let releases: Vec<serde_json::Value> = client
-        .get("https://api.github.com/repos/INIRU/Tinklepaw/releases")
-        .header("User-Agent", "nyaru-launcher/0.1.2")
-        .send()
-        .await
-        .ok()?
-        .json()
-        .await
-        .ok()?;
-
-    for release in &releases {
-        if let Some(assets) = release["assets"].as_array() {
-            for asset in assets {
-                if asset["name"].as_str() == Some("nyaru-hud.jar") {
-                    let updated_at = asset["updated_at"].as_str()?.to_string();
-                    let download_url = asset["browser_download_url"].as_str()?.to_string();
-                    return Some((updated_at, download_url));
-                }
-            }
-        }
-    }
-    None
-}
-
-pub async fn force_reinstall_mods(app: &AppHandle) -> Result<(), String> {
-    let game_dir = get_game_dir();
-    let mods_dir = game_dir.join("mods");
-
-    // Delete existing mod files that we manage
-    for name in &["nyaru-hud.jar", "mods-updated-at.txt"] {
-        let _ = std::fs::remove_file(mods_dir.join(name));
-    }
-    // Also remove old fabric-api and kotlin mods so they re-download
-    remove_old_mod(&mods_dir, "fabric-api");
-    remove_old_mod(&mods_dir, "fabric-language-kotlin");
-
-    let client = reqwest::Client::new();
-
-    // Ensure Fabric Loader is installed (v0.1.0 users won't have it)
-    if !game_dir.join("fabric-version.txt").exists() {
-        install_fabric(app, &client, &game_dir).await?;
-    }
-
-    install_mods(app, &client, &game_dir).await
-}
-
-pub fn save_mods_version(updated_at: &str) {
-    let game_dir = get_game_dir();
-    let _ = std::fs::write(game_dir.join("mods-updated-at.txt"), updated_at);
-}
-
-pub fn get_stored_mods_version() -> String {
-    let game_dir = get_game_dir();
-    std::fs::read_to_string(game_dir.join("mods-updated-at.txt"))
-        .unwrap_or_default()
-        .trim()
-        .to_string()
-}
-
-pub fn is_hud_installed() -> bool {
-    get_game_dir().join("mods").join("nyaru-hud.jar").exists()
 }
 
 fn filter_libraries(libraries: &[Library]) -> Vec<&Library> {

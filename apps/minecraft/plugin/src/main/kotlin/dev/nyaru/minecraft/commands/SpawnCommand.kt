@@ -97,7 +97,6 @@ class SpawnCommand(private val plugin: NyaruPlugin) : CommandExecutor {
                     // Optimistic deduct
                     PlayerCache.updateBalance(uuid.toString(), -COST)
                     plugin.actionBarManager.refresh(uuid)
-                    plugin.hudService.sendUpdate(player)
 
                     // Teleport
                     val spawn = player.world.spawnLocation
@@ -113,7 +112,6 @@ class SpawnCommand(private val plugin: NyaruPlugin) : CommandExecutor {
                             PlayerCache.updateBalance(uuid.toString(), COST)
                             plugin.actionBarManager.refresh(uuid)
                             Bukkit.getScheduler().runTask(plugin, Runnable {
-                                plugin.hudService.sendUpdate(player)
                                 player.sendMessage("§c포인트 차감 실패. 환불 처리되었습니다.")
                             })
                         }

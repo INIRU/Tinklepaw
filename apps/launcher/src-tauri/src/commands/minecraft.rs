@@ -114,34 +114,3 @@ pub async fn install_java(app: AppHandle) -> Result<String, String> {
     crate::minecraft::java::install_java_auto(&app).await
 }
 
-#[tauri::command]
-pub async fn check_mods_update() -> Result<bool, String> {
-    let stored = download::get_stored_mods_version();
-    let hud_installed = download::is_hud_installed();
-
-    let client = reqwest::Client::new();
-    if let Some((updated_at, _url)) = download::find_hud_asset(&client).await {
-        if !hud_installed {
-            return Ok(true);
-        }
-        if stored.is_empty() {
-            download::save_mods_version(&updated_at);
-            return Ok(false);
-        }
-        return Ok(stored != updated_at);
-    }
-
-    Ok(false)
-}
-
-#[tauri::command]
-pub async fn update_mods(app: AppHandle) -> Result<(), String> {
-    download::force_reinstall_mods(&app).await?;
-
-    let client = reqwest::Client::new();
-    if let Some((updated_at, _url)) = download::find_hud_asset(&client).await {
-        download::save_mods_version(&updated_at);
-    }
-
-    Ok(())
-}

@@ -25,14 +25,11 @@ export default function Home({ onNavigate }: HomeProps) {
     isInstalling,
     isLaunching,
     isRunning,
-    modsUpdateAvailable,
     downloadProgress,
     gameLogs,
     error,
     checkInstall,
     install,
-    checkModsUpdate,
-    updateMods,
     launch,
     initListeners,
   } = useLaunch();
@@ -43,7 +40,6 @@ export default function Home({ onNavigate }: HomeProps) {
   useEffect(() => {
     loadSettings();
     checkInstall();
-    checkModsUpdate();
     getVersion().then(setAppVersion);
     const cleanup = initListeners();
     return () => {
@@ -65,10 +61,6 @@ export default function Home({ onNavigate }: HomeProps) {
       return;
     }
 
-    if (modsUpdateAvailable) {
-      await updateMods();
-      return;
-    }
 
     if (!profile || !mcAccessToken) return;
 
@@ -222,7 +214,7 @@ export default function Home({ onNavigate }: HomeProps) {
               isInstalling={isInstalling}
               isLaunching={isLaunching}
               isRunning={isRunning}
-              modsUpdateAvailable={modsUpdateAvailable}
+
               onClick={handlePlayClick}
             />
           )}

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
-import { checkInstallation, installMinecraft, launchMinecraft, checkModsUpdate as checkModsUpdateLib, updateMods as updateModsLib } from "../lib/minecraft";
+import { checkInstallation, installMinecraft, launchMinecraft } from "../lib/minecraft";
 
 interface DownloadProgress {
   fileName: string;
@@ -15,14 +15,11 @@ interface LaunchState {
   isInstalling: boolean;
   isLaunching: boolean;
   isRunning: boolean;
-  modsUpdateAvailable: boolean;
   downloadProgress: DownloadProgress | null;
   gameLogs: string[];
   error: string | null;
   checkInstall: () => Promise<void>;
   install: () => Promise<void>;
-  checkModsUpdate: () => Promise<void>;
-  updateMods: () => Promise<void>;
   launch: (params: {
     javaPath: string;
     maxMemoryMb: number;
@@ -41,7 +38,6 @@ export const useLaunch = create<LaunchState>((set, get) => ({
   isInstalling: false,
   isLaunching: false,
   isRunning: false,
-  modsUpdateAvailable: false,
   downloadProgress: null,
   gameLogs: [],
   error: null,
@@ -65,24 +61,6 @@ export const useLaunch = create<LaunchState>((set, get) => ({
     }
   },
 
-  checkModsUpdate: async () => {
-    try {
-      const outdated = await checkModsUpdateLib();
-      set({ modsUpdateAvailable: outdated });
-    } catch {
-      // silently ignore
-    }
-  },
-
-  updateMods: async () => {
-    set({ isInstalling: true, error: null });
-    try {
-      await updateModsLib();
-      set({ isInstalling: false, modsUpdateAvailable: false });
-    } catch (err) {
-      set({ isInstalling: false, error: String(err) });
-    }
-  },
 
   launch: async (params) => {
     set({ isLaunching: true, error: null, gameLogs: [] });
