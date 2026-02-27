@@ -14,44 +14,11 @@ import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.inventory.ItemStack
 import org.bukkit.scheduler.BukkitRunnable
-import java.lang.reflect.Constructor
-import java.lang.reflect.Method
 import java.util.UUID
 
 class FancyNpcsService(private val plugin: NyaruPlugin) : Listener {
 
     private val waveTaskIds = mutableMapOf<String, Int>()
-
-    // Lazily resolved via reflection so we don't need NMS on the compile classpath.
-    // ClientboundAnimatePacket(int entityId, int animationId)  —  animationId 0 = swing main hand
-    private val animPacketCons: Constructor<*>? by lazy {
-        runCatching {
-            val cls = Class.forName("net.minecraft.network.protocol.game.ClientboundAnimatePacket")
-            cls.declaredConstructors
-                .firstOrNull { it.parameterCount == 2 && it.parameterTypes[0] == Int::class.javaPrimitiveType }
-                ?.also { it.isAccessible = true }
-        }.getOrNull()
-    }
-
-    // CraftPlayer.getHandle() → ServerPlayer, then ServerPlayer.connection.send(Packet)
-    private val craftPlayerClass: Class<*>? by lazy {
-        runCatching { Class.forName("org.bukkit.craftbukkit.entity.CraftPlayer") }.getOrNull()
-    }
-    private val getHandleMethod: Method? by lazy {
-        runCatching { craftPlayerClass?.getMethod("getHandle") }.getOrNull()
-    }
-    private val connectionField by lazy {
-        runCatching {
-            getHandleMethod?.returnType?.fields?.firstOrNull { it.name == "connection" }
-                ?: getHandleMethod?.returnType?.declaredFields?.firstOrNull { it.name == "connection" }
-                    ?.also { it.isAccessible = true }
-        }.getOrNull()
-    }
-    private val sendMethod: Method? by lazy {
-        runCatching {
-            connectionField?.type?.methods?.firstOrNull { it.name == "send" && it.parameterCount == 1 }
-        }.getOrNull()
-    }
 
     fun createNpc(location: Location, type: NpcType) {
         val id = "nyaru_${type.name.lowercase()}_${System.currentTimeMillis()}"
@@ -78,80 +45,108 @@ class FancyNpcsService(private val plugin: NyaruPlugin) : Listener {
         startWaveTask(id, location)
     }
 
-    /** Get NMS ServerPlayer connection object for a Bukkit player */
-    private fun getConnection(viewer: Player): Any? {
-        val craftCls = Class.forName("org.bukkit.craftbukkit.entity.CraftPlayer")
-        val handle = craftCls.getMethod("getHandle").invoke(viewer) ?: return null
-        var connection: Any? = null
-        var cls: Class<*>? = handle.javaClass
-        while (cls != null && connection == null) {
-            try {
-                val f = cls.getDeclaredField("connection")
-                f.isAccessible = true
-                connection = f.get(handle)
-            } catch (_: NoSuchFieldException) { cls = cls.superclass }
-        }
-        return connection
-    }
+    /**
+     * Get the NMS ServerPlayer entity from a FancyNpcs Npc object.
+     * FancyNpcs stores the entity in NpcImpl.entity field — not exposed via the API interface,
+     * so we use reflection to walk the class hierarchy.
+     */
+    private fun getNmsEntityFromNpc(npc: Any): Any? {
+        // 1. Try getEntity() method (present on NpcImpl but not on the Npc interface)
+        runCatching {
+            val m = npc.javaClass.getMethod("getEntity")
+            m.invoke(npc)
+        }.getOrNull()?.let { return it }
 
-    /** Get NMS Entity by integer entity ID via ServerLevel.getEntity(int) */
-    private fun getNmsEntity(world: org.bukkit.World, entityId: Int): Any? {
-        return try {
-            val craftWorldCls = Class.forName("org.bukkit.craftbukkit.CraftWorld")
-            val serverLevel = craftWorldCls.getMethod("getHandle").invoke(craftWorldCls.cast(world))
-            var cls: Class<*>? = serverLevel.javaClass
-            while (cls != null) {
-                try {
-                    val m = cls.getDeclaredMethod("getEntity", Int::class.javaPrimitiveType)
-                    m.isAccessible = true
-                    return m.invoke(serverLevel, entityId)
-                } catch (_: NoSuchMethodException) { cls = cls.superclass }
+        // 2. Scan declared fields for a ServerPlayer / EntityPlayer type
+        var cls: Class<*>? = npc.javaClass
+        while (cls != null) {
+            for (field in cls.declaredFields) {
+                val typeName = field.type.simpleName
+                if (typeName == "ServerPlayer" || typeName == "EntityPlayer" || typeName.contains("ServerPlayer")) {
+                    runCatching {
+                        field.isAccessible = true
+                        field.get(npc)
+                    }.getOrNull()?.let { return it }
+                }
             }
-            null
-        } catch (e: Exception) {
-            plugin.logger.warning("[NPC Wave] getNmsEntity: ${e.message}")
-            null
+            cls = cls.superclass
         }
+        return null
     }
 
-    /** Send a single ClientboundAnimatePacket (action=0: swing main hand) to a viewer via reflection */
-    private fun sendSwingPacket(viewer: Player, entityId: Int) {
+    /** Walk class hierarchy to find the 'connection' field on an NMS ServerPlayer handle */
+    private fun getConnection(viewer: Player): Any? {
+        return runCatching {
+            val craftCls = Class.forName("org.bukkit.craftbukkit.entity.CraftPlayer")
+            val handle = craftCls.getMethod("getHandle").invoke(viewer) ?: return null
+            var connection: Any? = null
+            var cls: Class<*>? = handle.javaClass
+            while (cls != null && connection == null) {
+                runCatching {
+                    val f = cls!!.getDeclaredField("connection")
+                    f.isAccessible = true
+                    connection = f.get(handle)
+                }
+                cls = cls.superclass
+            }
+            connection
+        }.getOrNull()
+    }
+
+    /** Send ClientboundAnimatePacket(action=0: swing main hand) to viewer for the given NMS entity */
+    private fun sendSwingPacket(viewer: Player, nmsEntity: Any, entityId: Int) {
         try {
-            val connection = getConnection(viewer) ?: return
+            val connection = getConnection(viewer)
+            if (connection == null) {
+                plugin.logger.warning("[NPC Wave] connection null for ${viewer.name}")
+                return
+            }
+
             val packetCls = Class.forName("net.minecraft.network.protocol.game.ClientboundAnimatePacket")
 
-            // Try (int, int) private constructor first (≤1.20.4), else use (Entity, int) (1.20.6+)
+            // Paper ≤1.20.4: private (int, int) constructor
             val intIntCons = packetCls.declaredConstructors.firstOrNull { c ->
                 c.parameterCount == 2 && c.parameterTypes[0] == Int::class.javaPrimitiveType
             }
+
             val packet = if (intIntCons != null) {
                 intIntCons.isAccessible = true
                 intIntCons.newInstance(entityId, 0)
             } else {
-                val nmsEntity = getNmsEntity(viewer.world, entityId) ?: return
+                // Paper 1.20.6+: only (Entity, int) constructor
                 val entityCons = packetCls.declaredConstructors.firstOrNull { c ->
                     c.parameterCount == 2 && c.parameterTypes[1] == Int::class.javaPrimitiveType
-                } ?: return
+                }
+                if (entityCons == null) {
+                    plugin.logger.warning("[NPC Wave] No suitable ClientboundAnimatePacket constructor. Constructors: ${packetCls.declaredConstructors.map { it.parameterTypes.map { p -> p.simpleName } }}")
+                    return
+                }
                 entityCons.isAccessible = true
                 entityCons.newInstance(nmsEntity, 0)
             }
 
+            // Walk connection class hierarchy to find send(Packet<?>)
             var connCls: Class<*>? = connection.javaClass
             while (connCls != null) {
                 val m = connCls.declaredMethods.firstOrNull { it.name == "send" && it.parameterCount == 1 }
-                if (m != null) { m.isAccessible = true; m.invoke(connection, packet); return }
+                if (m != null) {
+                    m.isAccessible = true
+                    m.invoke(connection, packet)
+                    return
+                }
                 connCls = connCls.superclass
             }
+            plugin.logger.warning("[NPC Wave] send() not found on ${connection.javaClass.name}")
         } catch (e: Exception) {
             plugin.logger.warning("[NPC Wave] ${e::class.simpleName}: ${e.message}")
         }
     }
 
-    /** Trigger 3 rapid arm swings (안녕 wave) for a viewer */
-    private fun triggerWave(viewer: Player, entityId: Int) {
-        sendSwingPacket(viewer, entityId)
-        plugin.server.scheduler.runTaskLater(plugin, Runnable { sendSwingPacket(viewer, entityId) }, 6L)
-        plugin.server.scheduler.runTaskLater(plugin, Runnable { sendSwingPacket(viewer, entityId) }, 12L)
+    /** Trigger 3 rapid arm swings (안녕 wave) */
+    private fun triggerWave(viewer: Player, nmsEntity: Any, entityId: Int) {
+        sendSwingPacket(viewer, nmsEntity, entityId)
+        plugin.server.scheduler.runTaskLater(plugin, Runnable { sendSwingPacket(viewer, nmsEntity, entityId) }, 6L)
+        plugin.server.scheduler.runTaskLater(plugin, Runnable { sendSwingPacket(viewer, nmsEntity, entityId) }, 12L)
     }
 
     private fun startWaveTask(npcId: String, location: Location) {
@@ -159,10 +154,18 @@ class FancyNpcsService(private val plugin: NyaruPlugin) : Listener {
             override fun run() {
                 val npc = FancyNpcsPlugin.get().npcManager.getNpc(npcId) ?: return
                 val entityId = npc.getEntityId()
+
+                // Get NMS entity directly from the NPC object (ServerPlayer stored in NpcImpl)
+                val nmsEntity = getNmsEntityFromNpc(npc)
+                if (nmsEntity == null) {
+                    plugin.logger.warning("[NPC Wave] Could not get NMS entity from NPC '$npcId' (entityId=$entityId). NPC class: ${npc.javaClass.name}")
+                    return
+                }
+
                 val world = location.world ?: return
                 world.players
                     .filter { it.location.distanceSquared(location) < 10.0 * 10.0 }
-                    .forEach { player -> triggerWave(player, entityId) }
+                    .forEach { player -> triggerWave(player, nmsEntity, entityId) }
             }
         }
         waveTaskIds[npcId] = task.runTaskTimer(plugin, 20L, 80L).taskId
