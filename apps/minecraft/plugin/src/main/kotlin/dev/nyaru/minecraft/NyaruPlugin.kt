@@ -27,6 +27,7 @@ import dev.nyaru.minecraft.gui.ShopGui
 import dev.nyaru.minecraft.gui.SkillGui
 import dev.nyaru.minecraft.listeners.ActionBarManager
 import dev.nyaru.minecraft.listeners.SidebarManager
+import dev.nyaru.minecraft.HudService
 import dev.nyaru.minecraft.listeners.BlockBreakListener
 import dev.nyaru.minecraft.listeners.BlockDropListener
 import dev.nyaru.minecraft.listeners.BlockPlaceListener
@@ -54,6 +55,9 @@ class NyaruPlugin : JavaPlugin() {
         private set
 
     lateinit var sidebarManager: SidebarManager
+        private set
+
+    lateinit var hudService: HudService
         private set
 
     val pluginScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -155,6 +159,8 @@ class NyaruPlugin : JavaPlugin() {
         getCommand("스폰")?.setExecutor(SpawnCommand(this))
         getCommand("nyaru-invalidate")?.setExecutor(SyncCommand())
 
+        hudService = HudService(this)
+
         logger.info("NyaruPlugin enabled!")
     }
 
@@ -169,7 +175,8 @@ class NyaruPlugin : JavaPlugin() {
 
     override fun onDisable() {
         pluginScope.cancel()
-if (::protectionManager.isInitialized) protectionManager.save()
+        if (::hudService.isInitialized) hudService.unregister()
+        if (::protectionManager.isInitialized) protectionManager.save()
         if (::blockLogger.isInitialized) blockLogger.shutdown()
         logger.info("NyaruPlugin disabled.")
     }
