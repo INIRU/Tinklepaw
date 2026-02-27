@@ -47,29 +47,55 @@ class FancyNpcsService(private val plugin: NyaruPlugin) : Listener {
 
     /**
      * Get the NMS ServerPlayer entity from a FancyNpcs Npc object.
-     * FancyNpcs stores the entity in NpcImpl.entity field — not exposed via the API interface,
-     * so we use reflection to walk the class hierarchy.
+     * Tries multiple strategies since the field/method name varies by FancyNpcs version.
      */
     private fun getNmsEntityFromNpc(npc: Any): Any? {
-        // 1. Try getEntity() method (present on NpcImpl but not on the Npc interface)
-        runCatching {
-            val m = npc.javaClass.getMethod("getEntity")
-            m.invoke(npc)
-        }.getOrNull()?.let { return it }
+        // 1. Try getEntity() / getServerPlayer() via full class hierarchy (declared, not just public)
+        var searchCls: Class<*>? = npc.javaClass
+        while (searchCls != null) {
+            for (methodName in listOf("getEntity", "getServerPlayer", "getPlayer", "getNmsEntity")) {
+                runCatching {
+                    val m = searchCls!!.getDeclaredMethod(methodName)
+                    m.isAccessible = true
+                    m.invoke(npc)
+                }.getOrNull()?.let { return it }
+            }
+            searchCls = searchCls.superclass
+        }
 
-        // 2. Scan declared fields for a ServerPlayer / EntityPlayer type
+        // 2. Scan ALL non-primitive fields: match by type name OR field name
+        val candidates = mutableListOf<Pair<String, Any>>()
         var cls: Class<*>? = npc.javaClass
         while (cls != null) {
             for (field in cls.declaredFields) {
-                val typeName = field.type.simpleName
-                if (typeName == "ServerPlayer" || typeName == "EntityPlayer" || typeName.contains("ServerPlayer")) {
+                if (field.type.isPrimitive || field.type == String::class.java) continue
+                val typeSimple = field.type.simpleName
+                val fieldName = field.name.lowercase()
+                val typeMatch = typeSimple == "ServerPlayer" || typeSimple == "EntityPlayer" ||
+                    typeSimple.contains("ServerPlayer") || typeSimple == "Player"
+                val nameMatch = fieldName == "entity" || fieldName == "serverplayer" ||
+                    fieldName == "player" || fieldName.contains("entity") || fieldName.contains("player")
+                if (typeMatch || nameMatch) {
                     runCatching {
                         field.isAccessible = true
                         field.get(npc)
-                    }.getOrNull()?.let { return it }
+                    }.getOrNull()?.let { candidates.add(Pair("${cls.simpleName}.${field.name}:${typeSimple}", it)) }
                 }
             }
             cls = cls.superclass
+        }
+        if (candidates.isNotEmpty()) {
+            plugin.logger.info("[NPC Wave] Found entity via field: ${candidates.first().first}")
+            return candidates.first().second
+        }
+
+        // 3. Debug dump — log all fields so we can fix this precisely next time
+        plugin.logger.warning("[NPC Wave] Entity not found. Field dump for ${npc.javaClass.name}:")
+        var dumpCls: Class<*>? = npc.javaClass
+        while (dumpCls != null && dumpCls != Any::class.java) {
+            val fields = dumpCls.declaredFields.joinToString { "${it.type.simpleName} ${it.name}" }
+            plugin.logger.warning("[NPC Wave]   ${dumpCls.simpleName}: $fields")
+            dumpCls = dumpCls.superclass
         }
         return null
     }
