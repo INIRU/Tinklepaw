@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { useAuth } from "../hooks/useAuth";
 import { useSettings } from "../hooks/useSettings";
@@ -37,11 +38,13 @@ export default function Home({ onNavigate }: HomeProps) {
   } = useLaunch();
 
   const [showLogs, setShowLogs] = useState(false);
+  const [appVersion, setAppVersion] = useState("");
 
   useEffect(() => {
     loadSettings();
     checkInstall();
     checkModsUpdate();
+    getVersion().then(setAppVersion);
     const cleanup = initListeners();
     return () => {
       cleanup.then((fn) => fn());
@@ -159,7 +162,7 @@ export default function Home({ onNavigate }: HomeProps) {
 
           {/* Version subtitle */}
           <p className="text-[13px] font-medium tracking-[0.12em] text-text-dim uppercase mt-1 delay-100 animate-fade-in-up">
-            Minecraft 1.21.11
+            Minecraft 1.21.11{appVersion && <span className="text-text-dim/50 normal-case tracking-normal"> · 런처 v{appVersion}</span>}
           </p>
 
           {/* Online status badge */}

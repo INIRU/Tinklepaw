@@ -1,6 +1,7 @@
+import java.util.zip.ZipFile
+
 plugins {
     id("fabric-loom") version "1.8.12"
-    id("org.jetbrains.kotlin.jvm") version "2.0.21"
 }
 
 version = project.property("mod_version") as String
@@ -11,16 +12,11 @@ repositories {
     maven("https://maven.fabricmc.net/")
 }
 
-fabricApi {
-    configureDataGeneration()
-}
-
 dependencies {
     minecraft("com.mojang:minecraft:${project.property("minecraft_version")}")
     mappings("net.fabricmc:yarn:${project.property("yarn_mappings")}:v2")
     modImplementation("net.fabricmc:fabric-loader:${project.property("loader_version")}")
     modImplementation("net.fabricmc.fabric-api:fabric-api:${project.property("fabric_version")}")
-    modImplementation("net.fabricmc:fabric-language-kotlin:${project.property("fabric_kotlin_version")}")
 }
 
 tasks.processResources {
@@ -30,6 +26,54 @@ tasks.processResources {
     }
 }
 
-kotlin {
-    jvmToolchain(21)
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    }
+}
+
+// Workaround: Loom 1.8 remapJar produces empty jar with MC 1.21.4 Yarn mappings.
+// Use TinyRemapper CLI directly instead.
+val tinyRemapperFat by configurations.creating
+
+dependencies {
+    tinyRemapperFat("net.fabricmc:tiny-remapper:0.10.4:fat")
+}
+
+tasks.remapJar {
+    doLast {
+        val devJar = tasks.jar.get().archiveFile.get().asFile
+        val outputJar = archiveFile.get().asFile
+
+        // Yarn mappings artifact is a jar; extract mappings/mappings.tiny from it
+        val mappingsJar = configurations["mappings"].resolvedConfiguration.resolvedArtifacts
+            .first().file
+        val mappingsFile = File(layout.buildDirectory.get().asFile, "tmp/remapper/mappings.tiny")
+        mappingsFile.parentFile.mkdirs()
+        ZipFile(mappingsJar).use { zip: ZipFile ->
+            val entry = zip.getEntry("mappings/mappings.tiny")
+            zip.getInputStream(entry).use { input: java.io.InputStream ->
+                mappingsFile.outputStream().use { out: java.io.OutputStream ->
+                    input.copyTo(out)
+                }
+            }
+        }
+
+        // compileClasspath includes the named MC jar + all mod dependencies
+        val cp = configurations["compileClasspath"].resolvedConfiguration.resolvedArtifacts
+            .map { it.file.absolutePath }
+
+        javaexec {
+            classpath = tinyRemapperFat
+            mainClass.set("net.fabricmc.tinyremapper.Main")
+            args = buildList {
+                add(devJar.absolutePath)
+                add(outputJar.absolutePath)
+                add(mappingsFile.absolutePath)
+                add("named")
+                add("intermediary")
+                addAll(cp)
+            }
+        }
+    }
 }
