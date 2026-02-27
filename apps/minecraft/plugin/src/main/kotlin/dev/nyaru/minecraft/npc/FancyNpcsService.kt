@@ -54,7 +54,7 @@ class FancyNpcsService(private val plugin: NyaruPlugin) : Listener {
                 val world = location.world ?: return
                 world.players
                     .filter { it.location.distanceSquared(location) < 10.0 * 10.0 }
-                    .forEach { player -> npc.move(player, true) }
+                    .forEach { player -> npc.update(player, true) }
             }
         }
         waveTaskIds[npcId] = task.runTaskTimer(plugin, 20L, 80L).taskId // 4초마다
