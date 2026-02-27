@@ -9,8 +9,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
@@ -171,6 +173,34 @@ class DirectClient(
                 map
             }
         }
+    }
+
+    suspend fun spendPoints(uuid: String, amount: Int, reason: String): Boolean = withContext(Dispatchers.IO) {
+        // Get discord_user_id from minecraft_players
+        val playerReq = supabaseGet(
+            "/minecraft_players?minecraft_uuid=eq.${URLEncoder.encode(uuid, "UTF-8")}&select=discord_user_id&limit=1"
+        )
+        val discordId = client.newCall(playerReq).execute().use { resp ->
+            if (!resp.isSuccessful) return@withContext false
+            val arr = com.google.gson.JsonParser.parseString(resp.body?.string()).asJsonArray
+            arr.firstOrNull()?.asJsonObject?.get("discord_user_id")?.asString
+        } ?: return@withContext false
+
+        // Insert negative point event via Supabase REST POST
+        val body = """{"discord_user_id":"$discordId","amount":${-amount},"kind":"minecraft_spawn:$reason"}"""
+        val postReq = okhttp3.Request.Builder()
+            .url("${supabaseUrl}/rest/v1/point_events")
+            .header("apikey", supabaseKey)
+            .header("Authorization", "Bearer $supabaseKey")
+            .header("Content-Profile", "nyang")
+            .header("Content-Type", "application/json")
+            .header("Prefer", "return=minimal")
+            .post(body.toRequestBody("application/json".toMediaType()))
+            .build()
+
+        val ok = client.newCall(postReq).execute().use { it.isSuccessful }
+        if (ok) PlayerCache.invalidate(uuid)
+        ok
     }
 
     private fun enc(v: String): String = URLEncoder.encode(v, "UTF-8")

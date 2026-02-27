@@ -9,15 +9,49 @@ import dev.nyaru.minecraft.gui.JobSelectGui
 import dev.nyaru.minecraft.gui.ShopGui
 import org.bukkit.Location
 import org.bukkit.Material
+import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.inventory.ItemStack
 import org.bukkit.scheduler.BukkitRunnable
+import java.lang.reflect.Constructor
+import java.lang.reflect.Method
 import java.util.UUID
 
 class FancyNpcsService(private val plugin: NyaruPlugin) : Listener {
 
     private val waveTaskIds = mutableMapOf<String, Int>()
+
+    // Lazily resolved via reflection so we don't need NMS on the compile classpath.
+    // ClientboundAnimatePacket(int entityId, int animationId)  —  animationId 0 = swing main hand
+    private val animPacketCons: Constructor<*>? by lazy {
+        runCatching {
+            val cls = Class.forName("net.minecraft.network.protocol.game.ClientboundAnimatePacket")
+            cls.declaredConstructors
+                .firstOrNull { it.parameterCount == 2 && it.parameterTypes[0] == Int::class.javaPrimitiveType }
+                ?.also { it.isAccessible = true }
+        }.getOrNull()
+    }
+
+    // CraftPlayer.getHandle() → ServerPlayer, then ServerPlayer.connection.send(Packet)
+    private val craftPlayerClass: Class<*>? by lazy {
+        runCatching { Class.forName("org.bukkit.craftbukkit.entity.CraftPlayer") }.getOrNull()
+    }
+    private val getHandleMethod: Method? by lazy {
+        runCatching { craftPlayerClass?.getMethod("getHandle") }.getOrNull()
+    }
+    private val connectionField by lazy {
+        runCatching {
+            getHandleMethod?.returnType?.fields?.firstOrNull { it.name == "connection" }
+                ?: getHandleMethod?.returnType?.declaredFields?.firstOrNull { it.name == "connection" }
+                    ?.also { it.isAccessible = true }
+        }.getOrNull()
+    }
+    private val sendMethod: Method? by lazy {
+        runCatching {
+            connectionField?.type?.methods?.firstOrNull { it.name == "send" && it.parameterCount == 1 }
+        }.getOrNull()
+    }
 
     fun createNpc(location: Location, type: NpcType) {
         val id = "nyaru_${type.name.lowercase()}_${System.currentTimeMillis()}"
@@ -27,12 +61,9 @@ class FancyNpcsService(private val plugin: NyaruPlugin) : Listener {
         }
         val data = NpcData(id, UUID.randomUUID(), location)
         data.setDisplayName(displayName)
-
-        // 플레이어 쪽으로 고개 돌리기
         data.setTurnToPlayer(true)
         data.setTurnToPlayerDistance(8)
 
-        // 손에 아이템 장착
         val heldItem = when (type) {
             NpcType.SHOP -> ItemStack(Material.EMERALD)
             NpcType.JOB -> ItemStack(Material.BOOK)
@@ -47,17 +78,36 @@ class FancyNpcsService(private val plugin: NyaruPlugin) : Listener {
         startWaveTask(id, location)
     }
 
+    /** Send a single ClientboundAnimatePacket (action=0: swing main hand) to a viewer via reflection */
+    private fun sendSwingPacket(viewer: Player, entityId: Int) {
+        try {
+            val cons = animPacketCons ?: return
+            val packet = cons.newInstance(entityId, 0)
+            val handle = getHandleMethod?.invoke(viewer) ?: return
+            val connection = connectionField?.get(handle) ?: return
+            sendMethod?.invoke(connection, packet)
+        } catch (_: Exception) {}
+    }
+
+    /** Trigger 3 rapid arm swings (안녕 wave) for a viewer */
+    private fun triggerWave(viewer: Player, entityId: Int) {
+        sendSwingPacket(viewer, entityId)
+        plugin.server.scheduler.runTaskLater(plugin, Runnable { sendSwingPacket(viewer, entityId) }, 6L)
+        plugin.server.scheduler.runTaskLater(plugin, Runnable { sendSwingPacket(viewer, entityId) }, 12L)
+    }
+
     private fun startWaveTask(npcId: String, location: Location) {
         val task = object : BukkitRunnable() {
             override fun run() {
                 val npc = FancyNpcsPlugin.get().npcManager.getNpc(npcId) ?: return
+                val entityId = npc.getEntityId()
                 val world = location.world ?: return
                 world.players
                     .filter { it.location.distanceSquared(location) < 10.0 * 10.0 }
-                    .forEach { player -> npc.update(player, true) }
+                    .forEach { player -> triggerWave(player, entityId) }
             }
         }
-        waveTaskIds[npcId] = task.runTaskTimer(plugin, 20L, 80L).taskId // 4초마다
+        waveTaskIds[npcId] = task.runTaskTimer(plugin, 20L, 80L).taskId
     }
 
     fun cancelAllWaveTasks() {

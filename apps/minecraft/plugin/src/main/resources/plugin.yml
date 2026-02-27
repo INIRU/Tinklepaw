@@ -47,6 +47,9 @@ commands:
     description: 블럭 로그 조사 모드 토글 (좌클릭으로 블럭 기록 조회)
     usage: /로그
     permission: nyaru.admin
+  스폰:
+    description: 스폰으로 귀환 (1000P, 3초 카운트다운)
+    usage: /스폰
   nyaru-invalidate:
     description: Invalidate player cache (RCON/console only)
     usage: /nyaru-invalidate <uuid>

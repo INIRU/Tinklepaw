@@ -226,4 +226,14 @@ class ApiClient(private val baseUrl: String, private val apiKey: String, private
         val skillPoints = data.get("skillPoints")?.asInt ?: 0
         return Triple(success, newLevel, skillPoints)
     }
+
+    suspend fun spendPoints(uuid: String, amount: Int, reason: String): Boolean {
+        direct?.let { return it.spendPoints(uuid, amount, reason) }
+        val data = post("/points/spend", mapOf("uuid" to uuid, "amount" to amount, "reason" to reason)) ?: return false
+        if (data.get("success")?.asBoolean == true) {
+            PlayerCache.invalidate(uuid)
+            return true
+        }
+        return false
+    }
 }
