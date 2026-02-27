@@ -120,6 +120,7 @@ class NyaruPlugin : JavaPlugin() {
         server.scheduler.runTask(this, Runnable {
             npcCreateFn = if (server.pluginManager.isPluginEnabled("FancyNpcs")) {
                 val service = dev.nyaru.minecraft.npc.FancyNpcsService(this)
+                fancyNpcsService = service
                 server.pluginManager.registerEvents(service, this)
                 logger.info("FancyNpcs detected — NPC support enabled")
                 val fn: (org.bukkit.Location, NpcType) -> Unit = { loc, type -> service.createNpc(loc, type) }
@@ -156,6 +157,7 @@ class NyaruPlugin : JavaPlugin() {
     }
 
     var npcCreateFn: ((org.bukkit.Location, NpcType) -> Unit)? = null
+    private var fancyNpcsService: dev.nyaru.minecraft.npc.FancyNpcsService? = null
 
     lateinit var protectionManager: ProtectionManager
         private set
@@ -165,6 +167,7 @@ class NyaruPlugin : JavaPlugin() {
 
     override fun onDisable() {
         pluginScope.cancel()
+        fancyNpcsService?.cancelAllWaveTasks()
         if (::protectionManager.isInitialized) protectionManager.save()
         if (::blockLogger.isInitialized) blockLogger.shutdown()
         logger.info("NyaruPlugin disabled.")
