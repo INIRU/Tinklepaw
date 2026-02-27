@@ -38,7 +38,22 @@ class SpawnCommand(private val plugin: NyaruPlugin) : CommandExecutor {
 
         val balance = PlayerCache.getBalance(uuid.toString())
         if (balance == null) {
-            player.sendMessage("§c데이터를 불러오는 중입니다. 잠시 후 다시 시도해주세요.")
+            player.sendMessage("§7포인트 정보를 불러오는 중...")
+            plugin.pluginScope.launch {
+                val info = plugin.apiClient.getPlayer(uuid.toString())
+                Bukkit.getScheduler().runTask(plugin, Runnable {
+                    if (!player.isOnline) return@Runnable
+                    if (info == null || !info.linked) {
+                        player.sendMessage("§cDiscord 계정이 연동되지 않았습니다. §7(/연동 으로 연동하세요)")
+                        return@Runnable
+                    }
+                    if (info.balance < COST) {
+                        player.sendMessage("§c포인트가 부족합니다. §7(현재 §e${info.balance}P§7, 필요 §e${COST}P§7)")
+                        return@Runnable
+                    }
+                    startCountdown(player)
+                })
+            }
             return true
         }
         if (balance < COST) {
@@ -46,6 +61,12 @@ class SpawnCommand(private val plugin: NyaruPlugin) : CommandExecutor {
             return true
         }
 
+        startCountdown(player)
+        return true
+    }
+
+    private fun startCountdown(player: Player) {
+        val uuid = player.uniqueId
         val startLoc = player.location.clone()
         pending[uuid] = startLoc
         player.sendMessage("§a§l✦ §f스폰 귀환 §7— §e3초 동안 움직이지 마세요! §7(비용: §e${COST}P§7)")
@@ -104,7 +125,5 @@ class SpawnCommand(private val plugin: NyaruPlugin) : CommandExecutor {
                 player.sendActionBar(legacy.deserialize("§f스폰 귀환 $bar §e${secsLeft}초 §7(${COST}P)"))
             }
         }.runTaskTimer(plugin, 0L, 2L)
-
-        return true
     }
 }

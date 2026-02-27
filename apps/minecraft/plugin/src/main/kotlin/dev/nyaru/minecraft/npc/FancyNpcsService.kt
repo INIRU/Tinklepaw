@@ -81,12 +81,38 @@ class FancyNpcsService(private val plugin: NyaruPlugin) : Listener {
     /** Send a single ClientboundAnimatePacket (action=0: swing main hand) to a viewer via reflection */
     private fun sendSwingPacket(viewer: Player, entityId: Int) {
         try {
-            val cons = animPacketCons ?: return
+            // 1. Get actual ServerPlayer instance (runtime type, not declared return type)
+            val craftCls = Class.forName("org.bukkit.craftbukkit.entity.CraftPlayer")
+            val handle = craftCls.getMethod("getHandle").invoke(viewer) ?: return
+
+            // 2. Walk the actual class hierarchy to find 'connection' field
+            var connection: Any? = null
+            var cls: Class<*>? = handle.javaClass
+            while (cls != null && connection == null) {
+                try {
+                    val f = cls.getDeclaredField("connection")
+                    f.isAccessible = true
+                    connection = f.get(handle)
+                } catch (_: NoSuchFieldException) { cls = cls.superclass }
+            }
+            if (connection == null) return
+
+            // 3. Create ClientboundAnimatePacket(entityId, 0) — private (int,int) constructor
+            val packetCls = Class.forName("net.minecraft.network.protocol.game.ClientboundAnimatePacket")
+            val cons = packetCls.declaredConstructors.firstOrNull { it.parameterCount == 2 } ?: return
+            cons.isAccessible = true
             val packet = cons.newInstance(entityId, 0)
-            val handle = getHandleMethod?.invoke(viewer) ?: return
-            val connection = connectionField?.get(handle) ?: return
-            sendMethod?.invoke(connection, packet)
-        } catch (_: Exception) {}
+
+            // 4. Find send(Packet<?>) in connection class hierarchy and invoke
+            var connCls: Class<*>? = connection.javaClass
+            while (connCls != null) {
+                val m = connCls.declaredMethods.firstOrNull { it.name == "send" && it.parameterCount == 1 }
+                if (m != null) { m.isAccessible = true; m.invoke(connection, packet); return }
+                connCls = connCls.superclass
+            }
+        } catch (e: Exception) {
+            plugin.logger.warning("[NPC Wave] ${e::class.simpleName}: ${e.message}")
+        }
     }
 
     /** Trigger 3 rapid arm swings (안녕 wave) for a viewer */
