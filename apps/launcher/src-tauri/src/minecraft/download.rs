@@ -476,10 +476,40 @@ async fn install_mods(app: &AppHandle, client: &reqwest::Client, game_dir: &std:
     emit_progress(app, "Nyaru HUD 모드 설치 중...", "mods", 3, 3, 80.0);
     let hud_path = mods_dir.join("nyaru-hud.jar");
     if !hud_path.exists() {
-        let _ = download_file(client, NYARU_HUD_URL, &hud_path).await;
+        let hud_url = if let Some((_updated_at, url)) = find_hud_asset(client).await {
+            url
+        } else {
+            NYARU_HUD_URL.to_string()
+        };
+        let _ = download_file(client, &hud_url, &hud_path).await;
     }
 
     Ok(())
+}
+
+pub async fn find_hud_asset(client: &reqwest::Client) -> Option<(String, String)> {
+    let releases: Vec<serde_json::Value> = client
+        .get("https://api.github.com/repos/INIRU/Tinklepaw/releases")
+        .header("User-Agent", "nyaru-launcher/0.1.2")
+        .send()
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+
+    for release in &releases {
+        if let Some(assets) = release["assets"].as_array() {
+            for asset in assets {
+                if asset["name"].as_str() == Some("nyaru-hud.jar") {
+                    let updated_at = asset["updated_at"].as_str()?.to_string();
+                    let download_url = asset["browser_download_url"].as_str()?.to_string();
+                    return Some((updated_at, download_url));
+                }
+            }
+        }
+    }
+    None
 }
 
 pub async fn force_reinstall_mods(app: &AppHandle) -> Result<(), String> {

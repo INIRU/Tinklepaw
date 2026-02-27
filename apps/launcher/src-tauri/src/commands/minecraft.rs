@@ -117,38 +117,18 @@ pub async fn install_java(app: AppHandle) -> Result<String, String> {
 #[tauri::command]
 pub async fn check_mods_update() -> Result<bool, String> {
     let stored = download::get_stored_mods_version();
-
-    let client = reqwest::Client::new();
-    let release: serde_json::Value = client
-        .get("https://api.github.com/repos/INIRU/Tinklepaw/releases/latest")
-        .header("User-Agent", "nyaru-launcher/0.1.2")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    // Check if nyaru-hud.jar is actually present on disk
     let hud_installed = download::is_hud_installed();
 
-    // Find nyaru-hud.jar asset updated_at
-    if let Some(assets) = release["assets"].as_array() {
-        for asset in assets {
-            if asset["name"].as_str() == Some("nyaru-hud.jar") {
-                let updated_at = asset["updated_at"].as_str().unwrap_or("");
-                if !hud_installed {
-                    // Mod file missing (e.g. upgrading from v0.1.0) → trigger install
-                    return Ok(true);
-                }
-                if stored.is_empty() {
-                    // Mod exists but no timestamp stored → save baseline, no prompt
-                    download::save_mods_version(updated_at);
-                    return Ok(false);
-                }
-                return Ok(stored != updated_at);
-            }
+    let client = reqwest::Client::new();
+    if let Some((updated_at, _url)) = download::find_hud_asset(&client).await {
+        if !hud_installed {
+            return Ok(true);
         }
+        if stored.is_empty() {
+            download::save_mods_version(&updated_at);
+            return Ok(false);
+        }
+        return Ok(stored != updated_at);
     }
 
     Ok(false)
@@ -158,25 +138,9 @@ pub async fn check_mods_update() -> Result<bool, String> {
 pub async fn update_mods(app: AppHandle) -> Result<(), String> {
     download::force_reinstall_mods(&app).await?;
 
-    // After reinstall, save new version timestamp
     let client = reqwest::Client::new();
-    if let Ok(release) = client
-        .get("https://api.github.com/repos/INIRU/Tinklepaw/releases/latest")
-        .header("User-Agent", "nyaru-launcher/0.1.2")
-        .send()
-        .await
-    {
-        if let Ok(val) = release.json::<serde_json::Value>().await {
-            if let Some(assets) = val["assets"].as_array() {
-                for asset in assets {
-                    if asset["name"].as_str() == Some("nyaru-hud.jar") {
-                        if let Some(updated_at) = asset["updated_at"].as_str() {
-                            download::save_mods_version(updated_at);
-                        }
-                    }
-                }
-            }
-        }
+    if let Some((updated_at, _url)) = download::find_hud_asset(&client).await {
+        download::save_mods_version(&updated_at);
     }
 
     Ok(())
