@@ -78,32 +78,64 @@ class FancyNpcsService(private val plugin: NyaruPlugin) : Listener {
         startWaveTask(id, location)
     }
 
+    /** Get NMS ServerPlayer connection object for a Bukkit player */
+    private fun getConnection(viewer: Player): Any? {
+        val craftCls = Class.forName("org.bukkit.craftbukkit.entity.CraftPlayer")
+        val handle = craftCls.getMethod("getHandle").invoke(viewer) ?: return null
+        var connection: Any? = null
+        var cls: Class<*>? = handle.javaClass
+        while (cls != null && connection == null) {
+            try {
+                val f = cls.getDeclaredField("connection")
+                f.isAccessible = true
+                connection = f.get(handle)
+            } catch (_: NoSuchFieldException) { cls = cls.superclass }
+        }
+        return connection
+    }
+
+    /** Get NMS Entity by integer entity ID via ServerLevel.getEntity(int) */
+    private fun getNmsEntity(world: org.bukkit.World, entityId: Int): Any? {
+        return try {
+            val craftWorldCls = Class.forName("org.bukkit.craftbukkit.CraftWorld")
+            val serverLevel = craftWorldCls.getMethod("getHandle").invoke(craftWorldCls.cast(world))
+            var cls: Class<*>? = serverLevel.javaClass
+            while (cls != null) {
+                try {
+                    val m = cls.getDeclaredMethod("getEntity", Int::class.javaPrimitiveType)
+                    m.isAccessible = true
+                    return m.invoke(serverLevel, entityId)
+                } catch (_: NoSuchMethodException) { cls = cls.superclass }
+            }
+            null
+        } catch (e: Exception) {
+            plugin.logger.warning("[NPC Wave] getNmsEntity: ${e.message}")
+            null
+        }
+    }
+
     /** Send a single ClientboundAnimatePacket (action=0: swing main hand) to a viewer via reflection */
     private fun sendSwingPacket(viewer: Player, entityId: Int) {
         try {
-            // 1. Get actual ServerPlayer instance (runtime type, not declared return type)
-            val craftCls = Class.forName("org.bukkit.craftbukkit.entity.CraftPlayer")
-            val handle = craftCls.getMethod("getHandle").invoke(viewer) ?: return
-
-            // 2. Walk the actual class hierarchy to find 'connection' field
-            var connection: Any? = null
-            var cls: Class<*>? = handle.javaClass
-            while (cls != null && connection == null) {
-                try {
-                    val f = cls.getDeclaredField("connection")
-                    f.isAccessible = true
-                    connection = f.get(handle)
-                } catch (_: NoSuchFieldException) { cls = cls.superclass }
-            }
-            if (connection == null) return
-
-            // 3. Create ClientboundAnimatePacket(entityId, 0) — private (int,int) constructor
+            val connection = getConnection(viewer) ?: return
             val packetCls = Class.forName("net.minecraft.network.protocol.game.ClientboundAnimatePacket")
-            val cons = packetCls.declaredConstructors.firstOrNull { it.parameterCount == 2 } ?: return
-            cons.isAccessible = true
-            val packet = cons.newInstance(entityId, 0)
 
-            // 4. Find send(Packet<?>) in connection class hierarchy and invoke
+            // Try (int, int) private constructor first (≤1.20.4), else use (Entity, int) (1.20.6+)
+            val intIntCons = packetCls.declaredConstructors.firstOrNull { c ->
+                c.parameterCount == 2 && c.parameterTypes[0] == Int::class.javaPrimitiveType
+            }
+            val packet = if (intIntCons != null) {
+                intIntCons.isAccessible = true
+                intIntCons.newInstance(entityId, 0)
+            } else {
+                val nmsEntity = getNmsEntity(viewer.world, entityId) ?: return
+                val entityCons = packetCls.declaredConstructors.firstOrNull { c ->
+                    c.parameterCount == 2 && c.parameterTypes[1] == Int::class.javaPrimitiveType
+                } ?: return
+                entityCons.isAccessible = true
+                entityCons.newInstance(nmsEntity, 0)
+            }
+
             var connCls: Class<*>? = connection.javaClass
             while (connCls != null) {
                 val m = connCls.declaredMethods.firstOrNull { it.name == "send" && it.parameterCount == 1 }
