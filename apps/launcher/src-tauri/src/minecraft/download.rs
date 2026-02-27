@@ -495,6 +495,12 @@ pub async fn force_reinstall_mods(app: &AppHandle) -> Result<(), String> {
     remove_old_mod(&mods_dir, "fabric-language-kotlin");
 
     let client = reqwest::Client::new();
+
+    // Ensure Fabric Loader is installed (v0.1.0 users won't have it)
+    if !game_dir.join("fabric-version.txt").exists() {
+        install_fabric(app, &client, &game_dir).await?;
+    }
+
     install_mods(app, &client, &game_dir).await
 }
 
@@ -509,6 +515,10 @@ pub fn get_stored_mods_version() -> String {
         .unwrap_or_default()
         .trim()
         .to_string()
+}
+
+pub fn is_hud_installed() -> bool {
+    get_game_dir().join("mods").join("nyaru-hud.jar").exists()
 }
 
 fn filter_libraries(libraries: &[Library]) -> Vec<&Library> {

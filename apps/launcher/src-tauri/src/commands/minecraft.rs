@@ -129,20 +129,24 @@ pub async fn check_mods_update() -> Result<bool, String> {
         .await
         .map_err(|e| e.to_string())?;
 
+    // Check if nyaru-hud.jar is actually present on disk
+    let hud_installed = download::is_hud_installed();
+
     // Find nyaru-hud.jar asset updated_at
     if let Some(assets) = release["assets"].as_array() {
         for asset in assets {
             if asset["name"].as_str() == Some("nyaru-hud.jar") {
                 let updated_at = asset["updated_at"].as_str().unwrap_or("");
-                // If stored was empty (first time) → not an "update" needed, mods just installed
-                // If stored differs → update available
-                let needs_update = !stored.is_empty() && stored != updated_at;
-                // Save latest known version only if we already have one stored
-                // (so first-time installs don't show update prompt)
-                if !stored.is_empty() {
-                    // Don't overwrite here; let update_mods save it after reinstall
+                if !hud_installed {
+                    // Mod file missing (e.g. upgrading from v0.1.0) → trigger install
+                    return Ok(true);
                 }
-                return Ok(needs_update);
+                if stored.is_empty() {
+                    // Mod exists but no timestamp stored → save baseline, no prompt
+                    download::save_mods_version(updated_at);
+                    return Ok(false);
+                }
+                return Ok(stored != updated_at);
             }
         }
     }
