@@ -113,3 +113,67 @@ pub async fn launch_minecraft(
 pub async fn install_java(app: AppHandle) -> Result<String, String> {
     crate::minecraft::java::install_java_auto(&app).await
 }
+
+#[tauri::command]
+pub async fn check_mods_update() -> Result<bool, String> {
+    let stored = download::get_stored_mods_version();
+
+    let client = reqwest::Client::new();
+    let release: serde_json::Value = client
+        .get("https://api.github.com/repos/INIRU/Tinklepaw/releases/latest")
+        .header("User-Agent", "nyaru-launcher/0.1.1")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Find nyaru-hud.jar asset updated_at
+    if let Some(assets) = release["assets"].as_array() {
+        for asset in assets {
+            if asset["name"].as_str() == Some("nyaru-hud.jar") {
+                let updated_at = asset["updated_at"].as_str().unwrap_or("");
+                // If stored was empty (first time) → not an "update" needed, mods just installed
+                // If stored differs → update available
+                let needs_update = !stored.is_empty() && stored != updated_at;
+                // Save latest known version only if we already have one stored
+                // (so first-time installs don't show update prompt)
+                if !stored.is_empty() {
+                    // Don't overwrite here; let update_mods save it after reinstall
+                }
+                return Ok(needs_update);
+            }
+        }
+    }
+
+    Ok(false)
+}
+
+#[tauri::command]
+pub async fn update_mods(app: AppHandle) -> Result<(), String> {
+    download::force_reinstall_mods(&app).await?;
+
+    // After reinstall, save new version timestamp
+    let client = reqwest::Client::new();
+    if let Ok(release) = client
+        .get("https://api.github.com/repos/INIRU/Tinklepaw/releases/latest")
+        .header("User-Agent", "nyaru-launcher/0.1.1")
+        .send()
+        .await
+    {
+        if let Ok(val) = release.json::<serde_json::Value>().await {
+            if let Some(assets) = val["assets"].as_array() {
+                for asset in assets {
+                    if asset["name"].as_str() == Some("nyaru-hud.jar") {
+                        if let Some(updated_at) = asset["updated_at"].as_str() {
+                            download::save_mods_version(updated_at);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}

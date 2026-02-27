@@ -26,6 +26,14 @@ export async function installMinecraft(): Promise<void> {
   return invoke<void>("install_minecraft");
 }
 
+export async function checkModsUpdate(): Promise<boolean> {
+  return invoke<boolean>("check_mods_update");
+}
+
+export async function updateMods(): Promise<void> {
+  return invoke<void>("update_mods");
+}
+
 export async function launchMinecraft(params: {
   javaPath: string;
   maxMemoryMb: number;

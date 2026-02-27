@@ -27,6 +27,8 @@ pub fn run() {
             commands::minecraft::launch_minecraft,
             commands::minecraft::detect_java,
             commands::minecraft::install_java,
+            commands::minecraft::check_mods_update,
+            commands::minecraft::update_mods,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

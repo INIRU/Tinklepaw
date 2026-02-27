@@ -3,6 +3,7 @@ interface LaunchButtonProps {
   isInstalling: boolean;
   isLaunching: boolean;
   isRunning: boolean;
+  modsUpdateAvailable?: boolean;
   onClick: () => void;
 }
 
@@ -11,6 +12,7 @@ export default function LaunchButton({
   isInstalling,
   isLaunching,
   isRunning,
+  modsUpdateAvailable,
   onClick,
 }: LaunchButtonProps) {
   const isDisabled = isInstalling || isLaunching || isRunning;
@@ -28,6 +30,22 @@ export default function LaunchButton({
           <path d="M2 13h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
         </svg>
         설치하기
+      </button>
+    );
+  }
+
+  if (modsUpdateAvailable && !isInstalling && !isLaunching && !isRunning) {
+    return (
+      <button
+        onClick={onClick}
+        className="play-btn w-[240px] h-[56px] flex items-center justify-center gap-3
+          text-lg font-bold text-white tracking-wide animate-pulse-glow cursor-pointer"
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+          <path d="M9 2v9M5 8l4 4 4-4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M3 15h12" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+        </svg>
+        업데이트
       </button>
     );
   }

@@ -482,6 +482,35 @@ async fn install_mods(app: &AppHandle, client: &reqwest::Client, game_dir: &std:
     Ok(())
 }
 
+pub async fn force_reinstall_mods(app: &AppHandle) -> Result<(), String> {
+    let game_dir = get_game_dir();
+    let mods_dir = game_dir.join("mods");
+
+    // Delete existing mod files that we manage
+    for name in &["nyaru-hud.jar", "mods-updated-at.txt"] {
+        let _ = std::fs::remove_file(mods_dir.join(name));
+    }
+    // Also remove old fabric-api and kotlin mods so they re-download
+    remove_old_mod(&mods_dir, "fabric-api");
+    remove_old_mod(&mods_dir, "fabric-language-kotlin");
+
+    let client = reqwest::Client::new();
+    install_mods(app, &client, &game_dir).await
+}
+
+pub fn save_mods_version(updated_at: &str) {
+    let game_dir = get_game_dir();
+    let _ = std::fs::write(game_dir.join("mods-updated-at.txt"), updated_at);
+}
+
+pub fn get_stored_mods_version() -> String {
+    let game_dir = get_game_dir();
+    std::fs::read_to_string(game_dir.join("mods-updated-at.txt"))
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+}
+
 fn filter_libraries(libraries: &[Library]) -> Vec<&Library> {
     libraries
         .iter()

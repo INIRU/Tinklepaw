@@ -24,11 +24,14 @@ export default function Home({ onNavigate }: HomeProps) {
     isInstalling,
     isLaunching,
     isRunning,
+    modsUpdateAvailable,
     downloadProgress,
     gameLogs,
     error,
     checkInstall,
     install,
+    checkModsUpdate,
+    updateMods,
     launch,
     initListeners,
   } = useLaunch();
@@ -38,6 +41,7 @@ export default function Home({ onNavigate }: HomeProps) {
   useEffect(() => {
     loadSettings();
     checkInstall();
+    checkModsUpdate();
     const cleanup = initListeners();
     return () => {
       cleanup.then((fn) => fn());
@@ -55,6 +59,11 @@ export default function Home({ onNavigate }: HomeProps) {
   const handlePlayClick = async () => {
     if (!isInstalled) {
       await install();
+      return;
+    }
+
+    if (modsUpdateAvailable) {
+      await updateMods();
       return;
     }
 
@@ -210,6 +219,7 @@ export default function Home({ onNavigate }: HomeProps) {
               isInstalling={isInstalling}
               isLaunching={isLaunching}
               isRunning={isRunning}
+              modsUpdateAvailable={modsUpdateAvailable}
               onClick={handlePlayClick}
             />
           )}
