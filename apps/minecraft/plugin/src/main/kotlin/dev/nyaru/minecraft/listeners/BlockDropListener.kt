@@ -81,15 +81,18 @@ class BlockDropListener(private val plugin: NyaruPlugin, private val skillManage
             }
         }
 
-        // Grant XP for mining
+        // Grant XP for mining (miner only)
         val player = event.player
         val uuid = player.uniqueId.toString()
-        plugin.pluginScope.launch {
-            val result = plugin.apiClient.grantXp(uuid, 5)
-            if (result?.leveledUp == true) {
-                plugin.server.scheduler.runTask(plugin, Runnable {
-                    triggerLevelUp(plugin, player, result.level, result.newSkillPoints)
-                })
+        val cached = dev.nyaru.minecraft.cache.PlayerCache.get(uuid)
+        if (cached != null && cached.info.job == "miner") {
+            plugin.pluginScope.launch {
+                val result = plugin.apiClient.grantXp(uuid, 5)
+                if (result?.leveledUp == true) {
+                    plugin.server.scheduler.runTask(plugin, Runnable {
+                        triggerLevelUp(plugin, player, result.level, result.newSkillPoints)
+                    })
+                }
             }
         }
     }

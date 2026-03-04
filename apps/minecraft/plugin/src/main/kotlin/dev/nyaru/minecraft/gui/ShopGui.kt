@@ -325,12 +325,16 @@ class ShopGui(private val plugin: NyaruPlugin, private val player: Player) {
                     PlayerCache.updateBalance(uuid, diff) // adjust by the difference
                     val fmt = NumberFormat.getNumberInstance(Locale.US)
                     player.sendMessage("§7정산 완료: §6+${fmt.format(result.netPoints)}P §8(단가: ${result.unitPrice}P, 수수료: ${result.feeAmount}P)")
+                    // Refresh action bar to show updated balance
+                    plugin.actionBarManager.refresh(player.uniqueId)
                 } else {
                     // Rollback: restore item and revert balance
                     player.playSound(player.location, Sound.ENTITY_VILLAGER_NO, 0.8f, 0.8f)
                     inv.addItem(removedStack)
                     PlayerCache.updateBalance(uuid, -estimatedPoints) // revert
                     player.sendMessage("§c판매 실패. 아이템이 반환됐어.")
+                    // Refresh action bar to revert displayed balance
+                    plugin.actionBarManager.refresh(player.uniqueId)
                 }
             })
         }

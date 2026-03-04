@@ -143,13 +143,16 @@ class BlockBreakListener(private val plugin: NyaruPlugin, private val skillManag
             }
         }
 
-        // Grant XP for crop harvest
-        plugin.pluginScope.launch {
-            val result = plugin.apiClient.grantXp(uuid.toString(), 2)
-            if (result?.leveledUp == true) {
-                plugin.server.scheduler.runTask(plugin, Runnable {
-                    triggerLevelUp(plugin, player, result.level, result.newSkillPoints)
-                })
+        // Grant XP for crop harvest (farmer only)
+        val cached = dev.nyaru.minecraft.cache.PlayerCache.get(uuid.toString())
+        if (cached != null && cached.info.job == "farmer") {
+            plugin.pluginScope.launch {
+                val result = plugin.apiClient.grantXp(uuid.toString(), 2)
+                if (result?.leveledUp == true) {
+                    plugin.server.scheduler.runTask(plugin, Runnable {
+                        triggerLevelUp(plugin, player, result.level, result.newSkillPoints)
+                    })
+                }
             }
         }
     }
