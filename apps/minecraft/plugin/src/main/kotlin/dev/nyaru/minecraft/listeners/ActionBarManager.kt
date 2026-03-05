@@ -14,7 +14,6 @@ import org.bukkit.event.Listener
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import java.text.NumberFormat
-import java.util.Collections
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -23,8 +22,6 @@ class ActionBarManager(private val plugin: NyaruPlugin, private val pm: Protecti
 
     // Local display cache — always valid for immediate action bar rendering
     private val cache = ConcurrentHashMap<UUID, PlayerInfo>()
-    // Dedup set: prevents concurrent re-fetches triggered by RCON invalidation
-    private val rconRefetchSet: MutableSet<UUID> = Collections.newSetFromMap(ConcurrentHashMap())
     var chatTabListener: ChatTabListener? = null
 
     fun getInfo(uuid: UUID): PlayerInfo? = cache[uuid]
@@ -55,7 +52,6 @@ class ActionBarManager(private val plugin: NyaruPlugin, private val pm: Protecti
         val uuid = event.player.uniqueId
         cache.remove(uuid)
         PlayerCache.invalidate(uuid.toString())
-        rconRefetchSet.remove(uuid)
     }
 
     fun refresh(uuid: UUID) {
@@ -82,6 +78,24 @@ class ActionBarManager(private val plugin: NyaruPlugin, private val pm: Protecti
         }
     }
 
+    /** Update balance locally without API call */
+    fun updateBalance(uuid: UUID, newBalance: Int) {
+        val info = cache[uuid] ?: return
+        cache[uuid] = info.copy(balance = newBalance)
+    }
+
+    /** Update XP/level locally without API call */
+    fun updateXp(uuid: UUID, level: Int, xp: Int) {
+        val info = cache[uuid] ?: return
+        cache[uuid] = info.copy(level = level, xp = xp)
+    }
+
+    /** Update job locally without API call */
+    fun updateJob(uuid: UUID, job: String) {
+        val info = cache[uuid] ?: return
+        cache[uuid] = info.copy(job = job, level = 1, xp = 0)
+    }
+
     private fun buildActionBarText(info: PlayerInfo, uuid: UUID): net.kyori.adventure.text.Component {
         val jobKr = when (info.job) {
             "miner" -> "§9광부"
@@ -101,33 +115,15 @@ class ActionBarManager(private val plugin: NyaruPlugin, private val pm: Protecti
         Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, Runnable {
             for (player in Bukkit.getOnlinePlayers()) {
                 val info = cache[player.uniqueId] ?: continue
-                // RCON invalidation: PlayerCache cleared but local cache still has stale data
-                // → trigger background re-fetch to sync fresh balance
-                if (PlayerCache.get(player.uniqueId.toString()) == null && rconRefetchSet.add(player.uniqueId)) {
-                    plugin.pluginScope.launch {
-                        try {
-                            val fresh = plugin.apiClient.getPlayer(player.uniqueId.toString())
-                            if (fresh?.linked == true) {
-                                cache[player.uniqueId] = fresh
-                                Bukkit.getScheduler().runTask(plugin, Runnable {
-                                    chatTabListener?.updateTabName(player, fresh)
-                                    plugin.sidebarManager.update(player, fresh)
-                                })
-                            }
-                        } finally {
-                            rconRefetchSet.remove(player.uniqueId)
-                        }
-                    }
-                }
                 player.sendActionBar(buildActionBarText(info, player.uniqueId))
             }
-        }, 20L, 30L)
+        }, 20L, 60L)
     }
 
     private fun startRefreshLoop() {
         plugin.pluginScope.launch {
             while (isActive) {
-                delay(30_000)
+                delay(300_000)
                 for (player in Bukkit.getOnlinePlayers()) {
                     val info = plugin.apiClient.getPlayer(player.uniqueId.toString())
                     if (info?.linked == true) {

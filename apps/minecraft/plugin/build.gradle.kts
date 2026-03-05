@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "dev.nyaru"
-version = (project.findProperty("pluginVersion") as String?) ?: "1.0.11"
+version = (project.findProperty("pluginVersion") as String?) ?: "1.0.12"
 
 repositories {
     mavenCentral()

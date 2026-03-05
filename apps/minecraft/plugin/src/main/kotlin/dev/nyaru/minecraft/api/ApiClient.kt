@@ -96,6 +96,7 @@ class ApiClient(private val baseUrl: String, private val apiKey: String, private
     }
 
     suspend fun sellItem(uuid: String, symbol: String, qty: Int, freshnessPct: Double?, purityPct: Double?): SellResult? {
+        direct?.let { return it.sellItem(uuid, symbol, qty, freshnessPct, purityPct) }
         val payload = mutableMapOf<String, Any>(
             "uuid" to uuid,
             "symbol" to symbol,
@@ -178,11 +179,13 @@ class ApiClient(private val baseUrl: String, private val apiKey: String, private
     }
 
     suspend fun changeJob(uuid: String, job: String): Boolean {
+        direct?.let { return it.changeJob(uuid, job) }
         val data = post("/job", mapOf("uuid" to uuid, "job" to job)) ?: return false
         return data.get("success")?.asBoolean ?: false
     }
 
     suspend fun grantXp(uuid: String, xp: Int): XpResult? {
+        direct?.let { return it.grantXp(uuid, xp) }
         val data = post("/job/xp", mapOf("uuid" to uuid, "xp" to xp)) ?: return null
         return XpResult(
             level = data.get("level").asInt,
@@ -213,6 +216,7 @@ class ApiClient(private val baseUrl: String, private val apiKey: String, private
     }
 
     suspend fun buySeed(uuid: String, symbol: String, qty: Int): Boolean {
+        direct?.let { return it.buySeed(uuid, symbol, qty) }
         val data = post("/shop/buy", mapOf("uuid" to uuid, "symbol" to symbol, "qty" to qty)) ?: return false
         val success = data.get("success")?.asBoolean ?: false
         if (success) PlayerCache.invalidate(uuid)

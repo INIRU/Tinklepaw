@@ -11,7 +11,7 @@ data class CachedPlayer(
 )
 
 object PlayerCache {
-    private const val TTL_MS = 120_000L // 2 minutes
+    private const val TTL_MS = 300_000L // 5 minutes
 
     private val cache = ConcurrentHashMap<String, CachedPlayer>()
 

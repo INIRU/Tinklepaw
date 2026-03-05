@@ -148,9 +148,12 @@ class BlockBreakListener(private val plugin: NyaruPlugin, private val skillManag
         if (cached != null && cached.info.job == "farmer") {
             plugin.pluginScope.launch {
                 val result = plugin.apiClient.grantXp(uuid.toString(), 2)
-                if (result?.leveledUp == true) {
+                if (result != null) {
                     plugin.server.scheduler.runTask(plugin, Runnable {
-                        triggerLevelUp(plugin, player, result.level, result.newSkillPoints)
+                        plugin.actionBarManager.updateXp(uuid, result.level, result.xp)
+                        if (result.leveledUp) {
+                            triggerLevelUp(plugin, player, result.level, result.newSkillPoints)
+                        }
                     })
                 }
             }

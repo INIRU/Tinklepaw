@@ -5,6 +5,8 @@ import dev.nyaru.minecraft.cache.MarketCache
 import dev.nyaru.minecraft.cache.PlayerCache
 import dev.nyaru.minecraft.model.MarketItem
 import dev.nyaru.minecraft.model.PlayerInfo
+import dev.nyaru.minecraft.model.SellResult
+import dev.nyaru.minecraft.model.XpResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -174,6 +176,244 @@ class DirectClient(
             }
         }
     }
+
+    suspend fun sellItem(uuid: String, symbol: String, qty: Int, freshnessPct: Double?, purityPct: Double?): SellResult? = withContext(Dispatchers.IO) {
+        // 1. Get discord_user_id
+        val discordId = getDiscordId(uuid) ?: return@withContext null
+
+        // 2. Get current price + item info
+        val priceArr = client.newCall(supabaseGet(
+            "/mc_market_prices?symbol=eq.${enc(symbol)}&select=current_price&limit=1"
+        )).execute().use { resp ->
+            if (!resp.isSuccessful) return@withContext null
+            JsonParser.parseString(resp.body?.string() ?: "[]").asJsonArray
+        }
+        val itemArr = client.newCall(supabaseGet(
+            "/mc_market_items?symbol=eq.${enc(symbol)}&select=base_price,category&limit=1"
+        )).execute().use { resp ->
+            if (!resp.isSuccessful) return@withContext null
+            JsonParser.parseString(resp.body?.string() ?: "[]").asJsonArray
+        }
+
+        if (priceArr.isEmpty || itemArr.isEmpty) return@withContext null
+        val currentPrice = priceArr[0].asJsonObject.get("current_price").asInt
+        val itemObj = itemArr[0].asJsonObject
+        val basePrice = itemObj.get("base_price").asInt
+        val category = itemObj.get("category").asString
+
+        // 3. Calculate price with bonus
+        var unitPrice = currentPrice
+        if (category == "crop" && freshnessPct != null) {
+            val freshMult = 0.6 + (freshnessPct / 100.0) * 0.4
+            unitPrice = Math.round(unitPrice * freshMult).toInt()
+        }
+        if (category == "mineral" && purityPct != null) {
+            val purityMult = 0.8 + (purityPct / 100.0) * 0.2
+            unitPrice = Math.round(unitPrice * purityMult).toInt()
+        }
+
+        // 4. Fee calculation (default 5%)
+        val cfgArr = client.newCall(supabaseGet(
+            "/app_config?id=eq.1&select=mc_market_fee_bps&limit=1"
+        )).execute().use { resp ->
+            if (!resp.isSuccessful) return@use null
+            JsonParser.parseString(resp.body?.string() ?: "[]").asJsonArray
+        }
+        val feeBps = cfgArr?.takeIf { !it.isEmpty }
+            ?.get(0)?.asJsonObject?.get("mc_market_fee_bps")?.asInt ?: 500
+
+        val grossPoints = unitPrice * qty
+        val feeAmount = Math.round(grossPoints.toDouble() * feeBps / 10000).toInt()
+        val netPoints = grossPoints - feeAmount
+
+        // 5. Insert point_events
+        val pointBody = """{"discord_user_id":"$discordId","amount":$netPoints,"kind":"minecraft_sell:$symbol:$qty"}"""
+        val pointOk = client.newCall(supabasePost("/point_events", pointBody)).execute().use { it.isSuccessful }
+        if (!pointOk) return@withContext null
+
+        // 6. Record trade
+        val tradeBody = """{"minecraft_uuid":"$uuid","symbol":"$symbol","qty":$qty,"unit_price":$unitPrice,"base_price":$basePrice,"freshness_pct":${freshnessPct ?: "null"},"purity_pct":${purityPct ?: "null"},"fee_amount":$feeAmount,"net_points":$netPoints,"side":"sell"}"""
+        client.newCall(supabasePost("/mc_market_trades", tradeBody)).execute().close()
+
+        PlayerCache.invalidate(uuid)
+        SellResult(netPoints = netPoints, unitPrice = unitPrice, feeAmount = feeAmount)
+    }
+
+    suspend fun grantXp(uuid: String, xp: Int): XpResult? = withContext(Dispatchers.IO) {
+        // 1. Get current job data
+        val jobArr = client.newCall(supabaseGet(
+            "/minecraft_jobs?minecraft_uuid=eq.${enc(uuid)}&select=level,xp&limit=1"
+        )).execute().use { resp ->
+            if (!resp.isSuccessful) return@withContext null
+            JsonParser.parseString(resp.body?.string() ?: "[]").asJsonArray
+        }
+        if (jobArr.isEmpty) return@withContext null
+        val jobObj = jobArr[0].asJsonObject
+
+        var level = jobObj.get("level").asInt
+        var currentXp = jobObj.get("xp").asInt + xp
+        var leveledUp = false
+
+        // 2. Level-up loop
+        var xpRequired = Math.floor(100.0 * Math.pow(level.toDouble(), 1.6)).toInt()
+        while (currentXp >= xpRequired) {
+            currentXp -= xpRequired
+            level++
+            leveledUp = true
+            xpRequired = Math.floor(100.0 * Math.pow(level.toDouble(), 1.6)).toInt()
+        }
+
+        // 3. Update job
+        val updateBody = """{"level":$level,"xp":$currentXp,"updated_at":"${java.time.Instant.now()}"}"""
+        client.newCall(supabasePatch("/minecraft_jobs?minecraft_uuid=eq.${enc(uuid)}", updateBody)).execute().close()
+
+        // 4. Skill points on level up
+        var newSkillPoints: Int? = null
+        if (leveledUp) {
+            val skillArr = client.newCall(supabaseGet(
+                "/mc_player_skills?minecraft_uuid=eq.${enc(uuid)}&select=skill_points&limit=1"
+            )).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                JsonParser.parseString(resp.body?.string() ?: "[]").asJsonArray
+            }
+            if (skillArr != null && !skillArr.isEmpty) {
+                newSkillPoints = skillArr[0].asJsonObject.get("skill_points").asInt + 1
+                val skillBody = """{"skill_points":$newSkillPoints,"updated_at":"${java.time.Instant.now()}"}"""
+                client.newCall(supabasePatch("/mc_player_skills?minecraft_uuid=eq.${enc(uuid)}", skillBody)).execute().close()
+            } else {
+                newSkillPoints = 1
+                val skillBody = """{"minecraft_uuid":"$uuid","skill_points":1}"""
+                client.newCall(supabasePost("/mc_player_skills", skillBody)).execute().close()
+            }
+        }
+
+        PlayerCache.invalidate(uuid)
+        XpResult(level = level, xp = currentXp, leveledUp = leveledUp, xpToNextLevel = xpRequired, newSkillPoints = newSkillPoints)
+    }
+
+    suspend fun buySeed(uuid: String, symbol: String, qty: Int): Boolean = withContext(Dispatchers.IO) {
+        val discordId = getDiscordId(uuid) ?: return@withContext false
+
+        // Get price
+        val priceArr = client.newCall(supabaseGet(
+            "/mc_market_prices?symbol=eq.${enc(symbol)}&select=current_price&limit=1"
+        )).execute().use { resp ->
+            if (!resp.isSuccessful) return@withContext false
+            JsonParser.parseString(resp.body?.string() ?: "[]").asJsonArray
+        }
+        if (priceArr.isEmpty) return@withContext false
+        val totalCost = priceArr[0].asJsonObject.get("current_price").asInt * qty
+
+        // Check balance
+        val balArr = client.newCall(supabaseGet(
+            "/point_balances?discord_user_id=eq.${enc(discordId)}&select=balance&limit=1"
+        )).execute().use { resp ->
+            if (!resp.isSuccessful) return@withContext false
+            JsonParser.parseString(resp.body?.string() ?: "[]").asJsonArray
+        }
+        val balance = if (balArr.isEmpty) 0 else balArr[0].asJsonObject.get("balance")?.asInt ?: 0
+        if (balance < totalCost) return@withContext false
+
+        // Deduct points
+        val body = """{"discord_user_id":"$discordId","amount":${-totalCost},"kind":"minecraft_buy:$symbol:$qty"}"""
+        val ok = client.newCall(supabasePost("/point_events", body)).execute().use { it.isSuccessful }
+        if (ok) PlayerCache.invalidate(uuid)
+        ok
+    }
+
+    suspend fun changeJob(uuid: String, job: String): Boolean = withContext(Dispatchers.IO) {
+        val discordId = getDiscordId(uuid) ?: return@withContext false
+
+        // Check current job
+        val jobArr = client.newCall(supabaseGet(
+            "/minecraft_jobs?minecraft_uuid=eq.${enc(uuid)}&select=job&limit=1"
+        )).execute().use { resp ->
+            if (!resp.isSuccessful) return@withContext false
+            JsonParser.parseString(resp.body?.string() ?: "[]").asJsonArray
+        }
+
+        if (jobArr.isEmpty) {
+            // Initial job selection
+            val body = """{"minecraft_uuid":"$uuid","job":"$job","level":1,"xp":0,"updated_at":"${java.time.Instant.now()}"}"""
+            val req = okhttp3.Request.Builder()
+                .url("${supabaseUrl}/rest/v1/minecraft_jobs")
+                .header("apikey", supabaseKey)
+                .header("Authorization", "Bearer $supabaseKey")
+                .header("Content-Profile", "nyang")
+                .header("Content-Type", "application/json")
+                .header("Prefer", "resolution=merge-duplicates")
+                .post(body.toRequestBody("application/json".toMediaType()))
+                .build()
+            return@withContext client.newCall(req).execute().use { it.isSuccessful }
+        }
+
+        val currentJob = jobArr[0].asJsonObject.get("job").asString
+        if (currentJob == job) return@withContext false
+
+        // Job change costs points
+        val cfgArr = client.newCall(supabaseGet(
+            "/app_config?id=eq.1&select=mc_job_change_cost_points&limit=1"
+        )).execute().use { resp ->
+            if (!resp.isSuccessful) return@use null
+            JsonParser.parseString(resp.body?.string() ?: "[]").asJsonArray
+        }
+        val changeCost = cfgArr?.takeIf { !it.isEmpty }
+            ?.get(0)?.asJsonObject?.get("mc_job_change_cost_points")?.asInt ?: 200
+
+        // Check balance
+        val balArr = client.newCall(supabaseGet(
+            "/point_balances?discord_user_id=eq.${enc(discordId)}&select=balance&limit=1"
+        )).execute().use { resp ->
+            if (!resp.isSuccessful) return@withContext false
+            JsonParser.parseString(resp.body?.string() ?: "[]").asJsonArray
+        }
+        val balance = if (balArr.isEmpty) 0 else balArr[0].asJsonObject.get("balance")?.asInt ?: 0
+        if (balance < changeCost) return@withContext false
+
+        // Deduct points
+        val pointBody = """{"discord_user_id":"$discordId","amount":${-changeCost},"kind":"minecraft_job_change:$job"}"""
+        client.newCall(supabasePost("/point_events", pointBody)).execute().close()
+
+        // Reset job
+        val updateBody = """{"job":"$job","level":1,"xp":0,"last_job_change":"${java.time.Instant.now()}","updated_at":"${java.time.Instant.now()}"}"""
+        client.newCall(supabasePatch("/minecraft_jobs?minecraft_uuid=eq.${enc(uuid)}", updateBody)).execute().close()
+
+        PlayerCache.invalidate(uuid)
+        true
+    }
+
+    private fun getDiscordId(uuid: String): String? {
+        val playerArr = client.newCall(supabaseGet(
+            "/minecraft_players?minecraft_uuid=eq.${enc(uuid)}&select=discord_user_id&limit=1"
+        )).execute().use { resp ->
+            if (!resp.isSuccessful) return null
+            JsonParser.parseString(resp.body?.string() ?: "[]").asJsonArray
+        }
+        if (playerArr.isEmpty) return null
+        return playerArr[0].asJsonObject.get("discord_user_id")?.takeIf { !it.isJsonNull }?.asString
+    }
+
+    private fun supabasePost(path: String, body: String): Request =
+        Request.Builder()
+            .url("$supabaseUrl/rest/v1$path")
+            .header("apikey", supabaseKey)
+            .header("Authorization", "Bearer $supabaseKey")
+            .header("Content-Profile", "nyang")
+            .header("Content-Type", "application/json")
+            .header("Prefer", "return=minimal")
+            .post(body.toRequestBody("application/json".toMediaType()))
+            .build()
+
+    private fun supabasePatch(path: String, body: String): Request =
+        Request.Builder()
+            .url("$supabaseUrl/rest/v1$path")
+            .header("apikey", supabaseKey)
+            .header("Authorization", "Bearer $supabaseKey")
+            .header("Content-Profile", "nyang")
+            .header("Content-Type", "application/json")
+            .header("Prefer", "return=minimal")
+            .patch(body.toRequestBody("application/json".toMediaType()))
+            .build()
 
     suspend fun spendPoints(uuid: String, amount: Int, reason: String): Boolean = withContext(Dispatchers.IO) {
         // Get discord_user_id from minecraft_players

@@ -33,9 +33,10 @@ class BlockDropListener(private val plugin: NyaruPlugin, private val skillManage
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     fun onBlockDrop(event: BlockDropItemEvent) {
-        if (event.block.type !in ORE_MATERIALS) return
+        val blockType = event.blockState.type
+        if (blockType !in ORE_MATERIALS) return
 
-        val y = event.block.y
+        val y = event.blockState.y
         // purity = clamp(random(60,100) + max(0, (-y / 6)), 50, 100)
         val baseRandom = 60 + (Math.random() * 40).toInt()
         val yBonus = max(0, (-y / 6))
@@ -88,9 +89,12 @@ class BlockDropListener(private val plugin: NyaruPlugin, private val skillManage
         if (cached != null && cached.info.job == "miner") {
             plugin.pluginScope.launch {
                 val result = plugin.apiClient.grantXp(uuid, 5)
-                if (result?.leveledUp == true) {
+                if (result != null) {
                     plugin.server.scheduler.runTask(plugin, Runnable {
-                        triggerLevelUp(plugin, player, result.level, result.newSkillPoints)
+                        plugin.actionBarManager.updateXp(player.uniqueId, result.level, result.xp)
+                        if (result.leveledUp) {
+                            triggerLevelUp(plugin, player, result.level, result.newSkillPoints)
+                        }
                     })
                 }
             }
