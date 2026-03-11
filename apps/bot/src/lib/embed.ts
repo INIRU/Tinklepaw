@@ -27,6 +27,11 @@ export const Colors = {
 
   STOCK_UP: 0xef4444,
   STOCK_DOWN: 0x3b82f6,
+
+  NEWS_GENERAL: 0x3b82f6,
+  NEWS_RARE: 0xa855f7,
+  NEWS_SHOCK: 0xfbbf24,
+  NEUTRAL: 0x94a3b8,
 } as const;
 
 export const RarityColor: Record<string, number> = {
@@ -125,4 +130,23 @@ export function parseHexColor(color: string | undefined): number {
   if (!color) return Colors.BRAND_PINK;
   if (color.startsWith('#')) return parseInt(color.slice(1), 16) || Colors.BRAND_PINK;
   return parseInt(color, 16) || Colors.BRAND_PINK;
+}
+
+/* ──────────── Stock Embed Helpers ──────────── */
+
+export function stockEmbed(botAvatarURL?: string | null): EmbedBuilder {
+  const embed = new EmbedBuilder()
+    .setColor(Colors.BRAND_PINK)
+    .setTimestamp();
+  if (botAvatarURL) {
+    embed.setAuthor({ name: '방울냥 증권', iconURL: botAvatarURL });
+  } else {
+    embed.setAuthor({ name: '방울냥 증권' });
+  }
+  return embed;
+}
+
+export function stockFooter(extra?: string): { text: string } {
+  const base = 'TinklePaw Stock · KURO';
+  return { text: extra ? `${base} · ${extra}` : base };
 }

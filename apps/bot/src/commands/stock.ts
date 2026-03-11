@@ -16,7 +16,7 @@ import type { SlashCommand } from './types.js';
 import { getBotContext } from '../context.js';
 import { getAppConfig } from '../services/config.js';
 import { generateStockChartImage } from '../lib/stockChartImage.js';
-import { brandEmbed, errorEmbed, Colors, LINE, formatPoints, signedPoints, signedPct as signedPctFmt } from '../lib/embed.js';
+import { errorEmbed, Colors, signedPoints, signedPct as signedPctFmt, stockEmbed, stockFooter } from '../lib/embed.js';
 
 type StockCandle = {
   t: string;
@@ -105,6 +105,12 @@ function actionRow(disabled = false) {
       .setEmoji('📉')
       .setDisabled(disabled),
     new ButtonBuilder()
+      .setCustomId('stock:report')
+      .setLabel('리포트')
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji('📋')
+      .setDisabled(disabled),
+    new ButtonBuilder()
       .setCustomId('stock:refresh')
       .setLabel('새로고침')
       .setStyle(ButtonStyle.Secondary)
@@ -160,9 +166,10 @@ async function fetchDashboard(userId: string) {
   };
 }
 
-function tradeResultEmbed(row: StockTradeRow) {
+function tradeResultEmbed(row: StockTradeRow, botAvatarURL?: string | null) {
   const isBuy = row.out_side === 'buy';
   const sideLabel = isBuy ? '매수' : '매도';
+  const sideEmoji = isBuy ? '🟢' : '🔴';
   const totalLabel = isBuy ? '총 차감' : '총 정산';
   const qty = toNumber(row.out_qty);
   const price = toNumber(row.out_price);
@@ -173,28 +180,26 @@ function tradeResultEmbed(row: StockTradeRow) {
   const holdingAvg = toNumber(row.out_holding_avg_price);
   const newBalance = toNumber(row.out_new_balance);
   const unrealizedPnl = toNumber(row.out_unrealized_pnl);
+  const pnlEmoji = unrealizedPnl >= 0 ? '📈' : '📉';
 
-  return brandEmbed()
-    .setTitle(`${isBuy ? '🟢' : '🔴'} 주식 ${sideLabel} 체결 완료`)
-    .setColor(isBuy ? Colors.SUCCESS : Colors.WARNING)
-    .setDescription(
-      [
-        `**체결 요약**`,
-        `> 수량: **${qty.toLocaleString()}주**`,
-        `> 체결 단가: **${price.toLocaleString()}P**`,
-        `> ${totalLabel}: **${settlement.toLocaleString()}P**`,
-      ].join('\n'),
-    )
-    .addFields(
-      { name: '💸 거래 금액', value: formatPoints(gross), inline: true },
-      { name: '🧾 수수료', value: formatPoints(fee), inline: true },
-      { name: '💳 남은 포인트', value: formatPoints(newBalance), inline: true },
-      { name: LINE, value: '\u200b' },
-      { name: '📦 보유 수량', value: `\`${holdingQty.toLocaleString()}주\``, inline: true },
-      { name: '📌 평균 단가', value: formatPoints(holdingAvg), inline: true },
-      { name: '📊 평가손익', value: `\`${signedPoints(unrealizedPnl)}\``, inline: true },
-    )
-    .setFooter({ text: '패널 자동 새로고침 · 보유 수수료 일 단위 반영' });
+  const desc = [
+    `체결  **${qty.toLocaleString()}주** × **${price.toLocaleString()} P**`,
+    `───────────────────────`,
+    `거래금액\u2003\u2003${gross.toLocaleString()} P`,
+    `수수료\u2003\u2003\u2003\u2003${fee.toLocaleString()} P`,
+    `${totalLabel}\u2003\u2003\u2003**${settlement.toLocaleString()} P**`,
+    `───────────────────────`,
+    `잔액\u2003\u2003\u2003\u2003\u2003**${newBalance.toLocaleString()} P**`,
+    ``,
+    `📦 **포지션 업데이트**`,
+    `보유 **${holdingQty.toLocaleString()}주** · 평단 **${holdingAvg.toLocaleString()} P** · ${pnlEmoji} ${signedPoints(unrealizedPnl)}`,
+  ].join('\n');
+
+  return stockEmbed(botAvatarURL)
+    .setTitle(`${sideEmoji} 주식 ${sideLabel} 체결 완료`)
+    .setColor(isBuy ? Colors.SUCCESS : Colors.STOCK_DOWN)
+    .setDescription(desc)
+    .setFooter(stockFooter());
 }
 
 export const stockCommand: SlashCommand = {
@@ -243,35 +248,34 @@ export const stockCommand: SlashCommand = {
       });
 
       const pctDisplay = signedPctFmt(board.changePct);
-      const embed = brandEmbed()
+      const pnlEmoji = board.unrealizedPnl >= 0 ? '📈' : '📉';
+      const botAvatar = interaction.client.user?.displayAvatarURL() ?? null;
+
+      const descLines: string[] = [
+        `현재가  **${board.price.toLocaleString()} P**  (${pctDisplay})`,
+      ];
+
+      if (board.holdingQty > 0) {
+        descLines.push(
+          `───────────────────────`,
+          `💼 **포지션**`,
+          `수량  **${board.holdingQty.toLocaleString()}주** · 평단  **${board.holdingAvgPrice.toLocaleString()} P**`,
+          `평가  **${board.holdingValue.toLocaleString()} P**  (${pnlEmoji} ${signedPoints(board.unrealizedPnl)})`,
+        );
+      }
+
+      descLines.push(
+        `───────────────────────`,
+        `💰 잔액  **${board.balance.toLocaleString()} P**`,
+        `🧾 수수료  거래 ${(board.feeBps / 100).toFixed(2)}% · 보유 일 ${(appCfg.stock_holding_fee_daily_bps / 100).toFixed(2)}%`,
+      );
+
+      const embed = stockEmbed(botAvatar)
         .setColor(board.changePct >= 0 ? Colors.STOCK_UP : Colors.STOCK_DOWN)
         .setTitle(`📊 ${board.name} · ${board.symbol}`)
-        .setDescription(
-          [
-            `📍 현재가  **${board.price.toLocaleString()}P**  (${pctDisplay})`,
-            `📈 평가손익  **${signedPoints(board.unrealizedPnl)}**`,
-            `🤖 자동매매 + 뉴스 신호 기반 가격 형성`,
-          ].join('\n'),
-        )
-        .addFields(
-          {
-            name: '💼 보유 포지션',
-            value: `수량 **${board.holdingQty.toLocaleString()}주**\n평단 ${formatPoints(board.holdingAvgPrice)}`,
-            inline: true,
-          },
-          { name: '💰 평가 금액', value: formatPoints(board.holdingValue), inline: true },
-          { name: '💳 보유 포인트', value: formatPoints(board.balance), inline: true },
-          { name: LINE, value: '\u200b' },
-          {
-            name: '🧾 수수료',
-            value: `거래 ${(board.feeBps / 100).toFixed(2)}%\n보유 일 ${(appCfg.stock_holding_fee_daily_bps / 100).toFixed(2)}% (상한 ${(appCfg.stock_holding_fee_daily_cap_bps / 100).toFixed(2)}%)`,
-            inline: true,
-          },
-          { name: '⚡ 거래', value: '버튼 → 수량 입력 → 즉시 체결', inline: true },
-          { name: '🕒 갱신', value: '5분 봉 · 15초 자동 갱신', inline: true },
-        )
+        .setDescription(descLines.join('\n'))
         .setImage('attachment://stock-chart.png')
-        .setFooter({ text: '📊 버튼으로 즉시 거래 가능' });
+        .setFooter(stockFooter(`5분봉 ${Math.max(board.candles.length, 1)}개`));
 
       await interaction.editReply({
         embeds: [embed],
@@ -310,6 +314,66 @@ export const stockCommand: SlashCommand = {
             embeds: [],
             components: [actionRow(false)],
             files: [],
+          });
+        }
+        return;
+      }
+
+      if (buttonInteraction.customId === 'stock:report') {
+        await buttonInteraction.deferReply({ ephemeral: true });
+
+        try {
+          const board = await fetchDashboard(userId);
+          const botAvt = interaction.client.user?.displayAvatarURL() ?? null;
+
+          const descLines: string[] = [];
+
+          descLines.push(`───── 보유 현황 ─────`);
+
+          if (board.holdingQty > 0) {
+            const returnPct = board.holdingAvgPrice > 0
+              ? ((board.price - board.holdingAvgPrice) / board.holdingAvgPrice * 100).toFixed(2)
+              : '0.00';
+            const returnSign = board.unrealizedPnl >= 0 ? '+' : '';
+            descLines.push(
+              `${board.symbol}  **${board.holdingQty.toLocaleString()}주**  평단 **${board.holdingAvgPrice.toLocaleString()} P**`,
+              `평가  **${board.holdingValue.toLocaleString()} P**  (${returnSign}${returnPct}%)`,
+              `미실현 손익  **${signedPoints(board.unrealizedPnl)}**`,
+            );
+          } else {
+            descLines.push(`보유 중인 주식이 없습니다.`);
+          }
+
+          descLines.push(
+            ``,
+            `───── 계좌 현황 ─────`,
+            `💰 잔액  **${board.balance.toLocaleString()} P**`,
+          );
+
+          if (board.holdingQty > 0) {
+            const totalAsset = board.balance + board.holdingValue;
+            descLines.push(
+              `📊 총 자산  **${totalAsset.toLocaleString()} P**`,
+              `\u2003\u2003(잔액 ${board.balance.toLocaleString()} + 평가 ${board.holdingValue.toLocaleString()})`,
+            );
+          }
+
+          descLines.push(
+            ``,
+            `───── 시장 정보 ─────`,
+            `현재가  **${board.price.toLocaleString()} P**  (${signedPctFmt(board.changePct)})`,
+            `수수료  거래 ${(board.feeBps / 100).toFixed(2)}%`,
+          );
+
+          const embed = stockEmbed(botAvt)
+            .setTitle('📋 포트폴리오 리포트')
+            .setDescription(descLines.join('\n'))
+            .setFooter(stockFooter());
+
+          await buttonInteraction.editReply({ embeds: [embed] });
+        } catch (e) {
+          await buttonInteraction.editReply({
+            content: `❌ ${e instanceof Error ? e.message : '리포트를 불러오지 못했습니다.'}`,
           });
         }
         return;
@@ -442,7 +506,8 @@ export const stockCommand: SlashCommand = {
         return;
       }
 
-      await modalSubmit.editReply({ embeds: [tradeResultEmbed(trade)] });
+      const botAvatar = interaction.client.user?.displayAvatarURL() ?? null;
+      await modalSubmit.editReply({ embeds: [tradeResultEmbed(trade, botAvatar)] });
       await renderPanel(false).catch(() => {});
     });
 

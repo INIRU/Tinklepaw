@@ -39,7 +39,7 @@ const WIDTH = 1280;
 const HEIGHT = 760;
 
 const PAD = {
-  top: 98,
+  top: 106,
   right: 98,
   bottom: 66,
   left: 86,
@@ -214,6 +214,115 @@ function drawLineSeries(
   ctx.setLineDash([]);
 }
 
+function drawHeader(
+  ctx: CanvasRenderingContext2D,
+  p: {
+    title: string;
+    symbol: string;
+    currentPrice: number;
+    changePct: number;
+    candleCount: number;
+    firstTs: string;
+    lastTs: string;
+    lastCandle: StockCandle;
+    holdingQty?: number;
+    unrealizedPnl?: number;
+  },
+) {
+  const isUp = p.changePct >= 0;
+
+  // Title
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = `700 32px ${FONT}`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(`${p.title} (${p.symbol})`, 34, 42);
+
+  // Change badge pill
+  const changePctSign = p.changePct >= 0 ? '+' : '';
+  const badgeText = `${changePctSign}${p.changePct.toFixed(2)}%`;
+  ctx.font = `700 13px ${FONT}`;
+  const badgeTextW = ctx.measureText(badgeText).width;
+  const badgeW = badgeTextW + 20;
+  const badgeH = 22;
+  const badgeX = 36;
+  const badgeBaseY = 54;
+  drawRoundedRect(ctx, badgeX, badgeBaseY, badgeW, badgeH, 7);
+  ctx.fillStyle = isUp ? 'rgba(239,68,68,0.82)' : 'rgba(59,130,246,0.82)';
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(badgeText, badgeX + 10, badgeBaseY + badgeH / 2);
+
+  // Price + candle info
+  ctx.font = `500 13px ${FONT}`;
+  ctx.fillStyle = 'rgba(226,232,240,0.72)';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(
+    `현재가 ${p.currentPrice.toLocaleString()}P  ·  5분봉 ${p.candleCount}개`,
+    badgeX + badgeW + 12,
+    badgeBaseY + badgeH / 2,
+  );
+
+  // Period right-aligned
+  ctx.font = `500 11px ${FONT}`;
+  ctx.fillStyle = 'rgba(226,232,240,0.60)';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(
+    `기간 ${formatDateTime(p.firstTs)} ~ ${formatDateTime(p.lastTs)}`,
+    WIDTH - 14,
+    badgeBaseY + badgeH / 2,
+  );
+
+  // OHLC card (right side)
+  const c = p.lastCandle;
+  const ohlcText = `O ${c.o.toLocaleString()}  H ${c.h.toLocaleString()}  L ${c.l.toLocaleString()}  C ${c.c.toLocaleString()}`;
+  ctx.font = `600 12px ${FONT}`;
+  const ohlcTextW = ctx.measureText(ohlcText).width;
+  const ohlcCardW = ohlcTextW + 28;
+  const ohlcCardH = 24;
+  const ohlcCardX = WIDTH - PAD.right - ohlcCardW - 4;
+  const ohlcCardY = 82;
+  drawRoundedRect(ctx, ohlcCardX, ohlcCardY, ohlcCardW, ohlcCardH, 8);
+  ctx.fillStyle = 'rgba(15,23,42,0.72)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(148,163,184,0.28)';
+  ctx.lineWidth = 1;
+  drawRoundedRect(ctx, ohlcCardX, ohlcCardY, ohlcCardW, ohlcCardH, 8);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(226,232,240,0.9)';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(ohlcText, ohlcCardX + 14, ohlcCardY + ohlcCardH / 2);
+
+  // Position summary pill (left side, same row as OHLC)
+  if (p.holdingQty && p.holdingQty > 0) {
+    const pnl = p.unrealizedPnl ?? 0;
+    const pnlSign = pnl >= 0 ? '+' : '';
+    const posText = `💼 ${p.holdingQty.toLocaleString()}주  ${pnlSign}${pnl.toLocaleString()}P`;
+    ctx.font = `600 12px ${FONT}`;
+    const posTextW = ctx.measureText(posText).width;
+    const posCardW = posTextW + 24;
+    const posCardH = 24;
+    const posCardX = 34;
+    const posCardY = 82;
+    drawRoundedRect(ctx, posCardX, posCardY, posCardW, posCardH, 8);
+    ctx.fillStyle = pnl >= 0 ? 'rgba(239,68,68,0.18)' : 'rgba(59,130,246,0.18)';
+    ctx.fill();
+    ctx.strokeStyle = pnl >= 0 ? 'rgba(239,68,68,0.40)' : 'rgba(59,130,246,0.40)';
+    ctx.lineWidth = 1;
+    drawRoundedRect(ctx, posCardX, posCardY, posCardW, posCardH, 8);
+    ctx.stroke();
+    ctx.fillStyle = pnl >= 0 ? 'rgba(252,165,165,0.95)' : 'rgba(147,197,253,0.95)';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(posText, posCardX + 12, posCardY + posCardH / 2);
+  }
+}
+
 export async function generateStockChartImage(params: {
   title: string;
   symbol: string;
@@ -221,6 +330,8 @@ export async function generateStockChartImage(params: {
   changePct: number;
   candles: StockCandle[];
   holdingAvgPrice?: number;
+  holdingQty?: number;
+  unrealizedPnl?: number;
 }) {
   const realCandles = [...params.candles]
     .sort((a, b) => new Date(a.t).getTime() - new Date(b.t).getTime())
@@ -475,69 +586,25 @@ export async function generateStockChartImage(params: {
     );
   }
 
-  const trendColor = params.changePct >= 0 ? UP_COLOR : DOWN_COLOR;
-  const changePctSign = params.changePct >= 0 ? '+' : '';
+  drawHeader(ctx, {
+    title: params.title,
+    symbol: params.symbol,
+    currentPrice: params.currentPrice,
+    changePct: params.changePct,
+    candleCount: Math.max(realCandles.length, 1),
+    firstTs: first.t,
+    lastTs: last.t,
+    lastCandle: last,
+    holdingQty: params.holdingQty,
+    unrealizedPnl: params.unrealizedPnl,
+  });
 
-  // Header: title (bigger/bolder)
-  ctx.fillStyle = '#f8fafc';
-  ctx.font = `700 36px ${FONT}`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillText(`${params.title} (${params.symbol})`, 34, 54);
-
-  // Change badge (pill)
-  const badgeText = `${changePctSign}${params.changePct.toFixed(2)}%`;
-  ctx.font = `700 13px ${FONT}`;
-  const badgeTextW = ctx.measureText(badgeText).width;
-  const badgeW = badgeTextW + 20;
-  const badgeH = 22;
-  const badgeX = 36;
-  const badgeBaseY = 66;
-  drawRoundedRect(ctx, badgeX, badgeBaseY, badgeW, badgeH, 7);
-  ctx.fillStyle = isUpTrend ? 'rgba(239,68,68,0.82)' : 'rgba(59,130,246,0.82)';
-  ctx.fill();
-  ctx.fillStyle = '#ffffff';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(badgeText, badgeX + 10, badgeBaseY + badgeH / 2);
-
-  // Subtitle line
-  ctx.font = `500 13px ${FONT}`;
-  ctx.fillStyle = 'rgba(226,232,240,0.72)';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(
-    `현재가 ${params.currentPrice.toLocaleString()}P  ·  5분봉 ${Math.max(realCandles.length, 1)}개`,
-    badgeX + badgeW + 12,
-    badgeBaseY + badgeH / 2,
-  );
-
-  // Period info right-aligned
-  ctx.font = `500 11px ${FONT}`;
-  ctx.fillStyle = 'rgba(226,232,240,0.60)';
+  // Watermark
+  ctx.font = `600 14px ${FONT}`;
+  ctx.fillStyle = 'rgba(148,163,184,0.15)';
   ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(`기간 ${formatDateTime(first.t)} ~ ${formatDateTime(last.t)}`, WIDTH - 14, badgeBaseY + badgeH / 2);
-
-  // OHLC pill card
-  const ohlcText = `O ${last.o.toLocaleString()}  H ${last.h.toLocaleString()}  L ${last.l.toLocaleString()}  C ${last.c.toLocaleString()}`;
-  ctx.font = `600 12px ${FONT}`;
-  const ohlcTextW = ctx.measureText(ohlcText).width;
-  const ohlcCardW = ohlcTextW + 28;
-  const ohlcCardH = 24;
-  const ohlcCardX = WIDTH - PAD.right - ohlcCardW - 4;
-  const ohlcCardY = priceY - ohlcCardH - 8;
-  drawRoundedRect(ctx, ohlcCardX, ohlcCardY, ohlcCardW, ohlcCardH, 8);
-  ctx.fillStyle = 'rgba(15,23,42,0.72)';
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(148,163,184,0.28)';
-  ctx.lineWidth = 1;
-  drawRoundedRect(ctx, ohlcCardX, ohlcCardY, ohlcCardW, ohlcCardH, 8);
-  ctx.stroke();
-  ctx.fillStyle = 'rgba(226,232,240,0.9)';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(ohlcText, ohlcCardX + 14, ohlcCardY + ohlcCardH / 2);
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('TinklePaw', WIDTH - 16, HEIGHT - 10);
 
   const buffer = canvas.toBuffer('image/png');
   return new AttachmentBuilder(buffer, { name: 'stock-chart.png' });

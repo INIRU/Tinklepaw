@@ -1,7 +1,9 @@
 import { GoogleGenAI, Type, type Schema } from '@google/genai';
-import { EmbedBuilder, type Client } from 'discord.js';
+import { EmbedBuilder, type AttachmentBuilder, type Client } from 'discord.js';
 
 import { getBotContext } from '../context.js';
+import { generateNewsChartImage } from '../lib/stockNewsChartImage.js';
+import { stockEmbed, stockFooter } from '../lib/embed.js';
 import { getAppConfig, invalidateAppConfigCache, type AppConfig } from './config.js';
 
 type RpcResult<T> = Promise<{ data: T[] | null; error: { message: string } | null }>;
@@ -21,7 +23,7 @@ type DynamicSupabase = {
 };
 
 type SendableChannel = {
-  send: (payload: { embeds: EmbedBuilder[] }) => Promise<unknown>;
+  send: (payload: { embeds: EmbedBuilder[]; files?: AttachmentBuilder[] }) => Promise<unknown>;
 };
 
 type StockDashboardRpcRow = {
@@ -178,6 +180,12 @@ const NEWS_TIER_META: Record<NewsTier, { label: string; emoji: string }> = {
   general: { label: '일반', emoji: '📰' },
   rare: { label: '희귀', emoji: '✨' },
   shock: { label: '충격', emoji: '🚨' }
+};
+
+const NEWS_TIER_COLOR: Record<NewsTier, number> = {
+  general: 0x3b82f6,
+  rare: 0xa855f7,
+  shock: 0xfbbf24,
 };
 
 const NEWS_RELIABILITY_PROFILES: readonly NewsReliabilityProfile[] = [
@@ -1034,6 +1042,7 @@ const sendNewsMessage = async (client: Client, params: {
   flavor: NewsFlavorPlan;
   reliability: NewsReliabilityProfile;
   adjustedImpactBps: number;
+  candles?: { t: string; o: number; h: number; l: number; c: number; v: number }[];
 }) => {
   const channel = await client.channels.fetch(params.channelId).catch(() => null);
   if (!isSendableChannel(channel)) {
@@ -1043,72 +1052,49 @@ const sendNewsMessage = async (client: Client, params: {
   const signed = params.applied.out_signed_impact_bps;
   const impactPct = signed / 100;
   const impactLabel = `${impactPct >= 0 ? '+' : ''}${impactPct.toFixed(2)}%`;
-  const directionLabel = signed > 0 ? '매수 우위' : signed < 0 ? '매도 우위' : '중립';
-  const color = signed > 0 ? 0x2ecc71 : signed < 0 ? 0xe74c3c : 0x95a5a6;
   const sentimentLabel = params.draft.sentiment === 'bullish' ? '호재' : params.draft.sentiment === 'bearish' ? '악재' : '중립';
   const sentimentEmoji = params.draft.sentiment === 'bullish' ? '🟢' : params.draft.sentiment === 'bearish' ? '🔴' : '🟡';
-  const tierMeta = NEWS_TIER_META[params.draft.tier];
   const moveEmoji = signed > 0 ? '📈' : signed < 0 ? '📉' : '➖';
-  const priceDelta = params.applied.out_price_after - params.applied.out_price_before;
-  const signalNote = priceDelta === 0
-    ? '직접 가격 조정 없이 자동매매 편향만 반영'
-    : `즉시 가격 반영 ${priceDelta >= 0 ? '+' : ''}${priceDelta.toLocaleString()}p`;
-  const storyLabel = params.flavor.chain
-    ? `${params.flavor.chainTag ?? '연속 스토리'} · 테마 ${params.flavor.chain.theme ?? '시장 이슈'}`
-    : '단발 뉴스 이벤트';
-  const reversalLabel = params.flavor.reversalCard
-    ? `발동 (${params.flavor.reversalFrom === 'bullish' ? '호재 -> 악재' : '악재 -> 호재'})`
-    : '없음';
-  const adjustedImpactPct = (params.adjustedImpactBps / 100).toFixed(2);
 
-  const embed = new EmbedBuilder()
-    .setColor(color)
-    .setTitle(`📰 ${params.displayName} 뉴스`)
-    .setDescription(
-      [
-        `> **${params.draft.headline}**`,
-        '',
-        `- ${sentimentEmoji} **분류:** **${sentimentLabel}**`,
-        `- ${tierMeta.emoji} **티어:** **${tierMeta.label}**`,
-        `- ${params.reliability.emoji} **신뢰도:** **${params.reliability.label}**`,
-        `- ${moveEmoji} **영향:** \`${directionLabel} ${impactLabel}\``,
-        `- 🏷️ **종목:** **${params.displayName} (${params.symbol})**`,
-        '',
-        '**브리핑**',
-        params.draft.body
-      ].join('\n')
-    )
-    .addFields(
-      {
-        name: '🧠 자동매매 신호',
-        value: `편향 \`${directionLabel}\`\n강도 \`${impactLabel}\` (조정치 ${adjustedImpactPct}%)\n${signalNote}`,
-        inline: false
-      },
-      {
-        name: '📚 스토리',
-        value: `${storyLabel}\n반전 카드: ${reversalLabel}`,
-        inline: false
-      },
-      {
-        name: '📍 현재 시세',
-        value: `**${params.marketPrice.toLocaleString()}p** (${params.marketChangePct >= 0 ? '+' : ''}${params.marketChangePct.toFixed(2)}%)`,
-        inline: true
-      },
-      {
-        name: '🧠 신호',
-        value: `${sentimentEmoji} ${sentimentLabel} / ${tierMeta.emoji} ${tierMeta.label} / ${moveEmoji} ${directionLabel} ${impactLabel}`,
-        inline: true
-      },
-      {
-        name: '📐 해석',
-        value: `신뢰도(${params.reliability.label})에 따라 편향 강도가 보정됩니다.`,
-        inline: true
-      }
-    )
-    .setFooter({ text: `${params.symbol} Market Feed` })
-    .setTimestamp(new Date());
+  const tierLabel = params.draft.tier === 'shock' ? '⚡ SHOCK' : params.draft.tier === 'rare' ? '💎 RARE' : '';
+  const titleSuffix = [sentimentEmoji, sentimentLabel, tierLabel].filter(Boolean).join('  ·  ');
 
-  await channel.send({ embeds: [embed] });
+  const descLines = [
+    `「${params.draft.headline}」`,
+    ``,
+    params.draft.body,
+    `───────────────────────`,
+    `${moveEmoji} 영향  **${impactLabel}**  ·  신뢰도 ${params.reliability.label}`,
+    `📍 현재가  **${params.applied.out_price_before.toLocaleString()} P** → **${params.applied.out_price_after.toLocaleString()} P**`,
+  ];
+
+  const storyLabelText = params.flavor.chain
+    ? `${params.flavor.chainTag ?? '연속 스토리'} ${params.flavor.chain.step}/${params.flavor.chain.total}`
+    : '단발 뉴스';
+  const reversalNote = params.flavor.reversalCard ? ' · 반전 발동' : '';
+
+  const embed = stockEmbed()
+    .setColor(NEWS_TIER_COLOR[params.draft.tier])
+    .setTitle(`📰 ${params.displayName} 속보  ·  ${titleSuffix}`)
+    .setDescription(descLines.join('\n'))
+    .setFooter(stockFooter(`${storyLabelText}${reversalNote}`));
+
+  // Generate mini chart
+  let files: AttachmentBuilder[] = [];
+  try {
+    const newsChart = await generateNewsChartImage({
+      candles: params.candles ?? [],
+      priceBefore: params.applied.out_price_before,
+      priceAfter: params.applied.out_price_after,
+      sentiment: params.draft.sentiment,
+    });
+    embed.setImage('attachment://news-chart.png');
+    files = [newsChart];
+  } catch {
+    // If chart generation fails, send without image
+  }
+
+  await channel.send({ embeds: [embed], files });
 };
 
 export async function runStockNewsCycle(client: Client): Promise<void> {
@@ -1153,6 +1139,18 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
   const dashboard = Array.isArray(dashboardRows) ? dashboardRows[0] : null;
   if (!dashboard) throw new Error('[StockNews] dashboard payload missing');
   const stockTicker = resolveStockTicker(dashboard);
+
+  const rawCandles = (dashboard as Record<string, unknown>).out_candles ?? (dashboard as Record<string, unknown>).candles;
+  const parsedCandles = Array.isArray(rawCandles)
+    ? rawCandles.map((c: Record<string, unknown>) => ({
+        t: String(c.t ?? ''),
+        o: Number(c.o) || 0,
+        h: Number(c.h) || 0,
+        l: Number(c.l) || 0,
+        c: Number(c.c) || 0,
+        v: (Number(c.vb) || 0) + (Number(c.vs) || 0),
+      }))
+    : [];
 
   const bullishMinImpactBps = clamp(
     Math.floor(toNumber(cfg.stock_news_bullish_min_impact_bps, 40)),
@@ -1343,6 +1341,7 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
     flavor: flavorPlan,
     reliability,
     adjustedImpactBps,
+    candles: parsedCandles,
   });
 
   const nextRunAt = getNextRunAfterSend(cfg, now);

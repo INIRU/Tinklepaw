@@ -1,7 +1,6 @@
 import type { Client } from 'discord.js';
-import { EmbedBuilder } from 'discord.js';
 import { getBotContext } from '../context.js';
-import { Colors } from '../lib/embed.js';
+import { Colors, stockEmbed, stockFooter } from '../lib/embed.js';
 
 type RunStockMarketMakerRpcRow = {
   out_applied: boolean;
@@ -57,44 +56,32 @@ async function sendHoldingFeeDms(client: Client, feeDate: string): Promise<void>
       const forcedQty = row.metadata?.forced_sell_qty ?? 0;
       const forcedProceeds = row.metadata?.forced_sell_proceeds ?? 0;
 
-      const embed = new EmbedBuilder()
+      const embed = stockEmbed()
         .setColor(Colors.WARNING)
         .setTitle('📊 주식 보유 수수료 차감')
         .setDescription(
-          `**${feeDate}** 기준 KURO 주식 보유 수수료가 차감되었습니다.`
+          [
+            `**${feeDate}** 기준 KURO 주식 보유 수수료가 차감되었습니다.`,
+            `───────────────────────`,
+            `💼 보유  **${fmt(row.holding_qty)}주** · 기준가  **${fmt(row.mark_price)} P**`,
+            `평가액  **${fmt(row.holding_value)} P**`,
+            `───────────────────────`,
+            `🧾 요율  **${row.fee_bps}bps** (${(row.fee_bps / 100).toFixed(2)}%)`,
+            `차감  **-${fmt(row.fee_amount)} P**`,
+            `잔액  **${fmt(row.balance_after)} P**`,
+          ].join('\n'),
         )
-        .addFields(
-          {
-            name: '보유 현황',
-            value: [
-              `보유량: **${fmt(row.holding_qty)}주**`,
-              `기준가: **${fmt(row.mark_price)}P**`,
-              `보유 평가액: **${fmt(row.holding_value)}P**`,
-            ].join('\n'),
-            inline: true,
-          },
-          {
-            name: '수수료',
-            value: [
-              `요율: **${row.fee_bps}bps** (${(row.fee_bps / 100).toFixed(2)}%)`,
-              `차감: **-${fmt(row.fee_amount)}P**`,
-              `잔액: **${fmt(row.balance_after)}P**`,
-            ].join('\n'),
-            inline: true,
-          },
-        );
+        .setFooter(stockFooter());
 
       if (forcedQty > 0) {
         embed.addFields({
-          name: '⚠️ 강제 청산',
+          name: '🚨 강제 청산',
           value: [
             `잔액 부족으로 **${fmt(forcedQty)}주**가 자동 매도되었습니다.`,
-            `청산 수익: **+${fmt(forcedProceeds)}P** (기준가 ${fmt(row.mark_price)}P)`,
+            `청산 수익: **+${fmt(forcedProceeds)} P** (기준가 ${fmt(row.mark_price)} P)`,
           ].join('\n'),
         });
       }
-
-      embed.setFooter({ text: '주식 잔고가 부족하면 자동 청산 후 수수료가 차감됩니다.' });
 
       await user.send({ embeds: [embed] });
     } catch {
