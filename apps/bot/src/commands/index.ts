@@ -15,6 +15,7 @@ import { setupCommand } from './setup.js';
 import { askSetupCommand } from './ask-setup.js';
 import { interfaceCommand } from './voice-room.js';
 import { minecraftLinkCommand } from './minecraftLink.js';
+import { leaderboardCommand } from './leaderboard.js';
 import type { SlashCommand } from './types.js';
 
 export const commands: SlashCommand[] = [
@@ -25,6 +26,7 @@ export const commands: SlashCommand[] = [
   inventoryCommand,
   equipCommand,
   unequipCommand,
+  leaderboardCommand,
   helpCommand,
   webCommand,
   setupCommand,

@@ -3,12 +3,15 @@ import type { Client, GuildMember, TextChannel } from 'discord.js';
 import { getBotContext } from '../context.js';
 import { getAppConfig } from '../services/config.js';
 import { recordActivityEvent } from '../services/activityEvents.js';
+import { welcomeEmbed } from '../lib/embed.js';
+import { getServerEmoji } from '../lib/serverEmoji.js';
 
-function renderTemplate(template: string, member: GuildMember) {
-  return template
-    .replaceAll('{user}', `<@${member.user.id}>`)
-    .replaceAll('{username}', member.user.username)
-    .replaceAll('{server}', member.guild.name);
+/** Find a channel whose name contains the given keyword */
+function findChannelByKeyword(member: GuildMember, keyword: string): string | undefined {
+  const ch = member.guild.channels.cache.find(
+    c => c.isTextBased() && c.name.includes(keyword)
+  );
+  return ch?.id;
 }
 
 export function registerGuildMemberAdd(client: Client) {
@@ -35,12 +38,32 @@ export function registerGuildMemberAdd(client: Client) {
     }
 
     const channelId = cfg.join_message_channel_id ?? null;
-    const template = cfg.join_message_template ?? null;
-    if (!channelId || !template) return;
+    if (!channelId) return;
 
     const channel = await member.guild.channels.fetch(channelId).catch(() => null);
     if (!channel || !channel.isTextBased()) return;
-    const text = renderTemplate(template, member);
-    await (channel as TextChannel).send(text).catch(() => null);
+
+    const rulesChannelId = findChannelByKeyword(member, '규칙');
+    const roleChannelId = findChannelByKeyword(member, '역할');
+
+    const botUser = client.user;
+
+    const embed = welcomeEmbed({
+      memberMention: `<@${member.user.id}>`,
+      memberName: member.user.displayName,
+      memberAvatarURL: member.user.displayAvatarURL({ size: 256 }),
+      serverName: member.guild.name,
+      memberCount: member.guild.memberCount,
+      rulesChannelId,
+      roleChannelId,
+      botAvatarURL: botUser?.displayAvatarURL() ?? null,
+      emojis: {
+        heart: getServerEmoji(client, 'heart', '🩷'),
+        catPaw: getServerEmoji(client, 'catPaw', '🐾'),
+        stars: getServerEmoji(client, 'stars', '✨'),
+      },
+    });
+
+    await (channel as TextChannel).send({ embeds: [embed] }).catch(() => null);
   });
 }

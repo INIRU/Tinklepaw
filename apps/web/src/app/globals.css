@@ -116,8 +116,9 @@ html[data-theme='dark'] .card-glass {
 }
 
 html[data-theme='dark'] .card-glass:hover {
-  transform: none;
-  filter: brightness(1.02);
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
 .btn-bangul {
@@ -141,9 +142,9 @@ html[data-theme='dark'] .btn-bangul {
 }
 
 html[data-theme='dark'] .btn-bangul:hover {
-  transform: none;
-  box-shadow: none;
-  filter: brightness(1.02);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(255, 121, 181, 0.15);
+  filter: brightness(1.06);
 }
 
 .btn-soft {
@@ -201,9 +202,9 @@ html[data-theme='dark'] .nav-pill-active:hover {
 }
 
 html[data-theme='dark'] .btn-soft:hover {
-  transform: none;
-  box-shadow: none;
-  filter: brightness(1.03);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  filter: brightness(1.05);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(24, 35, 64, 0.90));
 }
 
@@ -427,6 +428,71 @@ button {
   animation: shimmer-slow 5s ease-in-out infinite;
   pointer-events: none;
   z-index: 1;
+}
+
+/* R rarity: subtle slate pulse */
+.rarity-r-shine {
+  position: relative;
+  overflow: hidden;
+}
+.rarity-r-shine::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 25%, rgba(148, 163, 184, 0.08) 48%, rgba(203, 213, 225, 0.04) 52%, transparent 75%);
+  animation: shimmer-slow 6s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ============================================
+   FOCUS & ACCESSIBILITY
+   ============================================ */
+
+:focus-visible {
+  outline: 2px solid var(--accent-pink);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+html[data-theme='dark'] :focus-visible {
+  outline-color: var(--accent-sky);
+}
+
+/* ============================================
+   ACCENT GRADIENTS & UTILITIES
+   ============================================ */
+
+.gradient-accent {
+  background: linear-gradient(135deg, var(--accent-pink), var(--accent-lavender), var(--accent-sky));
+}
+
+.gradient-accent-text {
+  background: linear-gradient(135deg, var(--accent-pink), var(--accent-lavender));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.border-accent-gradient {
+  border-image: linear-gradient(90deg, transparent, var(--accent-pink), var(--accent-lavender), var(--accent-sky), transparent) 1;
+}
+
+/* Subtle top accent line for cards */
+.card-accent-top {
+  position: relative;
+}
+
+.card-accent-top::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 16px;
+  right: 16px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent-pink), var(--accent-lavender), transparent);
+  border-radius: 1px;
+  opacity: 0.5;
 }
 
 /* ============================================

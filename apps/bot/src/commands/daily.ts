@@ -3,7 +3,7 @@ import type { ChatInputCommandInteraction } from 'discord.js';
 
 import { getBotContext } from '../context.js';
 import { generateDailyChestGif } from '../lib/dailyChestGif.js';
-import { LINE, brandEmbed, cooldownEmbed, statBlock } from '../lib/embed.js';
+import { brandEmbed, cooldownEmbed } from '../lib/embed.js';
 import type { SlashCommand } from './types.js';
 
 type DailyChestTier = 'common' | 'rare' | 'epic' | 'legendary';
@@ -106,22 +106,18 @@ export const dailyCommand: SlashCommand = {
         const nextAt = formatNextAvailable(row.out_next_available_at);
         const nextAtRelative = toDiscordRelativeTime(row.out_next_available_at);
         const nextLine = nextAtRelative
-          ? `**${nextAt} (KST)** (${nextAtRelative})`
+          ? `${nextAtRelative}`
           : `**${nextAt} (KST)**`;
         const alreadyEmbed = cooldownEmbed(
           '오늘의 보물상자는 이미 열었어!',
-          [
-            `⏰ 다음 오픈 가능: ${nextLine}`,
-            '',
-            LINE,
-            '',
-            statBlock([
-              { emoji: '💳', label: '현재 포인트', value: row.out_new_balance.toLocaleString('ko-KR') + 'P' },
-            ]),
-          ].join('\n'),
+          `다음 오픈까지 조금만 기다려줘!`,
         )
           .setAuthor({ name: interaction.user.displayName, iconURL: interaction.user.displayAvatarURL() })
-          .setFooter({ text: '내일 다시 /daily 로 보물상자를 열어봐!' });
+          .addFields(
+            { name: '⏰ 다음 오픈', value: nextLine, inline: true },
+            { name: '💳 현재 포인트', value: `**${row.out_new_balance.toLocaleString('ko-KR')}P**`, inline: true },
+          )
+          .setFooter({ text: '방울냥 · 내일 다시 /daily 로 보물상자를 열어봐!' });
 
         await interaction.editReply({ embeds: [alreadyEmbed] });
         return;
@@ -135,26 +131,25 @@ export const dailyCommand: SlashCommand = {
 
       const nextAtRelative = toDiscordRelativeTime(row.out_next_available_at);
 
+      const TIER_EMOJI: Record<DailyChestTier, string> = {
+        common: '⬜',
+        rare: '🟦',
+        epic: '🟪',
+        legendary: '🟨'
+      };
+
       const rewardEmbed = brandEmbed()
         .setColor(TIER_COLORS[tier])
         .setAuthor({ name: interaction.user.displayName, iconURL: interaction.user.displayAvatarURL() })
-        .setTitle('🎉 일일 보물상자 OPEN!')
-        .setDescription(
-          [
-            `⭐ 등급: **${TIER_LABELS[tier]}**`,
-            '',
-            LINE,
-            '',
-            statBlock([
-              { emoji: '💰', label: '획득 포인트', value: `+${row.out_reward_points.toLocaleString('ko-KR')}P` },
-              { emoji: '💳', label: '현재 잔액', value: `${row.out_new_balance.toLocaleString('ko-KR')}P` },
-            ]),
-            '',
-            nextAtRelative ? `⏰ 다음 상자: ${nextAtRelative}` : '⏰ 다음 상자: 내일',
-          ].join('\n')
+        .setTitle(`🎉 일일 보물상자 OPEN!`)
+        .setDescription(`${TIER_EMOJI[tier]} 등급: **${TIER_LABELS[tier]}**`)
+        .addFields(
+          { name: '💰 획득 포인트', value: `**+${row.out_reward_points.toLocaleString('ko-KR')}P**`, inline: true },
+          { name: '💳 현재 잔액', value: `**${row.out_new_balance.toLocaleString('ko-KR')}P**`, inline: true },
+          { name: '⏰ 다음 상자', value: nextAtRelative ?? '내일', inline: true },
         )
         .setImage('attachment://treasure-open.gif')
-        .setFooter({ text: '내일 다시 /daily 로 보물상자를 열어봐!' });
+        .setFooter({ text: '방울냥 · 내일 다시 /daily 로 보물상자를 열어봐!' });
 
       await interaction.editReply({
         embeds: [rewardEmbed],

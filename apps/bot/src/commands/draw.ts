@@ -4,6 +4,8 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
   Message,
   type MessageComponentInteraction,
   type Collection,
@@ -293,39 +295,54 @@ export async function triggerGachaUI(
       .setColor(parseColor(botConfig.gacha_embed_color))
       .setFooter({ text: `🎰 풀 ${index + 1} / ${activePools.length} · ${pool.name}` });
 
+    const rows: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[] = [];
+
+    // Pool select menu (only when multiple pools exist)
+    if (activePools.length > 1) {
+      const selectMenu = new StringSelectMenuBuilder()
+        .setCustomId('gacha:pool_select')
+        .setPlaceholder('뽑기 풀을 선택하세요')
+        .addOptions(
+          activePools.map((p, i) => {
+            const kindLabel = p.kind === 'limited' ? '한정' : '상시';
+            return new StringSelectMenuOptionBuilder()
+              .setLabel(`${p.name}`)
+              .setDescription(`${kindLabel} · ${p.cost_points}P / 회`)
+              .setValue(i.toString())
+              .setDefault(i === index);
+          }),
+        );
+      rows.push(
+        new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu),
+      );
+    }
+
     const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId('prev')
-        .setEmoji('⬅️')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(activePools.length === 1),
       new ButtonBuilder()
         .setCustomId('draw1')
         .setLabel('1회 뽑기')
+        .setEmoji('🎰')
         .setStyle(ButtonStyle.Primary),
       new ButtonBuilder()
         .setCustomId('draw10')
         .setLabel('10회 뽑기')
+        .setEmoji('✨')
         .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId('next')
-        .setEmoji('➡️')
-        .setStyle(ButtonStyle.Secondary)
-        .setDisabled(activePools.length === 1),
     );
+    rows.push(buttons);
 
     if (isEdit) {
       if (!(context instanceof Message)) {
-        await context.editReply({ embeds: [embed], components: [buttons] });
+        await context.editReply({ embeds: [embed], components: rows });
       }
       return null;
     } else {
       if (context instanceof Message) {
-        return await context.reply({ embeds: [embed], components: [buttons] });
+        return await context.reply({ embeds: [embed], components: rows });
       } else {
         const reply = await context.reply({
           embeds: [embed],
-          components: [buttons],
+          components: rows,
           withResponse: true,
         });
         return reply.resource?.message ?? null;
@@ -349,14 +366,13 @@ export async function triggerGachaUI(
   collector.on(
     'collect',
     async (buttonInteraction: MessageComponentInteraction) => {
-      if (buttonInteraction.customId === 'prev') {
-        currentIndex = (currentIndex - 1 + activePools.length) % activePools.length;
-        await buttonInteraction.deferUpdate();
-        await showPool(currentIndex, true);
-      } else if (buttonInteraction.customId === 'next') {
-        currentIndex = (currentIndex + 1) % activePools.length;
-        await buttonInteraction.deferUpdate();
-        await showPool(currentIndex, true);
+      if (buttonInteraction.isStringSelectMenu() && buttonInteraction.customId === 'gacha:pool_select') {
+        const selectedIndex = parseInt(buttonInteraction.values[0], 10);
+        if (!Number.isNaN(selectedIndex) && selectedIndex >= 0 && selectedIndex < activePools.length) {
+          currentIndex = selectedIndex;
+          await buttonInteraction.deferUpdate();
+          await showPool(currentIndex, true);
+        }
       } else if (
         buttonInteraction.customId === 'draw1' ||
         buttonInteraction.customId === 'draw10'

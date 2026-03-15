@@ -1059,14 +1059,7 @@ const sendNewsMessage = async (client: Client, params: {
   const tierLabel = params.draft.tier === 'shock' ? '⚡ SHOCK' : params.draft.tier === 'rare' ? '💎 RARE' : '';
   const titleSuffix = [sentimentEmoji, sentimentLabel, tierLabel].filter(Boolean).join('  ·  ');
 
-  const descLines = [
-    `「${params.draft.headline}」`,
-    ``,
-    params.draft.body,
-    `───────────────────────`,
-    `${moveEmoji} 영향  **${impactLabel}**  ·  신뢰도 ${params.reliability.label}`,
-    `📍 현재가  **${params.applied.out_price_before.toLocaleString()} P** → **${params.applied.out_price_after.toLocaleString()} P**`,
-  ];
+  const description = `「${params.draft.headline}」\n\n${params.draft.body}`;
 
   const storyLabelText = params.flavor.chain
     ? `${params.flavor.chainTag ?? '연속 스토리'} ${params.flavor.chain.step}/${params.flavor.chain.total}`
@@ -1076,7 +1069,12 @@ const sendNewsMessage = async (client: Client, params: {
   const embed = stockEmbed()
     .setColor(NEWS_TIER_COLOR[params.draft.tier])
     .setTitle(`📰 ${params.displayName} 속보  ·  ${titleSuffix}`)
-    .setDescription(descLines.join('\n'))
+    .setDescription(description)
+    .addFields(
+      { name: `${moveEmoji} 영향`, value: `**${impactLabel}**`, inline: true },
+      { name: '🔍 신뢰도', value: params.reliability.label, inline: true },
+      { name: '📍 현재가', value: `**${params.applied.out_price_before.toLocaleString()}P** → **${params.applied.out_price_after.toLocaleString()}P**`, inline: true },
+    )
     .setFooter(stockFooter(`${storyLabelText}${reversalNote}`));
 
   // Generate mini chart

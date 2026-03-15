@@ -4,7 +4,7 @@ import type { ChatInputCommandInteraction } from 'discord.js';
 import { getBotContext } from '../context.js';
 import { generateLotteryTicketImage } from '../lib/lotteryTicketImage.js';
 import type { LotteryTier } from '../lib/lotteryTicketImage.js';
-import { LINE, brandEmbed, cooldownEmbed, errorEmbed, statBlock } from '../lib/embed.js';
+import { brandEmbed, cooldownEmbed, errorEmbed } from '../lib/embed.js';
 import type { SlashCommand } from './types.js';
 
 type LotteryResultRow = {
@@ -51,20 +51,6 @@ const toLotteryTier = (value: string): LotteryTier => {
 };
 
 const signedP = (value: number) => `${value >= 0 ? '+' : ''}${value.toLocaleString('ko-KR')} p`;
-
-const formatKstTime = (value: string | null): string => {
-  if (!value) return '곧 다시';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '곧 다시';
-  return new Intl.DateTimeFormat('ko-KR', {
-    timeZone: 'Asia/Seoul',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  }).format(date);
-};
 
 const toRelativeTime = (value: string | null): string | null => {
   if (!value) return null;
@@ -114,22 +100,17 @@ export const lotteryCommand: SlashCommand = {
 
       if (!row.out_success) {
         if (row.out_error_code === 'COOLDOWN_ACTIVE') {
-          const nextAt = formatKstTime(row.out_next_available_at);
           const nextAtRelative = toRelativeTime(row.out_next_available_at);
           const cdEmbed = cooldownEmbed(
             '복권 재구매 대기 중',
-            [
-              `⏰ 다음 구매 가능: **${nextAt} (KST)**${nextAtRelative ? ` (${nextAtRelative})` : ''}`,
-              '',
-              LINE,
-              '',
-              statBlock([
-                { emoji: '💳', label: '현재 잔액', value: `${row.out_new_balance.toLocaleString('ko-KR')}P` },
-              ]),
-            ].join('\n'),
+            '조금만 기다리면 다시 구매할 수 있어!',
           )
             .setAuthor({ name: interaction.user.displayName, iconURL: interaction.user.displayAvatarURL() })
-            .setFooter({ text: '조금만 기다리면 다시 구매할 수 있어!' });
+            .addFields(
+              { name: '⏰ 다음 구매', value: nextAtRelative ?? '곧 다시', inline: true },
+              { name: '💳 현재 잔액', value: `**${row.out_new_balance.toLocaleString('ko-KR')}P**`, inline: true },
+            )
+            .setFooter({ text: '방울냥 · 복권' });
 
           await interaction.editReply({ embeds: [cdEmbed] });
           return;
@@ -139,16 +120,14 @@ export const lotteryCommand: SlashCommand = {
           const need = Math.max(0, row.out_ticket_price - row.out_new_balance);
           const insuffEmbed = errorEmbed(
             '포인트가 부족해!',
-            [
-              statBlock([
-                { emoji: '🎫', label: '복권 가격', value: `${row.out_ticket_price.toLocaleString('ko-KR')}P` },
-                { emoji: '💳', label: '현재 잔액', value: `${row.out_new_balance.toLocaleString('ko-KR')}P` },
-                { emoji: '📉', label: '부족분', value: `${need.toLocaleString('ko-KR')}P` },
-              ]),
-            ].join('\n'),
           )
             .setAuthor({ name: interaction.user.displayName, iconURL: interaction.user.displayAvatarURL() })
-            .setFooter({ text: '채팅/음성 활동이나 /daily 로 P를 모아봐!' });
+            .addFields(
+              { name: '🎫 복권 가격', value: `**${row.out_ticket_price.toLocaleString('ko-KR')}P**`, inline: true },
+              { name: '💳 현재 잔액', value: `**${row.out_new_balance.toLocaleString('ko-KR')}P**`, inline: true },
+              { name: '📉 부족분', value: `**${need.toLocaleString('ko-KR')}P**`, inline: true },
+            )
+            .setFooter({ text: '방울냥 · 채팅/음성 활동이나 /daily 로 P를 모아봐!' });
 
           await interaction.editReply({ embeds: [insuffEmbed] });
           return;
@@ -185,23 +164,6 @@ export const lotteryCommand: SlashCommand = {
         jackpotPoolLine = `🏦 현재 잭팟 누적금: **${jackpotPoolPoints.toLocaleString('ko-KR')} p**`;
       }
 
-      const resultLines = [
-        `🎟️ 티켓 번호: **#${row.out_ticket_number.toString().padStart(6, '0')}**`,
-        `🏷️ 결과 등급: **${TIER_LABELS[tier]}**`,
-        `💸 구매 비용: **-${row.out_ticket_price.toLocaleString('ko-KR')} p**`,
-        `💰 당첨금: **+${row.out_payout.toLocaleString('ko-KR')} p**`
-      ];
-
-      if (jackpotBreakdownLine) {
-        resultLines.push(jackpotBreakdownLine);
-      }
-
-      if (jackpotPoolLine) {
-        resultLines.push(jackpotPoolLine);
-      }
-
-      resultLines.push(`📈 순손익: **${signedP(row.out_net_change)}**`);
-
       const attachment = await generateLotteryTicketImage({
         tier,
         ticketNumber: row.out_ticket_number,
@@ -210,13 +172,30 @@ export const lotteryCommand: SlashCommand = {
         netChange: row.out_net_change
       });
 
+      const fields = [
+        { name: '🏷️ 등급', value: `**${TIER_LABELS[tier]}**`, inline: true },
+        { name: '💸 구매 비용', value: `**-${row.out_ticket_price.toLocaleString('ko-KR')}P**`, inline: true },
+        { name: '💰 당첨금', value: `**+${row.out_payout.toLocaleString('ko-KR')}P**`, inline: true },
+      ];
+
+      if (jackpotBreakdownLine) {
+        fields.push({ name: '🧾 잭팟 내역', value: `기본 ${jackpotBasePoints.toLocaleString('ko-KR')}P + 누적금 ${Math.max(0, row.out_payout - jackpotBasePoints).toLocaleString('ko-KR')}P`, inline: false });
+      }
+
+      if (jackpotPoolLine) {
+        fields.push({ name: '🏦 잭팟 누적금', value: `**${jackpotPoolPoints.toLocaleString('ko-KR')}P**`, inline: true });
+      }
+
+      fields.push({ name: '📈 순손익', value: `**${signedP(row.out_net_change)}**`, inline: true });
+
       const resultEmbed = brandEmbed()
         .setColor(TIER_COLORS[tier])
         .setAuthor({ name: interaction.user.displayName, iconURL: interaction.user.displayAvatarURL() })
         .setTitle(TIER_TITLES[tier])
-        .setDescription([...resultLines.slice(0, 1), '', LINE, '', ...resultLines.slice(1)].join('\n'))
+        .setDescription(`🎟️ 티켓 번호: **#${row.out_ticket_number.toString().padStart(6, '0')}**`)
+        .addFields(fields)
         .setImage('attachment://lottery-result.png')
-        .setFooter({ text: '다시 도전하려면 /lottery 를 한 번 더 입력해줘!' });
+        .setFooter({ text: '방울냥 · 다시 도전하려면 /lottery 를 한 번 더!' });
 
       await interaction.editReply({
         embeds: [resultEmbed],
