@@ -268,10 +268,67 @@ const pickTierImpact = (profile: NewsTierProfile, minImpactBps: number, maxImpac
   return lower + Math.floor(Math.random() * (range + 1));
 };
 
-const pickRandomSentiment = (): Sentiment => {
+/* ──────────── Price Pressure System ──────────── */
+const PRICE_FLOOR = 1_000;
+const PRICE_CEILING = 15_000;
+// Target midpoint ~8000P
+
+/**
+ * Calculate price-based sentiment bias.
+ * Returns { bullishProb, bearishProb } adjusted by current price.
+ * Closer to ceiling → more bearish. Closer to floor → more bullish.
+ */
+function getPricePressure(currentPrice: number) {
+  const range = PRICE_CEILING - PRICE_FLOOR;
+  // How far above midpoint (0 = at floor, 1 = at ceiling)
+  const position = Math.max(0, Math.min(1, (currentPrice - PRICE_FLOOR) / range));
+
+  // Base probabilities
+  let bullish = SENTIMENT_BULLISH_PROBABILITY;
+  let bearish = SENTIMENT_BEARISH_PROBABILITY;
+
+  if (currentPrice >= PRICE_CEILING * 0.85) {
+    // Very high → heavy bearish pressure
+    bullish = 0.10;
+    bearish = 0.82;
+  } else if (currentPrice >= PRICE_CEILING * 0.70) {
+    // High → moderate bearish pressure
+    bullish = 0.25;
+    bearish = 0.65;
+  } else if (currentPrice <= PRICE_FLOOR * 1.3) {
+    // Very low → heavy bullish pressure
+    bullish = 0.82;
+    bearish = 0.10;
+  } else if (currentPrice <= PRICE_FLOOR * 2.0) {
+    // Low → moderate bullish pressure
+    bullish = 0.65;
+    bearish = 0.25;
+  } else {
+    // Normal range: slight bias based on position
+    const deviation = (position - 0.5) * 0.3;
+    bullish = SENTIMENT_BULLISH_PROBABILITY - deviation;
+    bearish = SENTIMENT_BEARISH_PROBABILITY + deviation;
+  }
+
+  // Impact multiplier: more extreme at edges
+  let impactMultiplier = 1.0;
+  if (currentPrice >= PRICE_CEILING * 0.85 || currentPrice <= PRICE_FLOOR * 1.3) {
+    impactMultiplier = 2.0;
+  } else if (currentPrice >= PRICE_CEILING * 0.70 || currentPrice <= PRICE_FLOOR * 2.0) {
+    impactMultiplier = 1.4;
+  }
+
+  return { bullish, bearish, impactMultiplier };
+}
+
+const pickRandomSentiment = (currentPrice?: number): Sentiment => {
+  const pressure = currentPrice != null ? getPricePressure(currentPrice) : null;
+  const bullishProb = pressure?.bullish ?? SENTIMENT_BULLISH_PROBABILITY;
+  const bearishProb = pressure?.bearish ?? SENTIMENT_BEARISH_PROBABILITY;
+
   const roll = Math.random();
-  if (roll < SENTIMENT_BULLISH_PROBABILITY) return 'bullish';
-  if (roll < SENTIMENT_BULLISH_PROBABILITY + SENTIMENT_BEARISH_PROBABILITY) return 'bearish';
+  if (roll < bullishProb) return 'bullish';
+  if (roll < bullishProb + bearishProb) return 'bearish';
   return 'neutral';
 };
 
@@ -459,12 +516,13 @@ const decideCodeSentiment = (params: {
   changePct: number;
   dataIsSparse: boolean;
   recentStats: RecentSentimentStats;
+  currentPrice?: number;
 }): Sentiment => {
   if (params.forcedSentiment) {
     return params.forcedSentiment;
   }
 
-  const { changePct, dataIsSparse, recentStats } = params;
+  const { changePct, dataIsSparse, recentStats, currentPrice } = params;
   const absChange = Math.abs(changePct);
 
   if (!dataIsSparse) {
@@ -477,6 +535,15 @@ const decideCodeSentiment = (params: {
     bearish: 0.33,
     neutral: 0.34
   };
+
+  // Apply price pressure: bias sentiment toward mean-reversion
+  if (currentPrice != null) {
+    const pressure = getPricePressure(currentPrice);
+    // Shift weights based on pressure (higher bullish prob → more bullish weight)
+    const pressureShift = (pressure.bullish - pressure.bearish) * 0.5;
+    weights.bullish += pressureShift;
+    weights.bearish -= pressureShift;
+  }
 
   if (changePct >= 0.8) {
     weights.bullish += 0.28;
@@ -847,13 +914,21 @@ const buildFallbackDraft = (params: {
   forcedSentiment?: Sentiment | null;
   forcedTier?: NewsTier | null;
   forcedScenario?: string | null;
+  currentPrice?: number;
 }): StockNewsDraft => {
-  const { minImpactBps, maxImpactBps, displayName, scenarioSeeds, forcedSentiment, forcedTier, forcedScenario } = params;
+  const { minImpactBps, maxImpactBps, displayName, scenarioSeeds, forcedSentiment, forcedTier, forcedScenario, currentPrice } = params;
 
-  const sentiment = forcedSentiment ?? pickRandomSentiment();
+  const sentiment = forcedSentiment ?? pickRandomSentiment(currentPrice);
   const tierProfile = getTierProfile(forcedTier ?? null) ?? pickNewsTier();
   const reasonSeed = forcedScenario ?? pickReasonSeed(sentiment, scenarioSeeds);
-  const impactBpsAbs = pickTierImpact(tierProfile, minImpactBps, maxImpactBps);
+  let impactBpsAbs = pickTierImpact(tierProfile, minImpactBps, maxImpactBps);
+
+  // Apply price pressure impact multiplier
+  if (currentPrice != null) {
+    const { impactMultiplier } = getPricePressure(currentPrice);
+    impactBpsAbs = Math.round(impactBpsAbs * impactMultiplier);
+  }
+
   const headline = buildGameHeadline(displayName, reasonSeed);
 
   return {
@@ -1179,7 +1254,8 @@ export async function runStockNewsCycle(client: Client): Promise<void> {
     forcedSentiment: forcedOverrides.sentiment,
     changePct,
     dataIsSparse: marketSignal.dataIsSparse,
-    recentStats: recentNewsContext.stats
+    recentStats: recentNewsContext.stats,
+    currentPrice,
   });
   const flavorPlan = planNewsFlavor({
     recentRows: recentNewsContext.rows,
