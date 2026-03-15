@@ -5,6 +5,7 @@ import { getBotContext } from '../context.js';
 import { generateLotteryTicketImage } from '../lib/lotteryTicketImage.js';
 import type { LotteryTier } from '../lib/lotteryTicketImage.js';
 import { brandEmbed, cooldownEmbed, errorEmbed } from '../lib/embed.js';
+import { getServerEmoji } from '../lib/serverEmoji.js';
 import type { SlashCommand } from './types.js';
 
 type LotteryResultRow = {
@@ -188,11 +189,13 @@ export const lotteryCommand: SlashCommand = {
 
       fields.push({ name: '📈 순손익', value: `**${signedP(row.out_net_change)}**`, inline: true });
 
+      const stars = getServerEmoji(interaction.client, 'stars', '✨');
+
       const resultEmbed = brandEmbed()
         .setColor(TIER_COLORS[tier])
         .setAuthor({ name: interaction.user.displayName, iconURL: interaction.user.displayAvatarURL() })
         .setTitle(TIER_TITLES[tier])
-        .setDescription(`🎟️ 티켓 번호: **#${row.out_ticket_number.toString().padStart(6, '0')}**`)
+        .setDescription(`${stars} 티켓 번호: **#${row.out_ticket_number.toString().padStart(6, '0')}**`)
         .addFields(fields)
         .setImage('attachment://lottery-result.png')
         .setFooter({ text: '방울냥 · 다시 도전하려면 /lottery 를 한 번 더!' });

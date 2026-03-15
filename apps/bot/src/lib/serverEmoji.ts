@@ -86,4 +86,19 @@ export function getServerEmojis(
   return result;
 }
 
+/**
+ * Get emoji data for use in select menu options / button emojis.
+ * Returns `{ id, name, animated }` for server emojis, or `{ name }` for unicode fallback.
+ */
+export function getEmojiOption(client: Client, alias: string, fallback = '⭐'): { id?: string; name: string; animated?: boolean } {
+  const emojiName = EMOJI_ALIASES[alias] ?? alias;
+  const guild = client.guilds.cache.get(getBotContext().env.NYARU_GUILD_ID);
+  if (!guild) return { name: fallback };
+
+  const emoji = guild.emojis.cache.find(e => e.name === emojiName);
+  if (!emoji || !emoji.id || !emoji.name) return { name: fallback };
+
+  return { id: emoji.id, name: emoji.name, animated: emoji.animated ?? false };
+}
+
 export { getGuild, EMOJI_ALIASES };

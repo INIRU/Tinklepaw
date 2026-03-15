@@ -4,6 +4,7 @@ import type { ChatInputCommandInteraction } from 'discord.js';
 import { getBotContext } from '../context.js';
 import { generateDailyChestGif } from '../lib/dailyChestGif.js';
 import { brandEmbed, cooldownEmbed } from '../lib/embed.js';
+import { getServerEmoji } from '../lib/serverEmoji.js';
 import type { SlashCommand } from './types.js';
 
 type DailyChestTier = 'common' | 'rare' | 'epic' | 'legendary';
@@ -138,18 +139,21 @@ export const dailyCommand: SlashCommand = {
         legendary: '🟨'
       };
 
+      const heart = getServerEmoji(interaction.client, 'heart', '🩷');
+      const catPaw = getServerEmoji(interaction.client, 'catPaw', '🐾');
+
       const rewardEmbed = brandEmbed()
         .setColor(TIER_COLORS[tier])
         .setAuthor({ name: interaction.user.displayName, iconURL: interaction.user.displayAvatarURL() })
-        .setTitle(`🎉 일일 보물상자 OPEN!`)
-        .setDescription(`${TIER_EMOJI[tier]} 등급: **${TIER_LABELS[tier]}**`)
+        .setTitle(`${heart} 일일 보물상자 OPEN!`)
+        .setDescription(`${TIER_EMOJI[tier]} 등급: **${TIER_LABELS[tier]}**\n${catPaw} 내일 다시 와서 열어봐!`)
         .addFields(
           { name: '💰 획득 포인트', value: `**+${row.out_reward_points.toLocaleString('ko-KR')}P**`, inline: true },
           { name: '💳 현재 잔액', value: `**${row.out_new_balance.toLocaleString('ko-KR')}P**`, inline: true },
           { name: '⏰ 다음 상자', value: nextAtRelative ?? '내일', inline: true },
         )
         .setImage('attachment://treasure-open.gif')
-        .setFooter({ text: '방울냥 · 내일 다시 /daily 로 보물상자를 열어봐!' });
+        .setFooter({ text: '방울냥 · 일일 보물상자' });
 
       await interaction.editReply({
         embeds: [rewardEmbed],

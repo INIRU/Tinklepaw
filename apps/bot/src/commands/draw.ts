@@ -18,6 +18,7 @@ import { getBotContext } from '../context.js';
 import { generateGachaResultImage } from '../lib/gachaImage.js';
 import { getAppConfig, type AppConfig } from '../services/config.js';
 import { brandEmbed, parseHexColor, RarityEmoji, LINE } from '../lib/embed.js';
+import { getEmojiOption } from '../lib/serverEmoji.js';
 
 type GachaDrawResult = {
   out_item_id: string;
@@ -299,17 +300,24 @@ export async function triggerGachaUI(
 
     // Pool select menu (only when multiple pools exist)
     if (activePools.length > 1) {
+      const catEmoji = getEmojiOption(context instanceof Message ? context.client : context.client, 'cat', '🎰');
       const selectMenu = new StringSelectMenuBuilder()
         .setCustomId('gacha:pool_select')
         .setPlaceholder('뽑기 풀을 선택하세요')
         .addOptions(
           activePools.map((p, i) => {
             const kindLabel = p.kind === 'limited' ? '한정' : '상시';
-            return new StringSelectMenuOptionBuilder()
+            const opt = new StringSelectMenuOptionBuilder()
               .setLabel(`${p.name}`)
               .setDescription(`${kindLabel} · ${p.cost_points}P / 회`)
               .setValue(i.toString())
               .setDefault(i === index);
+            if (p.kind === 'limited') {
+              opt.setEmoji('🌟');
+            } else {
+              opt.setEmoji(catEmoji);
+            }
+            return opt;
           }),
         );
       rows.push(
