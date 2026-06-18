@@ -39,8 +39,9 @@ This docs pass did not find public proof for:
 - data quality checks;
 - production log redaction policy.
 
-Keep those as follow-ups unless maintainers can promote private evidence into
-public docs.
+Keep those as follow-ups unless maintainers can document verified production
+evidence at a public-safe level, without exposing sensitive values,
+identifiers, raw logs, or secrets.
 
 ## Suggested Follow-Ups
 

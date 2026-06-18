@@ -182,8 +182,10 @@ erDiagram
 
 ## Verification Notes
 
-- The diagram is intentionally not exhaustive. It omits operational/config/log
-  surfaces to keep the main domain model readable.
-- Before merge, confirm the Mermaid block renders in GitHub Markdown.
+- The diagram is a reviewer-oriented relationship view, not a generated schema
+  dump. It omits operational/config/log surfaces to keep the main domain model
+  readable.
+- When this diagram changes, confirm the Mermaid block renders in GitHub
+  Markdown as part of review.
 - If a target-repo maintainer confirms additional active relations, add them in
   a follow-up PR instead of overloading this first diagram.

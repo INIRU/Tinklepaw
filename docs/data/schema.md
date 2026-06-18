@@ -84,8 +84,9 @@ legacy `public.*` table is still part of an active runtime path.
 
 ## Review Notes
 
-- This catalog is based on public SQL parsing and should be checked against the
-  target repository before merge.
+- This catalog is based on public SQL parsing. Future schema-changing PRs should
+  check it against the target repository's SQL and update it when entities,
+  ownership, or runtime status change.
 - Entity descriptions intentionally avoid private server IDs, project refs,
   secrets, and production data.
 - Tables with unclear runtime use should be marked as historical or verified in
