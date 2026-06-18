@@ -1,16 +1,23 @@
 # Summary
 
+<!-- Briefly summarize the change in one or two sentences. -->
+
 ## Problem
 
-What issue or review gap does this PR address?
+<!-- Link the issue or describe the review gap this PR addresses. -->
 
 ## Solution
 
-What changed and why is this the smallest reviewable step?
+<!-- Describe what changed and why this is a focused, reviewable step. -->
 
 ## Changed Areas
 
--
+- [ ] Documentation
+- [ ] Source/runtime code
+- [ ] Tests or verification
+- [ ] Configuration or deployment
+- [ ] Data, auth, or security
+- [ ] Other
 
 ## Verification
 
@@ -31,7 +38,7 @@ What changed and why is this the smallest reviewable step?
 
 ## Risks And Follow-Ups
 
--
+<!-- Note known risks, tradeoffs, rollout concerns, or follow-up work. -->
 
 ## Publication Safety
 

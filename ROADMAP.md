@@ -5,7 +5,7 @@
 | Item | Goal | Evidence |
 |---|---|---|
 | Reviewer-first README | Explain what Tinklepaw is, how to run it, and what to inspect first | README PR |
-| Collaboration workflow | Add issue templates, PR template, and contributing guide | This PR |
+| Collaboration workflow | Add issue templates, PR template, and contributing guide | [PR #7](https://github.com/INIRU/Tinklepaw/pull/7) |
 | Data architecture docs | Document Supabase schema, ERD, migrations, security, and observability | `docs/data/**`, `docs/adr/**` PR |
 
 ## Next
@@ -34,4 +34,4 @@
 
 | Date | Decision | Link |
 |---|---|---|
-| 2026-06-18 | Prepare collaboration templates before opening larger implementation PRs | This PR |
+| 2026-06-18 | Prepare collaboration templates before opening larger implementation PRs | [PR #7](https://github.com/INIRU/Tinklepaw/pull/7) |

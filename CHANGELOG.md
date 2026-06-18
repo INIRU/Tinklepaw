@@ -24,5 +24,5 @@ All notable changes to this project are documented here.
 
 | Check | Command/Artifact | Result |
 |---|---|---|
-| Target repo tree check | GitHub API tree at `823e79f203ed03c555d6bcab7e42d23278564ef3` | Collaboration files absent before this PR |
-| Markdown review | Manual docs review | Pending in real PR |
+| Target repo tree check | GitHub API tree at `823e79f203ed03c555d6bcab7e42d23278564ef3` | Collaboration files absent before PR #7 |
+| Markdown review | Manual docs review | Reviewed for [PR #7](https://github.com/INIRU/Tinklepaw/pull/7) |
