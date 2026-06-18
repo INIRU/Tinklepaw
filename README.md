@@ -35,6 +35,8 @@ Discord 봇, 웹 대시보드, 전용 런처, 마인크래프트 플러그인이
 
 ## 아키텍처
 
+상세한 모듈 경계와 배포 흐름은 [시스템 아키텍처 문서](docs/architecture.md)에서 확인할 수 있어요.
+
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                         방울냥 모노레포                            │
@@ -205,6 +207,7 @@ Discord 봇, 웹 대시보드, 전용 런처, 마인크래프트 플러그인이
 - [기여 가이드](CONTRIBUTING.md)
 - [이슈 템플릿](.github/ISSUE_TEMPLATE)
 - [PR 템플릿](.github/pull_request_template.md)
+- [시스템 아키텍처](docs/architecture.md)
 - [공유 데이터 문서](docs/data/README.md)
 - [스키마 문서](docs/data/schema.md)
 - [데이터 보안 문서](docs/data/security.md)
