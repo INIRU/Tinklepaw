@@ -352,6 +352,31 @@ npm run build
 
 ---
 
+## 검증과 CI
+
+로컬 검증은 Node.js 20+와 npm 10+ 기준이에요. 웹 E2E는 Playwright가 Next.js 개발 서버를 `http://127.0.0.1:3100`에서 자동으로 띄우며, 로컬에서는 Chromium 브라우저가 설치되어 있어야 해요.
+
+| 명령 | 증명하는 영역 | 사전조건 / 주의사항 |
+|------|---------------|---------------------|
+| `npm install` | 루트 npm workspace 의존성을 설치해 이후 lint, typecheck, build, E2E 명령을 실행할 수 있는 상태로 만들어요. | Node.js 20+와 npm 10+가 필요해요. CI의 웹 E2E는 재현 가능한 설치를 위해 `npm ci`를 사용해요. |
+| `npm run lint` | 루트의 `npm run lint --workspaces` 래퍼로 npm workspace의 ESLint 규칙을 검증하려는 gate예요. | 현재는 통과하지 않아요. `@nyaru/bot`은 ESLint 9 flat config가 없고, `@nyaru/web`은 기존 lint 위반이 있으며, `@nyaru/launcher`와 `@nyaru/core`는 lint 스크립트가 없어요. |
+| `npm run typecheck` | 루트의 `npm run typecheck --workspaces` 래퍼로 TypeScript workspace의 타입 안정성을 검증하려는 gate예요. | 현재 `@nyaru/web`, `@nyaru/bot`, `@nyaru/core` typecheck는 실행되지만, `@nyaru/launcher`에 typecheck 스크립트가 없어 루트 명령은 실패해요. 런처 TypeScript는 `npm run build`에서 `tsc && vite build`로 확인돼요. |
+| `npm run build` | npm workspaces의 프로덕션 빌드를 실행해 웹, 봇, 런처, 공유 패키지 빌드를 검증해요. | Minecraft Paper 플러그인은 npm workspace가 아니므로 포함되지 않아요. 플러그인은 `cd apps/minecraft/plugin && ./gradlew shadowJar` 또는 `Release Minecraft Plugin` workflow로 검증해요. 웹 env가 없으면 빌드 로그에 개발 fallback 경고가 표시될 수 있어요. |
+| `npm run e2e -w @nyaru/web` | Playwright Chromium으로 웹 공개 라우트와 기본 내비게이션이 렌더링되고 서버 오류를 내지 않는지 검증해요. | 먼저 `npm install`을 실행하고, 브라우저가 없으면 `npx playwright install chromium`을 실행하세요. 웹 환경 변수는 `apps/web/.env.local` 예시를 기준으로 준비해요. |
+
+현재 알려진 실패와 후속 작업: `npm run lint`와 `npm run typecheck`는 위 사유로 루트 green gate가 아니에요. 후속 이슈 [#11](https://github.com/INIRU/Tinklepaw/issues/11)에서 봇 ESLint config, 웹 lint 위반, 런처/core lint 스크립트, 런처 typecheck 스크립트를 정리해 루트 검증 coverage를 복구하는 작업을 추적해요.
+
+### GitHub Actions
+
+| 파일 | Workflow name | Trigger | 증명하는 내용 |
+|------|---------------|---------|---------------|
+| `.github/workflows/deploy.yml` | `Deploy Bot` | `main` 브랜치에 `apps/bot/**`, `packages/core/**`, `package.json`, `Dockerfile` 변경이 push되거나 수동 실행될 때 | 봇 Docker 이미지가 저장소 루트 context에서 빌드되고 GHCR에 `latest`와 SHA 태그로 push될 수 있음을 검증해요. |
+| `.github/workflows/web-e2e.yml` | `Web E2E` | PR 또는 `main` push에서 `apps/web/**`, `package-lock.json`, workflow 파일이 바뀔 때 | Node 20에서 `npm ci` 후 Chromium을 설치하고 `npm run e2e -w @nyaru/web`을 실행해 웹 공개 라우트 E2E를 검증해요. 실패 시 Playwright report와 test-results를 artifact로 업로드해요. |
+| `.github/workflows/release-launcher.yml` | `Release Launcher` | `launcher-v*` 태그가 push될 때 | Tauri 런처가 macOS Apple Silicon, macOS Intel, Windows 대상으로 빌드되고 GitHub Release 산출물을 만들 수 있음을 검증해요. |
+| `.github/workflows/release-minecraft.yml` | `Release Minecraft Plugin` | `minecraft-v*` 태그가 push될 때 | Java 21과 Gradle로 `./gradlew shadowJar`를 실행해 Minecraft Paper 플러그인 릴리스 JAR를 만들 수 있음을 검증해요. |
+
+---
+
 ## 프로젝트 구조
 
 ```
@@ -387,8 +412,10 @@ Nyaru/
 ├── supabase/                     # DB 마이그레이션 · 스키마
 ├── images/                       # README 스크린샷
 └── .github/workflows/
-    ├── deploy-bot.yml            # 봇 Docker 빌드 · 배포
-    └── release-launcher.yml      # 런처 멀티플랫폼 빌드 · 릴리즈
+    ├── deploy.yml                # 봇 Docker 빌드 · GHCR push
+    ├── web-e2e.yml               # 웹 Playwright E2E
+    ├── release-launcher.yml      # 런처 멀티플랫폼 빌드 · 릴리즈
+    └── release-minecraft.yml     # Minecraft 플러그인 빌드 · 릴리즈
 ```
 
 ---
