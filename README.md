@@ -198,6 +198,19 @@ Discord 봇, 웹 대시보드, 전용 런처, 마인크래프트 플러그인이
 
 ---
 
+## 문서 바로가기
+
+기여와 데이터 변경 전에 확인하면 좋은 공개 문서예요.
+
+- [기여 가이드](CONTRIBUTING.md)
+- [이슈 템플릿](.github/ISSUE_TEMPLATE)
+- [PR 템플릿](.github/pull_request_template.md)
+- [공유 데이터 문서](docs/data/README.md)
+- [스키마 문서](docs/data/schema.md)
+- [데이터 보안 문서](docs/data/security.md)
+
+---
+
 ## 런처 다운로드
 
 [GitHub Releases](https://github.com/INIRU/Tinklepaw/releases) 페이지에서 최신 버전을 내려받으세요.
